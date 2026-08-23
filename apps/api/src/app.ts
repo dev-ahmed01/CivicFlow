@@ -1,0 +1,56 @@
+import cors from "cors";
+import express, { type Express } from "express";
+import helmet from "helmet";
+import { UserRole } from "db";
+import { createAuthRouter } from "./auth/routes";
+import {
+  requireAuth,
+  requirePasswordResetComplete,
+  requireRole,
+} from "./auth/middleware";
+import { createOtpProvider, type OtpProvider } from "./auth/otp-provider";
+import { getEnv } from "./config/env";
+
+export function createApp(otpProvider?: OtpProvider): Express {
+  const app = express();
+  app.disable("x-powered-by");
+  app.use(helmet());
+  app.use(cors());
+  app.use(express.json({ limit: "1mb" }));
+
+  app.get("/health", (_request, response) => {
+    response.json({ status: "ok" });
+  });
+
+  app.use("/auth", createAuthRouter(otpProvider ?? createOtpProvider(getEnv())));
+
+  // Part III §17.2 — protected routes always authenticate, enforce role, then scope.
+  app.get(
+    "/protected/project-head",
+    requireAuth,
+    requireRole(UserRole.PROJECT_HEAD),
+    requirePasswordResetComplete,
+    (request, response) => {
+      response.json({
+        message: "Project Head access granted",
+        userId: request.auth?.userId,
+        agencyId: request.auth?.agencyId,
+      });
+    },
+  );
+
+  app.get(
+    "/protected/me",
+    requireAuth,
+    requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    (request, response) => {
+      response.json({ auth: request.auth });
+    },
+  );
+
+  app.use((_request, response) => {
+    response.status(404).json({ error: "Not found" });
+  });
+
+  return app;
+}

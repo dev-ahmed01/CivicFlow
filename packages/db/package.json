@@ -1,0 +1,36 @@
+{
+  "name": "db",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run"
+  },
+  "prisma": {
+    "seed": "tsx seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.0",
+    "bcrypt": "6.0.0"
+  },
+  "devDependencies": {
+    "@civicos/config": "workspace:*",
+    "@types/bcrypt": "5.0.2",
+    "prisma": "6.19.0",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  }
+}

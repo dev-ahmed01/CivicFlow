@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "CivicOS",
+    "slug": "civicos-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"],
+    "newArchEnabled": true
+  }
+}

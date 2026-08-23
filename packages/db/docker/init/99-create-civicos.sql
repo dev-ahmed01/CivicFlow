@@ -1,0 +1,1 @@
+CREATE DATABASE civicos TEMPLATE template0;

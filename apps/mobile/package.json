@@ -1,0 +1,26 @@
+{
+  "name": "mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo/AppEntry",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "dev": "expo start",
+    "start": "expo start",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@civicos/shared": "workspace:*",
+    "expo": "53.0.22",
+    "expo-status-bar": "2.2.3",
+    "react": "19.0.0",
+    "react-native": "0.79.5"
+  },
+  "devDependencies": {
+    "@civicos/config": "workspace:*",
+    "@types/react": "19.0.14",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  }
+}

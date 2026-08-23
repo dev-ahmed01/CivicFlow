@@ -1,0 +1,9 @@
+{
+  "extends": "@civicos/config/tsconfig.react-native.json",
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "customConditions": ["react-native"],
+    "types": ["react"]
+  },
+  "include": ["App.tsx", "src/**/*.ts", "src/**/*.tsx"]
+}

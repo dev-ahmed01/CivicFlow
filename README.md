@@ -28,7 +28,7 @@ civicos/
     config/   # shared eslint/tsconfig
 ```
 
-`apps/` and `packages/` are empty until Phase 1 scaffolds them — everything else above should exist from day one.
+Phase 1 scaffolds `apps/` and `packages/`; later phases extend those foundations without redefining shared entities.
 
 ## Stack
 
@@ -69,13 +69,19 @@ Full methodology and the reasoning behind this loop is in `docs/00_Build_Guide.m
 ```bash
 git clone <this-repo-url>
 cd civicos
-pnpm install                 # once apps/ and packages/ exist (post Phase 1)
-docker run -d --name civicos-db -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=civicos -p 5432:5432 postgis/postgis:16-3.4
+corepack enable
+pnpm install
+copy .env.example .env       # use `cp` on macOS/Linux
+docker compose up -d postgres
 pnpm --filter db exec prisma migrate dev
 pnpm --filter db exec prisma db seed
-pnpm dev                     # runs api + web; run mobile separately via `expo start`
+pnpm build
+pnpm test
+pnpm verify:auth             # OTP/JWT/RBAC smoke test against the seeded DB
+pnpm dev
 ```
+
+The compose service maps PostgreSQL to host port `5433` to avoid common conflicts with an existing local PostgreSQL installation. Local seeded internal accounts use `CivicOS@123`; accounts marked for first-login reset can only reach the password-reset flow until they change it.
 
 ## Demo scripts
 

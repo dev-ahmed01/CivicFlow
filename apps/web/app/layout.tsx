@@ -1,0 +1,16 @@
+import type { Metadata } from "next";
+import type { ReactNode } from "react";
+import { APP_NAME } from "@civicos/shared";
+
+export const metadata: Metadata = {
+  title: APP_NAME,
+  description: "CivicOS Project Head and Admin web application",
+};
+
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  );
+}
