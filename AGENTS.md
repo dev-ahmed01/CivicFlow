@@ -35,7 +35,7 @@ _(Update this section as phases complete — Codex should read it to know what a
 - [x] Phase 4 — Agency routing + Project Head core workflows
 - [x] Phase 5 — Dependency system
 - [x] Phase 6 — Executive Engineer workflows
-- [ ] Phase 7 — Conflict detection engine (generic)
+- [x] Phase 7 — Conflict detection engine (generic)
 - [ ] Phase 8 — Road-Cutting Intelligence Layer (flagship)
 - [ ] Phase 9 — Notifications
 - [ ] Phase 10 — Analytics, admin config, transparency dashboard

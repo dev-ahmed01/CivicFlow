@@ -7,6 +7,7 @@ import type {
   EngineerProjectDetail,
   PendingValidation,
   PendingCompletionVerification,
+  ProjectConflict,
   ProjectListItem,
   ProjectState,
   SubmitValidationResult,
@@ -92,8 +93,9 @@ export async function uptakeProject(projectId: string): Promise<void> {
   await apiFetch(`/projects/${projectId}/uptake`, { method: "POST" });
 }
 
-export async function updateProjectTimeline(projectId: string, input: { plannedStart: string; plannedEnd: string; workDescription: string; dependencyFlags: string[] }): Promise<void> {
-  await apiFetch(`/projects/${projectId}/timeline`, { method: "PATCH", body: JSON.stringify(input) });
+export async function updateProjectTimeline(projectId: string, input: { plannedStart: string; plannedEnd: string; workDescription: string; dependencyFlags: string[] }): Promise<ProjectConflict[]> {
+  const result = await apiFetch<{ conflicts: ProjectConflict[] }>(`/projects/${projectId}/timeline`, { method: "PATCH", body: JSON.stringify(input) });
+  return result.conflicts;
 }
 
 export async function updateProjectStatus(projectId: string, input: { state?: "COMPLETED"; note?: string }): Promise<void> {

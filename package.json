@@ -18,7 +18,8 @@
     "verify:phase3": "pnpm --filter api verify:phase3",
     "verify:phase4": "pnpm --filter api verify:phase4",
     "verify:phase5": "pnpm --filter api verify:phase5",
-    "verify:phase6": "pnpm --filter api verify:phase6"
+    "verify:phase6": "pnpm --filter api verify:phase6",
+    "verify:phase7": "pnpm --filter api verify:phase7"
   },
   "devDependencies": {
     "@civicos/config": "workspace:*",

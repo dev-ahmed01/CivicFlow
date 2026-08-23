@@ -50,6 +50,11 @@ enum ProjectState {
   CANCELLED
 }
 
+enum ConflictSeverity {
+  PROMINENT
+  INLINE
+}
+
 enum CompletionVerificationDecision {
   VERIFIED
   REWORK_REQUESTED
@@ -135,6 +140,8 @@ model Agency {
   requestedDependencies  Dependency[]   @relation("DependencyRequestingAgency")
   respondingDependencies Dependency[]   @relation("DependencyRespondingAgency")
   requestedInterventions Intervention[]
+  projectConflictLogs     ConflictLog[] @relation("ConflictLogProjectAgency")
+  conflictingProjectLogs ConflictLog[] @relation("ConflictLogConflictingAgency")
 }
 
 model Category {
@@ -324,11 +331,42 @@ model Project {
   stateTransitions ProjectStateTransition[]
   workNotes ProjectWorkNote[]
   completionEvidence CompletionEvidence[]
+  conflictLogs       ConflictLog[] @relation("ConflictLogProject")
+  conflictingLogs   ConflictLog[] @relation("ConflictLogConflictingProject")
 
   @@index([ticketId])
   @@index([agencyId])
   @@index([engineerId])
   @@index([state])
+}
+
+model ConflictLog {
+  id                         String           @id @default(uuid()) @db.Uuid
+  projectId                  String           @db.Uuid
+  conflictingProjectId       String           @db.Uuid
+  projectAgencyId            String           @db.Uuid
+  conflictingAgencyId        String           @db.Uuid
+  projectTimelineStart       DateTime
+  projectTimelineEnd         DateTime
+  conflictingTimelineStart  DateTime
+  conflictingTimelineEnd    DateTime
+  overlapStart               DateTime
+  overlapEnd                 DateTime
+  locationDescription       String
+  distanceMeters             Float?
+  severity                   ConflictSeverity
+  timelineFingerprint        String           @db.Char(64)
+  createdAt                  DateTime          @default(now())
+
+  project            Project @relation("ConflictLogProject", fields: [projectId], references: [id], onDelete: Cascade)
+  conflictingProject Project @relation("ConflictLogConflictingProject", fields: [conflictingProjectId], references: [id], onDelete: Cascade)
+  projectAgency      Agency  @relation("ConflictLogProjectAgency", fields: [projectAgencyId], references: [id], onDelete: Restrict)
+  conflictingAgency  Agency  @relation("ConflictLogConflictingAgency", fields: [conflictingAgencyId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, conflictingProjectId, timelineFingerprint], map: "ConflictLog_pair_timeline_key")
+  @@index([projectId, createdAt])
+  @@index([conflictingProjectId, createdAt])
+  @@index([conflictingAgencyId])
 }
 
 model ProjectStateTransition {

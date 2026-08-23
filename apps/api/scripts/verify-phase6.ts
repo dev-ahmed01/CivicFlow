@@ -86,8 +86,8 @@ async function main(): Promise<void> {
     await request(app).post(`/projects/${projectId}/uptake`).set("Authorization", `Bearer ${engineerToken}`).expect(200);
     assert.equal((await prisma.project.findUniqueOrThrow({ where: { id: projectId } })).state, ProjectState.UPTAKEN);
     const timeline = await request(app).patch(`/projects/${projectId}/timeline`).set("Authorization", `Bearer ${engineerToken}`).send({
-      plannedStart: "2026-08-25T00:00:00.000Z",
-      plannedEnd: "2026-09-05T23:59:59.999Z",
+      plannedStart: "2026-10-25T00:00:00.000Z",
+      plannedEnd: "2026-11-05T23:59:59.999Z",
       workDescription: "Mill the damaged surface, rebuild the base, and restore the carriageway.",
       dependencyFlags: ["Traffic diversion"],
     }).expect(200);
@@ -99,8 +99,8 @@ async function main(): Promise<void> {
     assert.deepEqual((await request(app).get(`/projects/${projectId}/conflicts`).set("Authorization", `Bearer ${engineerToken}`).expect(200)).body.conflicts, []);
 
     await request(app).patch(`/projects/${projectId}/timeline`).set("Authorization", `Bearer ${engineerToken}`).send({
-      plannedStart: "2026-08-26T00:00:00.000Z",
-      plannedEnd: "2026-09-06T23:59:59.999Z",
+      plannedStart: "2026-10-26T00:00:00.000Z",
+      plannedEnd: "2026-11-06T23:59:59.999Z",
       workDescription: "Revised field plan after the traffic-diversion coordination meeting.",
       dependencyFlags: ["Traffic diversion", "Utility clearance"],
     }).expect(200);

@@ -421,10 +421,18 @@ export const projectSchema = z.object({
 });
 
 export const projectConflictSchema = z.object({
+  id: idSchema,
   projectId: idSchema,
   conflictingProjectId: idSchema,
+  conflictingProjectName: z.string().min(1),
+  conflictingAgency: agencySchema.pick({ id: true, name: true }),
+  overlapStart: dateSchema,
+  overlapEnd: dateSchema,
+  locationDescription: z.string().min(1),
+  distanceMeters: z.number().nonnegative().nullable(),
   reason: z.string(),
-  severity: z.enum(["LOW", "MEDIUM", "HIGH"]),
+  severity: z.enum(["PROMINENT", "INLINE"]),
+  detectedAt: dateSchema,
 });
 
 export const projectStateTransitionSchema = z.object({

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import type { EngineerProjectDetail, ProjectListItem, ProjectState } from "@civicos/shared";
+import type { EngineerProjectDetail, ProjectConflict, ProjectListItem, ProjectState } from "@civicos/shared";
 import * as ImagePicker from "expo-image-picker";
-import { ActivityIndicator, Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   internalLogin,
   loadAgencies,
@@ -85,15 +85,18 @@ function TimelineScreen({ project, onBack, onSaved }: { project: EngineerProject
   const [description, setDescription] = useState(project.workDescription ?? "");
   const [flags, setFlags] = useState(project.dependencyFlags.join(", "));
   const [busy, setBusy] = useState(false);
+  const [conflicts, setConflicts] = useState<ProjectConflict[]>([]);
   const submit = async () => {
     setBusy(true);
     try {
-      await updateProjectTimeline(project.id, { plannedStart: `${start}T00:00:00.000Z`, plannedEnd: `${end}T23:59:59.999Z`, workDescription: description, dependencyFlags: flags.split(",").map((item) => item.trim()).filter(Boolean) });
-      onSaved();
+      const warnings = await updateProjectTimeline(project.id, { plannedStart: `${start}T00:00:00.000Z`, plannedEnd: `${end}T23:59:59.999Z`, workDescription: description, dependencyFlags: flags.split(",").map((item) => item.trim()).filter(Boolean) });
+      if (warnings.length > 0) setConflicts(warnings);
+      else onSaved();
     } catch (caught) { Alert.alert("Couldn't save execution details", errorMessage(caught)); }
     finally { setBusy(false); }
   };
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Set timeline" title="Execution details" onBack={onBack} /><Text style={styles.intro}>Date fields use YYYY-MM-DD. Saving runs the advisory conflict check and activates the project.</Text><Text style={styles.label}>Start date</Text><TextInput accessibilityLabel="Planned start date" value={start} onChangeText={setStart} placeholder="YYYY-MM-DD" style={styles.input} /><Text style={styles.label}>End date</Text><TextInput accessibilityLabel="Planned end date" value={end} onChangeText={setEnd} placeholder="YYYY-MM-DD" style={styles.input} /><Text style={styles.label}>Work description</Text><TextInput accessibilityLabel="Work description" multiline value={description} onChangeText={setDescription} style={[styles.input, styles.textarea]} /><Text style={styles.label}>Dependency flags</Text><TextInput accessibilityLabel="Dependency flags" value={flags} onChangeText={setFlags} placeholder="Traffic diversion, utility clearance" style={styles.input} /><PrimaryButton disabled={busy || description.trim().length < 10} onPress={() => void submit()}>{busy ? "Checking conflicts…" : "Save timeline & activate"}</PrimaryButton></ScrollView></Shell>;
+  const continueAnyway = () => { setConflicts([]); onSaved(); };
+  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Set timeline" title="Execution details" onBack={onBack} /><Text style={styles.intro}>Date fields use YYYY-MM-DD. Saving runs the advisory conflict check and activates the project.</Text><Text style={styles.label}>Start date</Text><TextInput accessibilityLabel="Planned start date" value={start} onChangeText={setStart} placeholder="YYYY-MM-DD" style={styles.input} /><Text style={styles.label}>End date</Text><TextInput accessibilityLabel="Planned end date" value={end} onChangeText={setEnd} placeholder="YYYY-MM-DD" style={styles.input} /><Text style={styles.label}>Work description</Text><TextInput accessibilityLabel="Work description" multiline value={description} onChangeText={setDescription} style={[styles.input, styles.textarea]} /><Text style={styles.label}>Dependency flags</Text><TextInput accessibilityLabel="Dependency flags" value={flags} onChangeText={setFlags} placeholder="Traffic diversion, utility clearance" style={styles.input} /><PrimaryButton disabled={busy || description.trim().length < 10} onPress={() => void submit()}>{busy ? "Checking conflicts…" : "Save timeline & activate"}</PrimaryButton></ScrollView><Modal animationType="slide" onRequestClose={continueAnyway} transparent visible={conflicts.length > 0}><View style={styles.conflictBackdrop}><View accessibilityLabel="Advisory conflict warning" accessibilityRole="alert" style={styles.conflictSheet}><Text style={styles.kicker}>Advisory conflict check</Text><Text style={styles.conflictTitle}>{conflicts.length} timeline {conflicts.length === 1 ? "warning" : "warnings"}</Text><Text style={styles.conflictIntro}>Your timeline is saved and remains editable. Coordinate with the other agencies as needed.</Text><ScrollView contentContainerStyle={styles.conflictList}>{conflicts.map((conflict) => <View key={conflict.id} style={[styles.conflictItem, conflict.severity === "PROMINENT" && styles.conflictProminent]}><Text style={styles.conflictSeverity}>{conflict.severity === "PROMINENT" ? "Prominent warning" : "Inline note"}</Text><Text style={styles.cardTitle}>{conflict.conflictingProjectName}</Text><Text style={styles.bodyText}>{conflict.conflictingAgency.name}</Text><Text style={styles.meta}>{new Date(conflict.overlapStart).toLocaleDateString("en-IN")} – {new Date(conflict.overlapEnd).toLocaleDateString("en-IN")}</Text><Text style={styles.meta}>{conflict.locationDescription}</Text></View>)}</ScrollView><PrimaryButton onPress={continueAnyway}>Continue Anyway</PrimaryButton></View></View></Modal></Shell>;
 }
 
 function CompletionScreen({ projectId, onBack, onSubmitted }: { projectId: string; onBack: () => void; onSubmitted: () => void }) {
@@ -185,4 +188,12 @@ const styles = StyleSheet.create({
   photo: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderStyle: "dashed", borderWidth: 2, height: 280, justifyContent: "center", overflow: "hidden" },
   photoImage: { height: "100%", width: "100%" },
   photoPrompt: { color: colors.primary, fontSize: 17, fontWeight: "900" },
+  conflictBackdrop: { backgroundColor: "rgba(10, 28, 23, 0.45)", flex: 1, justifyContent: "flex-end" },
+  conflictSheet: { backgroundColor: "#FFFDF8", borderTopLeftRadius: 26, borderTopRightRadius: 26, gap: 14, maxHeight: "82%", padding: 22, paddingBottom: 30 },
+  conflictTitle: { color: colors.ink, fontSize: 25, fontWeight: "900" },
+  conflictIntro: { color: colors.muted, fontSize: 14, lineHeight: 21 },
+  conflictList: { gap: 10 },
+  conflictItem: { backgroundColor: "#FBF1DE", borderColor: "#E7CD98", borderLeftColor: "#D5AA52", borderLeftWidth: 4, borderRadius: 14, borderWidth: 1, gap: 5, padding: 14 },
+  conflictProminent: { borderLeftColor: "#B68012", borderLeftWidth: 8 },
+  conflictSeverity: { color: "#8A6416", fontSize: 10, fontWeight: "900", letterSpacing: 0.7, textTransform: "uppercase" },
 });
