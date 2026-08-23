@@ -10,6 +10,7 @@ import { loadNotifications, markNotificationRead, type MobileNotification } from
 import { clearAppBadge } from "./push-notifications";
 import { Shell } from "./screens";
 import { colors } from "./theme";
+import { NotificationRow } from "./components";
 
 type GroupRow = { kind: "heading"; id: string; label: string } | { kind: "notification"; id: string; notification: MobileNotification };
 
@@ -58,11 +59,7 @@ export function NotificationsScreen({ role, onBack, onOpen, onViewed }: {
       renderItem={({ item }) => {
         if (item.kind === "heading") return <Text style={styles.day}>{item.label}</Text>;
         const display = notificationPresentation(item.notification.type);
-        return <Pressable accessibilityRole="button" onPress={() => onOpen(item.notification)} style={styles.row}>
-          <View style={[styles.icon, styles[display.tone]]}><Text style={[styles.iconText, styles[`${display.tone}Text`]]}>{display.icon}</Text></View>
-          <View style={styles.copy}><Text style={styles.message}>{display.message}</Text><Text style={styles.time}>{relativeNotificationTime(item.notification.createdAt)}</Text></View>
-          <Text style={styles.arrow}>›</Text>
-        </Pressable>;
+        return <NotificationRow icon={display.icon} message={display.message} onPress={() => onOpen(item.notification)} time={relativeNotificationTime(item.notification.createdAt)} tone={display.tone} />;
       }}
     />}
   </View></Shell>;
@@ -70,19 +67,19 @@ export function NotificationsScreen({ role, onBack, onOpen, onViewed }: {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, gap: 16, padding: 20, paddingTop: 28 },
-  header: { gap: 5 }, back: { color: colors.primary, fontSize: 16, fontWeight: "800", marginBottom: 8 },
-  kicker: { color: colors.primary, fontSize: 12, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" },
-  heading: { color: colors.ink, fontSize: 32, fontWeight: "900" },
+  header: { gap: 5 }, back: { color: colors.primary, fontSize: 14, fontWeight: "500", marginBottom: 8 },
+  kicker: { color: colors.primary, fontSize: 12, fontWeight: "500" },
+  heading: { color: colors.ink, fontSize: 22, fontWeight: "500" },
   list: { gap: 0, paddingBottom: 36 }, emptyList: { flexGrow: 1 },
-  day: { color: colors.muted, fontSize: 11, fontWeight: "900", letterSpacing: 1, paddingBottom: 9, paddingTop: 20, textTransform: "uppercase" },
+  day: { color: colors.muted, fontSize: 12, fontWeight: "500", paddingBottom: 9, paddingTop: 20 },
   row: { alignItems: "center", backgroundColor: colors.surface, borderBottomColor: colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 13, paddingHorizontal: 14, paddingVertical: 15 },
   icon: { alignItems: "center", borderRadius: 20, height: 40, justifyContent: "center", width: 40 },
-  iconText: { fontSize: 17, fontWeight: "900" },
-  info: { backgroundColor: "#E7F0FF" }, infoText: { color: "#2563EB" },
-  success: { backgroundColor: "#E3F5E9" }, successText: { color: "#15803D" },
-  warning: { backgroundColor: "#FFF2D2" }, warningText: { color: "#9A6700" },
-  danger: { backgroundColor: "#FDE7E7" }, dangerText: { color: "#B91C1C" },
-  copy: { flex: 1, gap: 5 }, message: { color: colors.ink, fontSize: 14, fontWeight: "800", lineHeight: 20 },
+  iconText: { fontSize: 16, fontWeight: "500" },
+  info: { backgroundColor: colors.infoBg }, infoText: { color: colors.infoText },
+  success: { backgroundColor: colors.successBg }, successText: { color: colors.successText },
+  warning: { backgroundColor: colors.warningBg }, warningText: { color: colors.warningText },
+  danger: { backgroundColor: colors.dangerBg }, dangerText: { color: colors.dangerText },
+  copy: { flex: 1, gap: 5 }, message: { color: colors.ink, fontSize: 14, fontWeight: "500", lineHeight: 20 },
   time: { color: colors.muted, fontSize: 12 }, arrow: { color: colors.muted, fontSize: 26 },
   empty: { alignItems: "center", flex: 1, gap: 12, justifyContent: "center", padding: 30 }, emptyIcon: { color: colors.primary, fontSize: 38 }, emptyText: { color: colors.muted, textAlign: "center" },
   error: { color: colors.danger },

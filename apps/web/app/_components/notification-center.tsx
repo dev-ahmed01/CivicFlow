@@ -13,6 +13,7 @@ import {
   type NotificationListResponse,
   type UserRole,
 } from "@civicos/shared";
+import { NotificationRow } from "./ui";
 
 type ClientNotification = Omit<Notification, "createdAt"> & { createdAt: string };
 type ApiFetch = <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -90,8 +91,7 @@ export function NotificationCenter({ apiFetch, role, showFilters }: { apiFetch: 
         {group.items.map((item) => {
           const display = notificationPresentation(item.type);
           const href = notificationDestination(item, role);
-          const content = <><span aria-hidden="true" className={`notification-icon ${display.tone}`}>{display.icon}</span><span className="notification-copy"><strong>{display.message}</strong><small>{relativeNotificationTime(item.createdAt)}</small></span><span aria-hidden="true" className="notification-arrow">›</span></>;
-          return href ? <Link className="notification-row" href={href} key={item.id}>{content}</Link> : <div className="notification-row" key={item.id}>{content}</div>;
+          return <NotificationRow href={href ?? undefined} icon={display.icon} key={item.id} message={display.message} time={relativeNotificationTime(item.createdAt)} tone={display.tone} />;
         })}
       </div></section>)}
     </div>

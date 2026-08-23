@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { CategorySummary, ProjectHeadTicketSummary, TicketState, WardSummary } from "@civicos/shared";
 import { apiFetch } from "../_lib/api";
+import { TicketCard } from "../../_components/ui";
 
 export default function TicketQueuePage() {
   const [tickets, setTickets] = useState<ProjectHeadTicketSummary[]>([]);
@@ -32,10 +33,8 @@ export default function TicketQueuePage() {
         <label>Ward<select value={filters.ward} onChange={(event) => setFilters({ ...filters, ward: event.target.value })}><option value="">All wards</option>{wards.map((ward) => <option key={ward.id} value={ward.id}>{ward.name}</option>)}</select></label>
       </section>
       {error ? <p className="error" role="alert">{error}</p> : null}
-      <section className="table-card">
-        <table><thead><tr><th>Ticket ID</th><th>Category</th><th>Ward</th><th>Validated</th><th>Inspection</th><th aria-label="Open" /></tr></thead>
-          <tbody>{tickets.map((ticket) => <tr key={ticket.id}><td><code>{ticket.id.slice(0, 8)}</code></td><td><strong>{ticket.category.name}</strong></td><td>{ticket.ward.name}</td><td>{ticket.validatedAt ? new Date(ticket.validatedAt).toLocaleDateString("en-IN") : "Agency originated"}</td><td><span className={`state-chip ${ticket.inspectionDue ? "due" : ""}`}>{ticket.inspectionDue ? "Due" : ticket.state.replaceAll("_", " ")}</span></td><td><Link href={`/project-head/tickets/${ticket.id}`}>Open →</Link></td></tr>)}</tbody>
-        </table>
+      <section className="cv-ticket-grid">
+        {tickets.map((ticket) => <TicketCard category={ticket.category.name} date={ticket.validatedAt ?? ticket.createdAt} href={`/project-head/tickets/${ticket.id}`} id={ticket.id} key={ticket.id} meta={ticket.ward.name} status={ticket.inspectionDue ? "Inspection due" : ticket.state} title={ticket.title} />)}
         {tickets.length === 0 ? <div className="empty-state"><strong>No tickets match these filters.</strong><span>New validated work will appear here automatically.</span></div> : null}
       </section>
     </>

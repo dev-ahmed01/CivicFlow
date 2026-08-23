@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { EngineerProjectDetail, ProjectConflict, ProjectListItem, ProjectState } from "@civicos/shared";
 import * as ImagePicker from "expo-image-picker";
 import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -16,14 +16,14 @@ import {
   type LocalImage,
   type MobileNotification,
 } from "./api";
-import { PrimaryButton, ScreenHeader, SecondaryButton } from "./components";
+import { MobileTabBar, PrimaryButton, ScreenHeader, SecondaryButton, TicketCard, type MobileTab } from "./components";
 import { EngineerDependenciesApp } from "./engineer-dependencies";
 import { Shell } from "./screens";
-import { colors } from "./theme";
+import { internal as colors } from "./theme";
 import { NotificationsScreen } from "./notifications";
 import { registerForPushNotifications } from "./push-notifications";
 
-type EngineerScreen = "dashboard" | "mine" | "assigned" | "detail" | "timeline" | "geographic" | "completion" | "dependencies" | "notifications";
+type EngineerScreen = "dashboard" | "mine" | "assigned" | "detail" | "timeline" | "geographic" | "completion" | "dependencies" | "notifications" | "profile";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Please try again.";
@@ -56,7 +56,7 @@ export function EngineerLoginScreen({ onLogin, onCancel }: { onLogin: (auth: Cur
 }
 
 function ProjectCard({ project, canEdit, onOpen, onAccept }: { project: ProjectListItem; canEdit: boolean; onOpen: () => void; onAccept?: () => void }) {
-  return <View style={styles.card}><Pressable accessibilityRole="button" onPress={onOpen} style={styles.cardBody}><View style={styles.cardTop}><View style={styles.cardHeading}><Text style={styles.kicker}>{project.agency.name}</Text><Text style={styles.cardTitle}>{project.ticket?.title ?? "Standalone project"}</Text></View><Text style={styles.chip}>{stateLabel(project.state)}</Text></View><Text style={styles.meta}>{project.ticket?.ward.name ?? "Ward unavailable"} · {daysRemaining(project.plannedEnd)}</Text>{!canEdit ? <Text style={styles.readOnly}>Read-only · Owned by another engineer or agency</Text> : null}</Pressable>{onAccept ? <PrimaryButton onPress={onAccept}>Accept / Uptake</PrimaryButton> : null}</View>;
+  return <TicketCard id={project.ticket?.id ?? project.id} category={project.agency.name} status={project.state} relativeDate={daysRemaining(project.plannedEnd)} title={project.ticket?.title ?? "Standalone project"} meta={`${project.ticket?.ward.name ?? "Ward unavailable"}${canEdit ? "" : " · Read-only"}`} onPress={onOpen} action={onAccept ? <PrimaryButton onPress={onAccept}>Accept / uptake</PrimaryButton> : undefined} />;
 }
 
 function ProjectsScreen({ scope, auth, onBack, onOpen }: { scope: "mine" | "assigned" | "geographic"; auth: CurrentAuth; onBack: () => void; onOpen: (id: string) => void }) {
@@ -143,6 +143,10 @@ function ProjectDetailScreen({ projectId, onBack, onTimeline, onCompletion }: { 
   return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow={project.editable ? "Owned project" : "Geographic project · Read-only"} title={project.ticket?.title ?? "Project detail"} onBack={onBack} /><Text style={styles.chip}>{stateLabel(project.state)}</Text><View style={styles.card}><Text style={styles.kicker}>Ticket context</Text><Text style={styles.cardTitle}>{project.ticket?.category.name ?? "Category unavailable"}</Text><Text style={styles.meta}>{project.ticket?.address}</Text><Text style={styles.meta}>{project.ticket?.ward.name} · {project.agency.name}</Text></View><View style={styles.card}><Text style={styles.kicker}>Inspection report</Text>{project.ticket?.inspectionReports.length ? project.ticket.inspectionReports.map((report) => <View key={report.id}><Text style={styles.bodyText}>{report.notes}</Text><Text style={styles.meta}>{report.contentType}</Text></View>) : <Text style={styles.meta}>No uploaded inspection report.</Text>}</View><View style={styles.card}><Text style={styles.kicker}>Dependencies</Text>{project.dependencies.length ? project.dependencies.map((dependency) => <Text key={dependency.id} style={styles.bodyText}>{dependency.respondingAgency.name}: {dependency.requirement} ({stateLabel(dependency.state as ProjectState)})</Text>) : <Text style={styles.meta}>No dependencies recorded.</Text>}</View>{project.workDescription ? <View style={styles.card}><Text style={styles.kicker}>Execution</Text><Text style={styles.bodyText}>{project.workDescription}</Text><Text style={styles.meta}>{project.plannedStart ? new Date(project.plannedStart).toLocaleDateString() : "—"} – {project.plannedEnd ? new Date(project.plannedEnd).toLocaleDateString() : "—"}</Text></View> : null}{project.editable && project.state === "PENDING_UPTAKE" ? <PrimaryButton onPress={() => void accept()}>Accept / Uptake</PrimaryButton> : null}{project.editable && ["UPTAKEN", "ACTIVE", "MODIFIED"].includes(project.state) ? <SecondaryButton onPress={() => onTimeline(project)}>Edit timeline</SecondaryButton> : null}{project.editable && project.state === "ACTIVE" ? <><TextInput accessibilityLabel="Work note" multiline value={note} onChangeText={setNote} placeholder="Add a field update" placeholderTextColor={colors.muted} style={[styles.input, styles.textarea]}><Text /></TextInput><SecondaryButton onPress={() => void update(false)}>Add work note</SecondaryButton><PrimaryButton onPress={() => void update(true)}>Mark work completed</PrimaryButton></> : null}{project.editable && project.state === "COMPLETED" ? <PrimaryButton onPress={onCompletion}>Add completion evidence</PrimaryButton> : null}{!project.editable ? <Text style={styles.readOnly}>You can view this area project, but only its assigned engineer may edit it.</Text> : null}</ScrollView></Shell>;
 }
 
+function EngineerProfileScreen({ auth, onLogout }: { auth: CurrentAuth; onLogout: () => void }) {
+  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Account" title="Engineer profile" /><View style={styles.card}><Text style={styles.kicker}>Role</Text><Text style={styles.cardTitle}>Executive Engineer</Text><Text style={styles.meta}>Agency scope {auth.agencyId ?? "Unavailable"}</Text><Text style={styles.meta}>User {auth.userId.slice(0, 8)}</Text></View><View style={styles.card}><Text style={styles.kicker}>Access</Text><Text style={styles.bodyText}>Project editing is limited to work assigned to you within your agency. Geographic projects remain read-only.</Text></View><SecondaryButton onPress={onLogout}>Sign out</SecondaryButton></ScrollView></Shell>;
+}
+
 export function EngineerProjectsApp({ auth, onLogout }: { auth: CurrentAuth; onLogout: () => void }) {
   const [screen, setScreen] = useState<EngineerScreen>("dashboard");
   const [projectId, setProjectId] = useState<string>();
@@ -163,57 +167,62 @@ export function EngineerProjectsApp({ auth, onLogout }: { auth: CurrentAuth; onL
     if (typeof notification.payload.dependencyId === "string") { setScreen("dependencies"); return; }
     setScreen("dashboard");
   };
-  if (screen === "mine" || screen === "assigned" || screen === "geographic") return <ProjectsScreen scope={screen} auth={auth} onBack={() => setScreen("dashboard")} onOpen={openProject} />;
-  if (screen === "dependencies") return <EngineerDependenciesApp currentUserId={auth.userId} onBack={() => setScreen("dashboard")} />;
-  if (screen === "notifications") return <NotificationsScreen role="ENGINEER" onBack={() => setScreen("dashboard")} onOpen={openNotification} onViewed={() => setNotificationUnread(0)} />;
-  if (screen === "detail" && projectId) return <ProjectDetailScreen projectId={projectId} onBack={() => setScreen("dashboard")} onTimeline={(project) => { setTimelineProject(project); setScreen("timeline"); }} onCompletion={() => setScreen("completion")} />;
-  if (screen === "timeline" && timelineProject) return <TimelineScreen project={timelineProject} onBack={() => setScreen("detail")} onSaved={() => setScreen("detail")} />;
-  if (screen === "completion" && projectId) return <CompletionScreen projectId={projectId} onBack={() => setScreen("detail")} onSubmitted={() => { Alert.alert("Submitted", "The original citizen validators have been notified."); setScreen("detail"); }} />;
-  return <Shell><ScrollView contentContainerStyle={styles.content}><View style={styles.headerRow}><View><Text style={styles.kicker}>Executive Engineer</Text><Text style={styles.heading}>Field operations</Text></View><Pressable onPress={onLogout}><Text style={styles.logout}>Sign out</Text></Pressable></View><Text style={styles.intro}>Accept assigned work, set execution timelines, coordinate dependencies, and submit completion evidence.</Text><View style={styles.dashboardGrid}><Pressable onPress={() => setScreen("mine")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>◷</Text><Text style={styles.cardTitle}>My Projects</Text><Text style={styles.meta}>Ongoing work and updates</Text></Pressable><Pressable onPress={() => setScreen("assigned")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>↓</Text><Text style={styles.cardTitle}>Assigned Work</Text><Text style={styles.meta}>Uptake queue</Text></Pressable><Pressable onPress={() => setScreen("geographic")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>⌖</Text><Text style={styles.cardTitle}>Area Projects</Text><Text style={styles.meta}>Filterable list view</Text></Pressable><Pressable onPress={() => setScreen("dependencies")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>↔</Text><Text style={styles.cardTitle}>Dependencies</Text><Text style={styles.meta}>Agency coordination</Text></Pressable><Pressable onPress={() => setScreen("notifications")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>♢</Text><Text style={styles.cardTitle}>Notifications{notificationUnread > 0 ? ` (${notificationUnread})` : ""}</Text><Text style={styles.meta}>Assignments, conflicts, and completion</Text></Pressable></View></ScrollView></Shell>;
+  const tabs: MobileTab[] = [{ id: "dashboard", label: "Home", icon: "⌂" }, { id: "mine", label: "Work", icon: "□" }, { id: "geographic", label: "Area", icon: "⌖" }, { id: "notifications", label: notificationUnread ? `Updates ${notificationUnread}` : "Updates", icon: "◇" }, { id: "profile", label: "Profile", icon: "○" }];
+  const activeTab = ["mine", "assigned", "detail", "timeline", "completion", "dependencies"].includes(screen) ? "mine" : screen;
+  const withNavigation = (content: ReactNode) => <View style={styles.app}><View style={styles.stage}>{content}</View><View style={styles.tabInset}><MobileTabBar active={activeTab} items={tabs} onSelect={(id) => setScreen(id as EngineerScreen)} /></View></View>;
+  if (screen === "mine" || screen === "assigned" || screen === "geographic") return withNavigation(<ProjectsScreen scope={screen} auth={auth} onBack={() => setScreen("dashboard")} onOpen={openProject} />);
+  if (screen === "dependencies") return withNavigation(<EngineerDependenciesApp currentUserId={auth.userId} onBack={() => setScreen("dashboard")} />);
+  if (screen === "notifications") return withNavigation(<NotificationsScreen role="ENGINEER" onBack={() => setScreen("dashboard")} onOpen={openNotification} onViewed={() => setNotificationUnread(0)} />);
+  if (screen === "profile") return withNavigation(<EngineerProfileScreen auth={auth} onLogout={onLogout} />);
+  if (screen === "detail" && projectId) return withNavigation(<ProjectDetailScreen projectId={projectId} onBack={() => setScreen("dashboard")} onTimeline={(project) => { setTimelineProject(project); setScreen("timeline"); }} onCompletion={() => setScreen("completion")} />);
+  if (screen === "timeline" && timelineProject) return withNavigation(<TimelineScreen project={timelineProject} onBack={() => setScreen("detail")} onSaved={() => setScreen("detail")} />);
+  if (screen === "completion" && projectId) return withNavigation(<CompletionScreen projectId={projectId} onBack={() => setScreen("detail")} onSubmitted={() => { Alert.alert("Submitted", "The original citizen validators have been notified."); setScreen("detail"); }} />);
+  return withNavigation(<Shell><ScrollView contentContainerStyle={styles.content}><View style={styles.headerRow}><View><Text style={styles.kicker}>Executive Engineer</Text><Text style={styles.heading}>Field operations</Text></View><Pressable onPress={onLogout}><Text style={styles.logout}>Sign out</Text></Pressable></View><Text style={styles.intro}>Accept assigned work, set execution timelines, coordinate dependencies, and submit completion evidence.</Text><View style={styles.dashboardGrid}><Pressable onPress={() => setScreen("mine")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>◷</Text><Text style={styles.cardTitle}>My projects</Text><Text style={styles.meta}>Ongoing work and updates</Text></Pressable><Pressable onPress={() => setScreen("assigned")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>↓</Text><Text style={styles.cardTitle}>Assigned work</Text><Text style={styles.meta}>Uptake queue</Text></Pressable><Pressable onPress={() => setScreen("geographic")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>⌖</Text><Text style={styles.cardTitle}>Area projects</Text><Text style={styles.meta}>Filterable list view</Text></Pressable><Pressable onPress={() => setScreen("dependencies")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>↔</Text><Text style={styles.cardTitle}>Dependencies</Text><Text style={styles.meta}>Agency coordination</Text></Pressable><Pressable onPress={() => setScreen("notifications")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>♢</Text><Text style={styles.cardTitle}>Notifications{notificationUnread > 0 ? ` (${notificationUnread})` : ""}</Text><Text style={styles.meta}>Assignments, conflicts, and completion</Text></Pressable></View></ScrollView></Shell>);
 }
 
 const styles = StyleSheet.create({
+  app: { backgroundColor: colors.canvas, flex: 1 }, stage: { flex: 1 }, tabInset: { backgroundColor: colors.canvas, paddingBottom: 8, paddingHorizontal: 12 },
   screen: { flex: 1, gap: 12, padding: 20, paddingTop: 28 },
   content: { flexGrow: 1, gap: 16, padding: 22, paddingTop: 30 },
   loader: { flex: 1 },
   headerRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  heading: { color: colors.ink, fontSize: 32, fontWeight: "900", marginTop: 5 },
-  kicker: { color: colors.primary, fontSize: 12, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" },
+  heading: { color: colors.ink, fontSize: 22, fontWeight: "500", marginTop: 5 },
+  kicker: { color: colors.primary, fontSize: 12, fontWeight: "500" },
   intro: { color: colors.muted, fontSize: 16, lineHeight: 23 },
-  logout: { color: colors.primary, fontWeight: "800" },
+  logout: { color: colors.primary, fontWeight: "500" },
   dashboardGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  dashboardCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, gap: 7, minHeight: 150, padding: 17, width: "47%" },
-  dashboardIcon: { color: colors.primary, fontSize: 28, fontWeight: "900" },
+  dashboardCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 12, borderWidth: 1, gap: 7, minHeight: 140, padding: 17, width: "47%" },
+  dashboardIcon: { color: colors.primary, fontSize: 22, fontWeight: "500" },
   list: { gap: 12, paddingBottom: 36 },
-  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, gap: 12, padding: 17 },
+  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 12, borderWidth: 1, gap: 12, padding: 17 },
   cardBody: { gap: 12 },
   cardTop: { alignItems: "flex-start", flexDirection: "row", gap: 10, justifyContent: "space-between" },
   cardHeading: { flex: 1, gap: 5 },
-  cardTitle: { color: colors.ink, fontSize: 17, fontWeight: "900" },
-  chip: { alignSelf: "flex-start", backgroundColor: colors.primarySoft, borderRadius: 14, color: colors.primary, fontSize: 10, fontWeight: "900", overflow: "hidden", paddingHorizontal: 9, paddingVertical: 6 },
+  cardTitle: { color: colors.ink, fontSize: 16, fontWeight: "500" },
+  chip: { alignSelf: "flex-start", backgroundColor: colors.infoBg, borderRadius: 20, color: colors.infoText, fontSize: 12, fontWeight: "500", overflow: "hidden", paddingHorizontal: 9, paddingVertical: 6 },
   meta: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   bodyText: { color: colors.ink, fontSize: 15, lineHeight: 22, marginTop: 7 },
-  readOnly: { backgroundColor: "#EEF2F0", borderRadius: 10, color: colors.muted, fontSize: 12, fontWeight: "700", padding: 10 },
+  readOnly: { backgroundColor: colors.surfaceAlt, borderRadius: 10, color: colors.muted, fontSize: 12, fontWeight: "500", padding: 10 },
   filters: { gap: 8, paddingBottom: 8 },
   filter: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, paddingHorizontal: 13, paddingVertical: 8 },
   filterActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  filterText: { color: colors.muted, fontSize: 12, fontWeight: "800" },
-  filterTextActive: { color: "white", fontSize: 12, fontWeight: "800" },
+  filterText: { color: colors.muted, fontSize: 12, fontWeight: "500" },
+  filterTextActive: { color: colors.surface, fontSize: 12, fontWeight: "500" },
   empty: { color: colors.muted, paddingVertical: 40, textAlign: "center" },
   input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.ink, fontSize: 16, paddingHorizontal: 15, paddingVertical: 13 },
   textarea: { minHeight: 110, textAlignVertical: "top" },
-  label: { color: colors.ink, fontSize: 13, fontWeight: "800", marginBottom: -10 },
+  label: { color: colors.ink, fontSize: 14, fontWeight: "500", marginBottom: -10 },
   error: { color: colors.danger, fontSize: 14 },
   demo: { color: colors.muted, fontSize: 12, textAlign: "center" },
   photo: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderStyle: "dashed", borderWidth: 2, height: 280, justifyContent: "center", overflow: "hidden" },
   photoImage: { height: "100%", width: "100%" },
-  photoPrompt: { color: colors.primary, fontSize: 17, fontWeight: "900" },
-  conflictBackdrop: { backgroundColor: "rgba(10, 28, 23, 0.45)", flex: 1, justifyContent: "flex-end" },
-  conflictSheet: { backgroundColor: "#FFFDF8", borderTopLeftRadius: 26, borderTopRightRadius: 26, gap: 14, maxHeight: "82%", padding: 22, paddingBottom: 30 },
-  conflictTitle: { color: colors.ink, fontSize: 25, fontWeight: "900" },
+  photoPrompt: { color: colors.primary, fontSize: 16, fontWeight: "500" },
+  conflictBackdrop: { backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" },
+  conflictSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 26, borderTopRightRadius: 26, gap: 14, maxHeight: "82%", padding: 22, paddingBottom: 30 },
+  conflictTitle: { color: colors.ink, fontSize: 22, fontWeight: "500" },
   conflictIntro: { color: colors.muted, fontSize: 14, lineHeight: 21 },
   conflictList: { gap: 10 },
-  conflictItem: { backgroundColor: "#FBF1DE", borderColor: "#E7CD98", borderLeftColor: "#D5AA52", borderLeftWidth: 4, borderRadius: 14, borderWidth: 1, gap: 5, padding: 14 },
-  conflictProminent: { borderLeftColor: "#B68012", borderLeftWidth: 8 },
-  conflictSeverity: { color: "#8A6416", fontSize: 10, fontWeight: "900", letterSpacing: 0.7, textTransform: "uppercase" },
+  conflictItem: { backgroundColor: colors.warningBg, borderColor: colors.warningText, borderLeftColor: colors.warningText, borderLeftWidth: 4, borderRadius: 12, borderWidth: 1, gap: 5, padding: 14 },
+  conflictProminent: { borderLeftColor: colors.warningText, borderLeftWidth: 8 },
+  conflictSeverity: { color: colors.warningText, fontSize: 12, fontWeight: "500" },
 });

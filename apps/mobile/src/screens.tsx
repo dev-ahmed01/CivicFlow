@@ -4,13 +4,30 @@ import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
 import { ActivityIndicator, FlatList, Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import type { LocalImage } from "./api";
-import { PrimaryButton, ScreenHeader, SecondaryButton } from "./components";
-import { colors } from "./theme";
+import { requestCitizenOtp, verifyCitizenOtp, type CurrentAuth, type LocalImage } from "./api";
+import { CategoryGrid, PrimaryButton, ScreenHeader, SecondaryButton, StatusChip, TicketCard } from "./components";
+import { colors, fontWeights, radii, typeScale } from "./theme";
 
 export function Shell({ children }: { children: ReactNode }) { return <SafeAreaView style={styles.safe}><View style={styles.shell}>{children}</View></SafeAreaView>; }
 
-export function HomeScreen({ notificationUnread, onNotifications, onReport, onTickets, onValidations, onCompletionValidations, onEngineerLogin }: { notificationUnread: number; onNotifications: () => void; onReport: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void; onCompletionValidations: () => void; onEngineerLogin: () => void }) {
+export function CitizenLoginScreen({ onAuthenticated, onBack }: { onAuthenticated: (auth: CurrentAuth) => void; onBack: () => void }) {
+  const [phone, setPhone] = useState("+919876543210");
+  const [code, setCode] = useState("");
+  const [step, setStep] = useState<"phone" | "code">("phone");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const submit = async () => {
+    setBusy(true); setError(undefined);
+    try {
+      if (step === "phone") { await requestCitizenOtp(phone); setStep("code"); }
+      else onAuthenticated(await verifyCitizenOtp(phone, code));
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not sign in"); }
+    finally { setBusy(false); }
+  };
+  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow={step === "phone" ? "Citizen sign in" : "Verify phone"} title={step === "phone" ? "Your city, one tap away" : "Enter the 6-digit code"} onBack={step === "code" ? () => setStep("phone") : onBack} /><Text style={styles.body}>{step === "phone" ? "Use your verified mobile number to report issues and follow their progress." : `We sent a one-time code to ${phone}.`}</Text>{step === "phone" ? <TextInput accessibilityLabel="Mobile number" keyboardType="phone-pad" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" placeholderTextColor={colors.muted} style={styles.input} /> : <TextInput accessibilityLabel="One-time code" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} placeholder="6-digit code" placeholderTextColor={colors.muted} style={styles.input} />}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (step === "phone" ? phone.length < 10 : code.length !== 6)} onPress={() => void submit()}>{busy ? "Please wait…" : step === "phone" ? "Send verification code" : "Verify and continue"}</PrimaryButton>{step === "code" ? <SecondaryButton disabled={busy} onPress={() => void requestCitizenOtp(phone)}>Send a new code</SecondaryButton> : null}</ScrollView></Shell>;
+}
+
+export function HomeScreen({ signedIn, onSignIn, onReport, onTickets, onValidations, onCompletionValidations, onEngineerLogin }: { signedIn: boolean; onSignIn: () => void; onReport: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void; onCompletionValidations: () => void; onEngineerLogin: () => void }) {
   return <Shell><ScrollView contentContainerStyle={styles.content}>
     <View style={styles.brand}><Text style={styles.brandMark}>C</Text><Text style={styles.brandName}>CivicOS</Text></View>
     <View style={styles.hero}><Text style={styles.kicker}>Your city, heard</Text><Text style={styles.heroTitle}>Spot a civic issue?</Text><Text style={styles.body}>Share a photo and location. We’ll keep you updated in plain language.</Text><PrimaryButton onPress={onReport}>Report an Issue</PrimaryButton></View>
@@ -19,19 +36,22 @@ export function HomeScreen({ notificationUnread, onNotifications, onReport, onTi
     <Text style={styles.sectionTitle}>My tickets</Text><View style={styles.row}>
       <Pressable style={styles.statCard} onPress={() => onTickets("ongoing")}><Text style={styles.statIcon}>◷</Text><Text style={styles.cardTitle}>Ongoing</Text><Text style={styles.cardHint}>Track current reports</Text></Pressable>
       <Pressable style={styles.statCard} onPress={() => onTickets("past")}><Text style={styles.statIcon}>✓</Text><Text style={styles.cardTitle}>Past</Text><Text style={styles.cardHint}>See closed reports</Text></Pressable>
-    </View><SecondaryButton onPress={onEngineerLogin}>Executive Engineer sign in</SecondaryButton>
-    <View accessibilityRole="tablist" style={styles.mobileTabs}><View accessibilityRole="tab" accessibilityState={{ selected: true }} style={[styles.mobileTab, styles.mobileTabActive]}><Text style={styles.mobileTabTextActive}>Home</Text></View><Pressable accessibilityRole="tab" accessibilityState={{ selected: false }} onPress={onNotifications} style={styles.mobileTab}><Text style={styles.mobileTabText}>Notifications{notificationUnread > 0 ? ` (${notificationUnread})` : ""}</Text></Pressable></View>
+    </View>{!signedIn ? <PrimaryButton onPress={onSignIn}>Sign in with phone</PrimaryButton> : null}<SecondaryButton onPress={onEngineerLogin}>Executive Engineer sign in</SecondaryButton>
   </ScrollView></Shell>;
+}
+
+export function CitizenProfileScreen({ signedIn, onSignIn, onSignOut }: { signedIn: boolean; onSignIn: () => void; onSignOut: () => void }) {
+  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Account" title="Citizen profile" /><View style={styles.ticketCard}><Text style={styles.cardTitle}>{signedIn ? "Phone verified" : "Sign in to continue"}</Text><Text style={styles.body}>{signedIn ? "Your reports and verification activity stay connected to your verified account." : "A verified phone number is required before reporting or reviewing nearby work."}</Text></View><View style={styles.ticketCard}><Text style={styles.kicker}>Privacy</Text><Text style={styles.body}>CivicOS shows public outcomes without exposing citizen names or individual account details.</Text></View>{signedIn ? <SecondaryButton onPress={onSignOut}>Sign out</SecondaryButton> : <PrimaryButton onPress={onSignIn}>Sign in with phone</PrimaryButton>}</ScrollView></Shell>;
 }
 
 export function CategoryScreen({ categories, selectedId, onSelect, onBack, loading, error }: { categories: CategorySummary[]; selectedId?: string; onSelect: (category: CategorySummary) => void; onBack: () => void; loading: boolean; error?: string }) {
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => categories.filter((category) => category.name.toLowerCase().includes(query.toLowerCase())), [categories, query]);
-  return <Shell><View style={styles.content}><ScreenHeader eyebrow="Step 1 of 4" title="What needs attention?" onBack={onBack} />
+  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Step 1 of 4" title="What needs attention?" onBack={onBack} />
     <TextInput accessibilityLabel="Search issue categories" placeholder="Search issue types" placeholderTextColor={colors.muted} value={query} onChangeText={setQuery} style={styles.input} />
     {loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}
-    <FlatList data={filtered} numColumns={2} keyExtractor={(item) => item.id} columnWrapperStyle={styles.gridRow} contentContainerStyle={styles.grid} renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityState={{ selected: item.id === selectedId }} onPress={() => onSelect(item)} style={[styles.categoryCard, item.id === selectedId && styles.categorySelected]}><View style={styles.categoryIcon}><Text style={styles.categoryIconText}>{item.name.slice(0, 1)}</Text></View><Text style={styles.categoryName}>{item.name}</Text></Pressable>} />
-  </View></Shell>;
+    <CategoryGrid categories={filtered} selectedId={selectedId} onSelect={onSelect} />
+  </ScrollView></Shell>;
 }
 
 function normalizeAsset(asset: ImagePicker.ImagePickerAsset): LocalImage {
@@ -64,8 +84,8 @@ export function LocationScreen({ value, onChange, onNext, onBack }: { value?: Co
 
 export function RetakeScreen({ message, attemptsRemaining, onRetake }: { message: string; attemptsRemaining: number; onRetake: () => void }) { return <Shell><View style={[styles.content, styles.centered]}><View style={styles.feedbackIcon}><Text style={styles.feedbackIconText}>↻</Text></View><ScreenHeader title="Let’s try a clearer photo" /><Text style={[styles.body, styles.centerText]}>{message}</Text><Text style={styles.hint}>{attemptsRemaining} photo {attemptsRemaining === 1 ? "try" : "tries"} remaining before we send it for a person to review.</Text><PrimaryButton onPress={onRetake}>Retake Photo</PrimaryButton></View></Shell>; }
 export function ConfirmationScreen({ ticket, onView, onDone }: { ticket: CitizenTicketSummary; onView: () => void; onDone: () => void }) { return <Shell><View style={[styles.content, styles.centered]}><View style={styles.success}><Text style={styles.successText}>✓</Text></View><Text style={styles.kicker}>Report submitted</Text><Text style={[styles.heroTitle, styles.centerText]}>{ticket.title}</Text><View style={styles.idCard}><Text style={styles.hint}>Ticket ID</Text><Text selectable style={styles.ticketId}>{ticket.id}</Text></View><PrimaryButton onPress={onView}>View Ticket</PrimaryButton><SecondaryButton onPress={onDone}>Done</SecondaryButton></View></Shell>; }
-export function TicketDetailScreen({ ticket, onDone }: { ticket: CitizenTicketSummary; onDone: () => void }) { return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader title={ticket.title} onBack={onDone} /><Text style={styles.status}>{ticket.statusLabel}</Text><View style={styles.ticketCard}><Text style={styles.kicker}>{ticket.category.name}</Text><Text style={styles.body}>{ticket.address}</Text><Text style={styles.hint}>Ticket ID</Text><Text selectable style={styles.ticketId}>{ticket.id}</Text><Text style={styles.cardHint}>{ticket.observationCount} community {ticket.observationCount === 1 ? "report" : "reports"}</Text></View><PrimaryButton onPress={onDone}>Done</PrimaryButton></ScrollView></Shell>; }
-export function TicketsScreen({ filter, tickets, loading, error, onBack }: { filter: "ongoing" | "past"; tickets: CitizenTicketSummary[]; loading: boolean; error?: string; onBack: () => void }) { return <Shell><View style={styles.content}><ScreenHeader title={filter === "ongoing" ? "Ongoing tickets" : "Past tickets"} onBack={onBack} />{loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}<FlatList data={tickets} keyExtractor={(item) => item.id} ListEmptyComponent={!loading ? <Text style={styles.body}>No {filter} tickets yet.</Text> : null} renderItem={({ item }) => <View style={styles.ticketCard}><View style={styles.ticketTop}><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.status}>{item.statusLabel}</Text></View><Text style={styles.cardHint}>{item.category.name} · {item.address}</Text><Text style={styles.hint}>{item.observationCount} community {item.observationCount === 1 ? "report" : "reports"}</Text></View>} /></View></Shell>; }
+export function TicketDetailScreen({ ticket, onDone }: { ticket: CitizenTicketSummary; onDone: () => void }) { return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader title={ticket.title} onBack={onDone} /><StatusChip label={ticket.statusLabel} /><TicketCard id={ticket.id} category={ticket.category.name} status={ticket.statusLabel} relativeDate={new Date(ticket.createdAt).toLocaleDateString("en-IN")} meta={`${ticket.address} · ${ticket.observationCount} community ${ticket.observationCount === 1 ? "report" : "reports"}`} /><PrimaryButton onPress={onDone}>Done</PrimaryButton></ScrollView></Shell>; }
+export function TicketsScreen({ filter, tickets, loading, error, onBack, onOpen }: { filter: "ongoing" | "past"; tickets: CitizenTicketSummary[]; loading: boolean; error?: string; onBack: () => void; onOpen: (ticket: CitizenTicketSummary) => void }) { return <Shell><View style={styles.content}><ScreenHeader title={filter === "ongoing" ? "Ongoing tickets" : "Past tickets"} onBack={onBack} />{loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}<FlatList data={tickets} keyExtractor={(item) => item.id} ListEmptyComponent={!loading ? <Text style={styles.body}>No {filter} tickets yet.</Text> : null} renderItem={({ item }) => <TicketCard id={item.id} category={item.category.name} status={item.statusLabel} relativeDate={new Date(item.createdAt).toLocaleDateString("en-IN")} title={item.title} meta={item.address} onPress={() => onOpen(item)} />} /></View></Shell>; }
 
 export function VerificationListScreen({ validations, loading, error, onBack, onOpen }: { validations: PendingValidation[]; loading: boolean; error?: string; onBack: () => void; onOpen: (validation: PendingValidation) => void }) {
   return <Shell><View style={styles.content}><ScreenHeader eyebrow="Community verification" title="Issues near you" onBack={onBack} />{loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}<FlatList data={validations} keyExtractor={(item) => item.ticketId} ListEmptyComponent={!loading ? <Text style={styles.body}>No nearby requests need your help right now.</Text> : null} renderItem={({ item }) => <Pressable accessibilityRole="button" onPress={() => onOpen(item)} style={styles.ticketCard}><Text style={styles.kicker}>{item.category.name}</Text><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.cardHint}>{Math.round(item.distanceMeters)} m away</Text></Pressable>} /></View></Shell>;
@@ -94,26 +114,19 @@ const styles = StyleSheet.create({
   shell: { flex: 1 },
   content: { flexGrow: 1, gap: 18, padding: 22, paddingTop: 30 },
   brand: { alignItems: "center", flexDirection: "row", gap: 10 },
-  brandMark: { backgroundColor: colors.primary, borderRadius: 12, color: "white", fontSize: 22, fontWeight: "900", overflow: "hidden", paddingHorizontal: 12, paddingVertical: 7 },
-  brandName: { color: colors.ink, fontSize: 21, fontWeight: "900" },
+  brandMark: { backgroundColor: colors.primarySoft, borderRadius: 12, color: colors.primary, fontSize: 22, fontWeight: "500", overflow: "hidden", paddingHorizontal: 12, paddingVertical: 7 },
+  brandName: { color: colors.ink, fontSize: 22, fontWeight: "500" },
   hero: { backgroundColor: colors.surface, borderRadius: 26, gap: 16, marginTop: 28, padding: 24 },
-  kicker: { color: colors.primary, fontSize: 14, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" },
-  heroTitle: { color: colors.ink, fontSize: 36, fontWeight: "900", letterSpacing: -1 },
-  body: { color: colors.muted, fontSize: 17, lineHeight: 25 },
-  sectionTitle: { color: colors.ink, fontSize: 21, fontWeight: "900", marginTop: 12 },
+  kicker: { color: colors.primary, fontSize: 12, fontWeight: "500" },
+  heroTitle: { color: colors.ink, fontSize: 22, fontWeight: "500" },
+  body: { color: colors.muted, fontSize: 16, lineHeight: 24 },
+  sectionTitle: { color: colors.ink, fontSize: 18, fontWeight: "500", marginTop: 12 },
   row: { flexDirection: "row", gap: 12 },
-  statCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderWidth: 1, flex: 1, gap: 6, padding: 18 },
-  statIcon: { color: colors.primary, fontSize: 28, fontWeight: "800" },
-  cardTitle: { color: colors.ink, flexShrink: 1, fontSize: 17, fontWeight: "800" },
+  statCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, gap: 6, padding: 18 },
+  statIcon: { color: colors.primary, fontSize: 22, fontWeight: "500" },
+  cardTitle: { color: colors.ink, flexShrink: 1, fontSize: 16, fontWeight: "500" },
   cardHint: { color: colors.muted, fontSize: 14, lineHeight: 20 },
   input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 15, borderWidth: 1, color: colors.ink, fontSize: 16, paddingHorizontal: 16, paddingVertical: 14 },
-  grid: { gap: 12, paddingBottom: 120 },
-  gridRow: { gap: 12 },
-  categoryCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, flex: 1, gap: 12, marginBottom: 12, minHeight: 130, padding: 17 },
-  categorySelected: { backgroundColor: colors.primarySoft, borderColor: colors.primary, borderWidth: 2 },
-  categoryIcon: { alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 22, height: 44, justifyContent: "center", width: 44 },
-  categoryIconText: { color: colors.primary, fontSize: 20, fontWeight: "900" },
-  categoryName: { color: colors.ink, fontSize: 16, fontWeight: "800" },
   photoTile: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderStyle: "dashed", borderWidth: 2, justifyContent: "center", overflow: "hidden" },
   primaryPhoto: { height: 260 },
   photo: { height: "100%", width: "100%" },
@@ -123,34 +136,29 @@ const styles = StyleSheet.create({
   loadingBox: { alignItems: "center", gap: 12, padding: 30 },
   map: { borderRadius: 22, height: 300, overflow: "hidden" },
   addressInput: { minHeight: 74, textAlignVertical: "top" },
-  notice: { backgroundColor: "#FFF4D8", borderRadius: 12, color: "#71520D", fontSize: 14, lineHeight: 20, padding: 13 },
+  notice: { backgroundColor: colors.warningBg, borderRadius: radii.card, color: colors.warningText, fontSize: typeScale.body, lineHeight: 20, padding: 13 },
   centered: { justifyContent: "center" },
   centerText: { textAlign: "center" },
-  feedbackIcon: { alignItems: "center", alignSelf: "center", backgroundColor: "#FFF4D8", borderRadius: 40, height: 80, justifyContent: "center", width: 80 },
-  feedbackIconText: { color: "#8C6200", fontSize: 38, fontWeight: "800" },
+  feedbackIcon: { alignItems: "center", alignSelf: "center", backgroundColor: colors.warningBg, borderRadius: 40, height: 80, justifyContent: "center", width: 80 },
+  feedbackIconText: { color: colors.warningText, fontSize: 38, fontWeight: fontWeights.medium },
   hint: { color: colors.muted, fontSize: 13, lineHeight: 19, textAlign: "center" },
   error: { color: colors.danger, fontSize: 15, lineHeight: 21 },
   success: { alignItems: "center", alignSelf: "center", backgroundColor: colors.primarySoft, borderRadius: 44, height: 88, justifyContent: "center", width: 88 },
-  successText: { color: colors.primary, fontSize: 42, fontWeight: "900" },
+  successText: { color: colors.primary, fontSize: 22, fontWeight: "500" },
   idCard: { alignItems: "center", backgroundColor: colors.surface, borderRadius: 18, gap: 8, padding: 18 },
-  ticketId: { color: colors.ink, fontSize: 15, fontWeight: "800" },
+  ticketId: { color: colors.ink, fontSize: 14, fontWeight: "500" },
   ticketCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, gap: 10, marginBottom: 12, padding: 18 },
   ticketTop: { alignItems: "flex-start", flexDirection: "row", gap: 10, justifyContent: "space-between" },
-  status: { backgroundColor: colors.primarySoft, borderRadius: 20, color: colors.primary, fontSize: 12, fontWeight: "800", overflow: "hidden", paddingHorizontal: 10, paddingVertical: 6 },
+  status: { backgroundColor: colors.successBg, borderRadius: 20, color: colors.successText, fontSize: 12, fontWeight: "500", overflow: "hidden", paddingHorizontal: 10, paddingVertical: 6 },
   validationBanner: { alignItems: "center", backgroundColor: colors.primarySoft, borderColor: colors.primary, borderRadius: 22, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", padding: 18 },
   bannerArrow: { color: colors.primary, fontSize: 34, fontWeight: "500" },
-  mobileTabs: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 16, borderWidth: 1, flexDirection: "row", marginTop: 8, padding: 4 },
-  mobileTab: { alignItems: "center", borderRadius: 12, flex: 1, paddingVertical: 11 },
-  mobileTabActive: { backgroundColor: colors.primary },
-  mobileTabText: { color: colors.muted, fontSize: 13, fontWeight: "800" },
-  mobileTabTextActive: { color: "white", fontSize: 13, fontWeight: "800" },
   validationPhoto: { backgroundColor: colors.surface, borderRadius: 22, height: 320, overflow: "hidden" },
   validationActions: { gap: 12 },
   voteButton: { alignItems: "center", borderRadius: 16, borderWidth: 1.5, padding: 16 },
   voteConfirm: { backgroundColor: colors.primary, borderColor: colors.primary },
   voteNeutral: { backgroundColor: colors.surface, borderColor: colors.border },
-  voteReject: { backgroundColor: "#FFF1F1", borderColor: colors.danger },
-  voteLabel: { color: colors.ink, fontSize: 16, fontWeight: "800" },
+  voteReject: { backgroundColor: colors.dangerBg, borderColor: colors.danger },
+  voteLabel: { color: colors.ink, fontSize: 16, fontWeight: "500" },
   voteConfirmLabel: { color: colors.surface },
   voteRejectLabel: { color: colors.danger },
   disabled: { opacity: 0.45 },

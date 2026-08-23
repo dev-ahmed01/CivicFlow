@@ -3,11 +3,12 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import type { PendingValidation, SubmitValidationResult, ValidationVote } from "@civicos/shared";
+import { getCitizenAccessToken } from "../_lib/citizen-auth";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-const accessToken = process.env.NEXT_PUBLIC_ACCESS_TOKEN ?? "";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const accessToken = getCitizenAccessToken();
   const response = await fetch(`${apiUrl}${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...init?.headers },

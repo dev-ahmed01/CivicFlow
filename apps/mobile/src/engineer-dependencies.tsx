@@ -3,7 +3,7 @@ import type { DependencyListItem, DependencyResponse } from "@civicos/shared";
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { loadDependencies, respondToDependency } from "./api";
 import { Shell } from "./screens";
-import { colors } from "./theme";
+import { internal as colors } from "./theme";
 
 type Direction = "received" | "sent";
 
@@ -96,31 +96,31 @@ export function EngineerDependenciesApp({ currentUserId, onBack }: { currentUser
 const styles = StyleSheet.create({
   screen: { flex: 1, gap: 16, padding: 20, paddingTop: 28 },
   header: { gap: 6 },
-  back: { color: colors.primary, fontSize: 16, fontWeight: "800", marginBottom: 8 },
-  eyebrow: { color: colors.primary, fontSize: 13, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" },
-  heading: { color: colors.ink, fontSize: 32, fontWeight: "900" },
+  back: { color: colors.primary, fontSize: 14, fontWeight: "500", marginBottom: 8 },
+  eyebrow: { color: colors.primary, fontSize: 12, fontWeight: "500" },
+  heading: { color: colors.ink, fontSize: 22, fontWeight: "500" },
   intro: { color: colors.muted, fontSize: 15, lineHeight: 22 },
   tabs: { backgroundColor: colors.surface, borderRadius: 14, flexDirection: "row", padding: 4 },
   tab: { alignItems: "center", borderRadius: 11, flex: 1, paddingVertical: 11 },
   tabActive: { backgroundColor: colors.primary },
-  tabLabel: { color: colors.muted, fontSize: 15, fontWeight: "800" },
+  tabLabel: { color: colors.muted, fontSize: 14, fontWeight: "500" },
   tabLabelActive: { color: "white" },
   list: { gap: 12, paddingBottom: 36 },
-  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, gap: 12, padding: 17 },
+  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 12, borderWidth: 1, gap: 12, padding: 17 },
   cardTop: { alignItems: "flex-start", flexDirection: "row", gap: 10, justifyContent: "space-between" },
   cardHeading: { flex: 1, gap: 3 },
-  ticket: { color: colors.primary, fontSize: 12, fontWeight: "900" },
-  title: { color: colors.ink, fontSize: 17, fontWeight: "900" },
-  badge: { backgroundColor: colors.primarySoft, borderRadius: 14, color: colors.primary, fontSize: 10, fontWeight: "900", overflow: "hidden", paddingHorizontal: 8, paddingVertical: 5 },
-  badgeWarning: { backgroundColor: "#FFF4D8", color: "#71520D" },
+  ticket: { color: colors.primary, fontSize: 12, fontWeight: "500" },
+  title: { color: colors.ink, fontSize: 16, fontWeight: "500" },
+  badge: { backgroundColor: colors.infoBg, borderRadius: 20, color: colors.infoText, fontSize: 12, fontWeight: "500", overflow: "hidden", paddingHorizontal: 8, paddingVertical: 5 },
+  badgeWarning: { backgroundColor: colors.warningBg, color: colors.warningText },
   requirement: { color: colors.ink, fontSize: 15, lineHeight: 22 },
   meta: { color: colors.muted, fontSize: 12 },
-  countdown: { color: "#71520D", fontSize: 13, fontWeight: "800" },
+  countdown: { color: colors.warningText, fontSize: 13, fontWeight: "500" },
   actions: { gap: 8 },
   action: { alignItems: "center", borderColor: colors.primary, borderRadius: 12, borderWidth: 1, padding: 11 },
-  actionLabel: { color: colors.primary, fontSize: 14, fontWeight: "800" },
+  actionLabel: { color: colors.primary, fontSize: 14, fontWeight: "500" },
   fulfill: { alignItems: "center", backgroundColor: colors.primary, borderRadius: 12, padding: 12 },
-  fulfillLabel: { color: "white", fontSize: 14, fontWeight: "900" },
+  fulfillLabel: { color: colors.surface, fontSize: 14, fontWeight: "500" },
   pressed: { opacity: 0.75 },
   disabled: { opacity: 0.5 },
   error: { color: colors.danger, fontSize: 14 },

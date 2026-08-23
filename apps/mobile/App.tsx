@@ -2,14 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 import type { CategorySummary, CitizenTicketSummary, CompletionVerificationDecision, PendingCompletionVerification, PendingValidation, ValidationVote } from "@civicos/shared";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { clearInternalSession, loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, submitReport, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
+import { clearCitizenSession, clearInternalSession, loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, submitReport, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
 import { EngineerLoginScreen, EngineerProjectsApp } from "./src/engineer-projects";
-import { CategoryScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type ConfirmedLocation } from "./src/screens";
+import { CategoryScreen, CitizenLoginScreen, CitizenProfileScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type ConfirmedLocation } from "./src/screens";
 import { colors } from "./src/theme";
 import { NotificationsScreen } from "./src/notifications";
 import { registerForPushNotifications } from "./src/push-notifications";
+import { DesignSystemProvider, MobileTabBar, type MobileTab } from "./src/components";
 
-type Screen = "home" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "engineer-login";
+type Screen = "home" | "citizen-login" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "profile" | "engineer-login";
 
 export default function App() {
   const [viewerRole, setViewerRole] = useState<"ENGINEER" | "OTHER" | "LOADING">("LOADING");
@@ -64,8 +65,8 @@ export default function App() {
     return () => { active = false; clearInterval(timer); };
   }, [citizenAuth]);
 
-  if (viewerRole === "ENGINEER" && engineerAuth) return <><StatusBar style="dark" /><EngineerProjectsApp auth={engineerAuth} onLogout={() => { clearInternalSession(); setEngineerAuth(undefined); setViewerRole("OTHER"); setScreen("home"); }} /></>;
-  if (viewerRole === "LOADING") return <><StatusBar style="dark" /><Shell><View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loadingText}>Loading CivicOS…</Text></View></Shell></>;
+  if (viewerRole === "ENGINEER" && engineerAuth) return <DesignSystemProvider theme="internal"><StatusBar style="dark" /><EngineerProjectsApp auth={engineerAuth} onLogout={() => { clearInternalSession(); setEngineerAuth(undefined); setViewerRole("OTHER"); setScreen("home"); }} /></DesignSystemProvider>;
+  if (viewerRole === "LOADING") return <DesignSystemProvider theme="citizen"><StatusBar style="dark" /><Shell><View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loadingText}>Loading CivicOS…</Text></View></Shell></DesignSystemProvider>;
 
   const updateLocation = useCallback((next: ConfirmedLocation) => setLocation(next), []);
   const reset = () => {
@@ -130,15 +131,34 @@ export default function App() {
   else if (screen === "feedback") content = <RetakeScreen {...feedback} onRetake={() => { setImages([]); setScreen("evidence"); }} />;
   else if (screen === "confirmation" && submitted) content = <ConfirmationScreen ticket={submitted} onView={() => setScreen("detail")} onDone={reset} />;
   else if (screen === "detail" && submitted) content = <TicketDetailScreen ticket={submitted} onDone={reset} />;
-  else if (screen === "tickets") content = <TicketsScreen filter={ticketFilter} tickets={tickets} loading={ticketsLoading} error={ticketsError} onBack={() => setScreen("home")} />;
+  else if (screen === "tickets") content = <TicketsScreen filter={ticketFilter} tickets={tickets} loading={ticketsLoading} error={ticketsError} onBack={() => setScreen("home")} onOpen={(ticket) => { setSubmitted(ticket); setScreen("detail"); }} />;
   else if (screen === "validations") content = <VerificationListScreen validations={validations} loading={validationsLoading} error={validationsError} onBack={() => setScreen("home")} onOpen={(validation) => { setSelectedValidation(validation); setScreen("verification"); }} />;
   else if (screen === "verification" && selectedValidation) content = <VerificationRequestScreen validation={selectedValidation} submitting={validationSubmitting} onBack={() => setScreen("validations")} onSubmit={(vote) => void submitValidationVote(vote)} />;
   else if (screen === "completion-validations") content = <CompletionVerificationListScreen completions={completionValidations} loading={completionLoading} error={completionError} onBack={() => setScreen("home")} onOpen={(completion) => { setSelectedCompletion(completion); setScreen("completion-verification"); }} />;
   else if (screen === "completion-verification" && selectedCompletion) content = <CompletionVerificationScreen completion={selectedCompletion} submitting={completionSubmitting} onBack={() => setScreen("completion-validations")} onSubmit={(decision) => void submitCompletionVote(decision)} />;
   else if (screen === "notifications") content = <NotificationsScreen role="CITIZEN" onBack={() => setScreen("home")} onOpen={openNotification} onViewed={() => setNotificationUnread(0)} />;
+  else if (screen === "profile") content = <CitizenProfileScreen signedIn={Boolean(citizenAuth)} onSignIn={() => setScreen("citizen-login")} onSignOut={() => { clearCitizenSession(); setCitizenAuth(undefined); setScreen("home"); }} />;
+  else if (screen === "citizen-login") content = <CitizenLoginScreen onAuthenticated={(auth) => { setCitizenAuth(auth); setScreen("home"); }} onBack={() => setScreen("home")} />;
   else if (screen === "engineer-login") content = <EngineerLoginScreen onCancel={() => setScreen("home")} onLogin={(auth) => { setEngineerAuth(auth); setViewerRole("ENGINEER"); }} />;
-  else content = <HomeScreen notificationUnread={notificationUnread} onNotifications={() => setScreen("notifications")} onReport={() => setScreen("category")} onTickets={openTickets} onValidations={openValidations} onCompletionValidations={openCompletionValidations} onEngineerLogin={() => setScreen("engineer-login")} />;
-  return <><StatusBar style="dark" />{content}</>;
+  else content = <HomeScreen signedIn={Boolean(citizenAuth)} onSignIn={() => setScreen("citizen-login")} onReport={() => citizenAuth ? setScreen("category") : setScreen("citizen-login")} onTickets={(filter) => citizenAuth ? openTickets(filter) : setScreen("citizen-login")} onValidations={() => citizenAuth ? openValidations() : setScreen("citizen-login")} onCompletionValidations={() => citizenAuth ? openCompletionValidations() : setScreen("citizen-login")} onEngineerLogin={() => setScreen("engineer-login")} />;
+
+  const tabs: MobileTab[] = [
+    { id: "home", label: "Home", icon: "⌂" },
+    { id: "report", label: "Report", icon: "+" },
+    { id: "tickets", label: "My tickets", icon: "□" },
+    { id: "notifications", label: notificationUnread ? `Updates ${notificationUnread}` : "Updates", icon: "◇" },
+    { id: "profile", label: "Profile", icon: "○" },
+  ];
+  const activeTab = screen === "home" ? "home" : ["category", "evidence", "location", "feedback", "confirmation"].includes(screen) ? "report" : ["tickets", "detail"].includes(screen) ? "tickets" : ["validations", "verification", "completion-validations", "completion-verification", "notifications"].includes(screen) ? "notifications" : screen === "profile" ? "profile" : "home";
+  const selectTab = (id: string) => {
+    if (id === "home") setScreen("home");
+    else if (id === "profile") setScreen("profile");
+    else if (!citizenAuth) setScreen("citizen-login");
+    else if (id === "report") setScreen("category");
+    else if (id === "tickets") openTickets("ongoing");
+    else if (id === "notifications") setScreen("notifications");
+  };
+  return <DesignSystemProvider theme="citizen"><StatusBar style="dark" /><View style={styles.app}><View style={styles.stage}>{content}</View><View style={styles.tabInset}><MobileTabBar active={activeTab} items={tabs} onSelect={selectTab} /></View></View></DesignSystemProvider>;
 }
 
-const styles = StyleSheet.create({ loading: { alignItems: "center", flex: 1, gap: 16, justifyContent: "center" }, loadingText: { color: colors.ink, fontSize: 17, fontWeight: "700" } });
+const styles = StyleSheet.create({ app: { backgroundColor: colors.canvas, flex: 1 }, stage: { flex: 1 }, tabInset: { backgroundColor: colors.canvas, paddingBottom: 8, paddingHorizontal: 12 }, loading: { alignItems: "center", flex: 1, gap: 16, justifyContent: "center" }, loadingText: { color: colors.ink, fontSize: 16, fontWeight: "500" } });

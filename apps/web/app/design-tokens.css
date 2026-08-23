@@ -1,0 +1,38 @@
+:root {
+  color-scheme: light;
+  --cv-bg: #fffdf7;
+  --cv-surface: #ffffff;
+  --cv-surface-alt: #f5f3e8;
+  --cv-accent: #c9ebd4;
+  --cv-accent-strong: #1f7a44;
+  --cv-border: #e8e3d3;
+  --cv-text: #141614;
+  --cv-text-secondary: #5b5f58;
+  --cv-success-bg: #e4f1e7;
+  --cv-success-text: #1f5a34;
+  --cv-warning-bg: #fbf1de;
+  --cv-warning-text: #8a6416;
+  --cv-danger-bg: #fbeaea;
+  --cv-danger-text: #9c3b3b;
+  --cv-info-bg: #e7f0f7;
+  --cv-info-text: #2c5c82;
+  --cv-overlay: rgb(20 22 20 / 45%);
+  --cv-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --cv-radius-card: 12px;
+  --cv-radius-chip: 20px;
+}
+
+.portal-shell,
+.login-shell,
+.admin-shell,
+.engineer-shell {
+  --cv-bg: #ffffff;
+  --cv-surface: #ffffff;
+  --cv-surface-alt: #f6f6f6;
+  --cv-accent: #1f5a34;
+  --cv-accent-strong: #1f5a34;
+  --cv-border: #e2e2e2;
+  --cv-text: #111111;
+  --cv-text-secondary: #5f5f5f;
+  --cv-overlay: rgb(17 17 17 / 45%);
+}

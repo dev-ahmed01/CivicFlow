@@ -41,6 +41,7 @@ export function ProjectHeadShell({ children }: { children: ReactNode }) {
           <Link className={pathname === "/project-head/dependencies/outbox" ? "active" : ""} href="/project-head/dependencies/outbox">Dependency outbox</Link>
           <Link className={pathname === "/project-head/tickets/new" ? "active" : ""} href="/project-head/tickets/new">Create agency ticket</Link>
           <Link className={pathname === "/project-head/notifications" ? "active" : ""} href="/project-head/notifications">Notifications</Link>
+          <Link className={pathname === "/project-head/profile" ? "active" : ""} href="/project-head/profile">Profile</Link>
         </nav>
         <NotificationBell apiFetch={apiFetch} href="/project-head/notifications" />
         <button className="portal-logout" type="button" onClick={logout}>Sign out</button>

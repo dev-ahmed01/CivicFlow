@@ -62,9 +62,22 @@ export async function internalLogin(email: string, password: string): Promise<Cu
   return { userId: result.user.id, role: result.user.role, agencyId: result.user.agencyId, wardId: null, mustResetPassword: false };
 }
 
+export async function requestCitizenOtp(phone: string): Promise<void> {
+  await apiFetch("/auth/citizen/request-otp", { method: "POST", body: JSON.stringify({ phone }) });
+}
+
+export async function verifyCitizenOtp(phone: string, code: string): Promise<CurrentAuth> {
+  const result = await apiFetch<{ user: { id: string; role: UserRole }; accessToken: string }>("/auth/citizen/verify-otp", { method: "POST", body: JSON.stringify({ phone, code }) });
+  if (result.user.role !== "CITIZEN") throw new Error("Use a citizen account");
+  accessToken = result.accessToken;
+  return { userId: result.user.id, role: result.user.role, agencyId: null, wardId: null, mustResetPassword: false };
+}
+
 export function clearInternalSession(): void {
   accessToken = "";
 }
+
+export const clearCitizenSession = clearInternalSession;
 
 export async function loadDependencies(direction: "sent" | "received"): Promise<DependencyListItem[]> {
   const result = await apiFetch<{ dependencies: DependencyListItem[] }>(`/dependencies?direction=${direction}`);

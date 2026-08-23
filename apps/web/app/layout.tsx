@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { APP_NAME } from "@civicos/shared";
+import "./design-tokens.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
