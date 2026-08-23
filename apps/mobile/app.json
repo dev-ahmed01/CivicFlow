@@ -6,8 +6,15 @@
     "orientation": "portrait",
     "platforms": ["ios", "android"],
     "newArchEnabled": true,
+    "scheme": "civicos",
+    "ios": {
+      "bundleIdentifier": "org.civicos.mobile",
+      "buildNumber": "1",
+      "supportsTablet": true
+    },
     "android": {
       "package": "org.civicos.mobile",
+      "versionCode": 1,
       "permissions": ["ACCESS_FINE_LOCATION", "CAMERA", "READ_MEDIA_IMAGES"]
     },
     "plugins": [

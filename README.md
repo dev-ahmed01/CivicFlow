@@ -97,6 +97,8 @@ Two rehearsed end-to-end walkthroughs (built out fully in Phase 12):
 - **General flow** — a full citizen-report → validation → routing → inspection → project → dependency → execution → completion cycle on a non-road category
 - **Flagship road-cutting flow** — three agencies logging conflicting interventions on the same road segment, the system catching a restoration-too-early conflict, and the sequencing engine recommending a coordinated order
 
+Phase 12’s deployment order, stable fixture IDs, reset command, two click-by-click rehearsal scripts, and acceptance evidence ledger live in [`docs/Phase_12_runbook.md`](docs/Phase_12_runbook.md). Run `pnpm verify:phase12` against a seeded database to validate the complete non-road audit trail and exact Segment X intervention dates/order.
+
 ## Status
 
 Track live build progress in the checklist at the bottom of `AGENTS.md`.

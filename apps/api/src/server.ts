@@ -8,8 +8,8 @@ import { ExpoPushGateway, startPushDeliveryScheduler } from "./notifications/ser
 const env = getEnv();
 const app = createApp();
 
-app.listen(env.PORT, () => {
-  console.log(`CivicOS API listening on http://localhost:${env.PORT}`);
+app.listen(env.PORT, "0.0.0.0", () => {
+  console.log(`CivicOS API listening on port ${env.PORT}`);
 });
 
 startValidationRebatchScheduler(env.VALIDATION_REBATCH_POLL_MINUTES);

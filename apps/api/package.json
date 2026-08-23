@@ -2,11 +2,11 @@
   "name": "api",
   "version": "0.1.0",
   "private": true,
-  "main": "dist/server.js",
+  "main": "dist/src/server.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "verify:auth": "tsx scripts/verify-auth.ts",
@@ -18,7 +18,8 @@
     "verify:phase7": "tsc -p tsconfig.json && node dist/scripts/verify-phase7.js",
     "verify:phase8": "tsc -p tsconfig.json && node dist/scripts/verify-phase8.js",
     "verify:phase9": "tsc -p tsconfig.json && node dist/scripts/verify-phase9.js",
-    "verify:phase10": "tsc -p tsconfig.json && node dist/scripts/verify-phase10.js"
+    "verify:phase10": "tsc -p tsconfig.json && node dist/scripts/verify-phase10.js",
+    "verify:phase12": "tsc -p tsconfig.json && node dist/scripts/verify-phase12.js"
   },
   "dependencies": {
     "@civicos/shared": "workspace:*",

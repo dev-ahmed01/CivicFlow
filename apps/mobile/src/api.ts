@@ -17,7 +17,16 @@ import type {
   ValidationVote,
 } from "@civicos/shared";
 
-const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://10.0.2.2:4000";
+function resolveApiUrl(): string {
+  const configured = process.env.EXPO_PUBLIC_API_URL;
+  if (configured) return configured;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("EXPO_PUBLIC_API_URL is required for production mobile builds");
+  }
+  return "http://10.0.2.2:4000";
+}
+
+const apiUrl = resolveApiUrl();
 let accessToken = process.env.EXPO_PUBLIC_ACCESS_TOKEN ?? "";
 
 type LocalImage = { uri: string; fileName: string; contentType: "image/jpeg" | "image/png" | "image/webp" | "image/heic" };
@@ -165,6 +174,13 @@ export async function loadMyTickets(filter: "ongoing" | "past"): Promise<Citizen
 export async function loadPendingValidations(): Promise<PendingValidation[]> {
   const result = await apiFetch<{ validations: PendingValidation[] }>("/citizens/me/pending-validations");
   return result.validations;
+}
+
+export async function updateCitizenLocation(latitude: number, longitude: number): Promise<void> {
+  await apiFetch("/citizens/me/location", {
+    method: "PATCH",
+    body: JSON.stringify({ latitude, longitude }),
+  });
 }
 
 export async function validateTicket(ticketId: string, vote: ValidationVote): Promise<SubmitValidationResult> {

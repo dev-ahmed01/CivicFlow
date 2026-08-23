@@ -34,13 +34,23 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   const app = express();
   app.disable("x-powered-by");
   app.use(helmet());
-  app.use(cors());
+  const allowedOrigins = env.CORS_ORIGINS?.split(",").map((origin) => origin.trim()).filter(Boolean);
+  app.use(cors({
+    origin(origin, callback) {
+      if (!origin || !allowedOrigins || allowedOrigins.includes(origin)) callback(null, true);
+      else callback(new Error("Origin is not allowed by CORS"));
+    },
+  }));
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/health", (_request, response) => {
     response.json({ status: "ok" });
   });
 
+  // Part III §19.2 — mount the analytics router before any root router whose
+  // middleware authenticates all paths. Protected analytics routes enforce
+  // their own role checks inside createAnalyticsRouter.
+  app.use(createAnalyticsRouter());
   app.use("/auth", createAuthRouter(resolvedDependencies.otpProvider ?? createOtpProvider(env)));
   app.use(createValidationJobsRouter(env.CRON_SECRET));
   app.use(createDependencyJobsRouter(env.CRON_SECRET));
@@ -55,7 +65,6 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.use(createDependenciesRouter());
   app.use(createRoadIntelligenceRouter());
   app.use(createNotificationsRouter());
-  app.use(createAnalyticsRouter());
   app.use("/admin", createAdminRouter());
 
   // Part III §17.2 — protected routes always authenticate, enforce role, then scope.

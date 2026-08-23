@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CategorySummary, CitizenTicketSummary, CompletionVerificationDecision, PendingCompletionVerification, PendingValidation, ValidationVote } from "@civicos/shared";
 import { StatusBar } from "expo-status-bar";
+import * as Location from "expo-location";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { clearCitizenSession, clearInternalSession, loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, submitReport, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
+import { clearCitizenSession, clearInternalSession, loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, submitReport, updateCitizenLocation, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
 import { EngineerLoginScreen, EngineerProjectsApp } from "./src/engineer-projects";
 import { CategoryScreen, CitizenLoginScreen, CitizenProfileScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type ConfirmedLocation } from "./src/screens";
 import { colors } from "./src/theme";
@@ -58,6 +59,12 @@ export default function App() {
   useEffect(() => {
     if (!citizenAuth) return;
     void registerForPushNotifications().catch(() => { /* In-app notifications remain available if push permission is denied. */ });
+    void (async () => {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) return;
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      await updateCitizenLocation(position.coords.latitude, position.coords.longitude);
+    })().catch(() => { /* Reporting still captures location; nearby validation waits for the next sync. */ });
     let active = true;
     const poll = () => { void loadNotifications(true).then((result) => { if (active) setNotificationUnread(result.unreadCount); }).catch(() => undefined); };
     poll();

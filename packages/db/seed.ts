@@ -1,7 +1,21 @@
-import { Prisma, PrismaClient, ProjectState, TicketState, UserRole, ValidationVote } from "@prisma/client";
+import {
+  CompletionVerificationDecision,
+  DependencyState,
+  Prisma,
+  PrismaClient,
+  ProjectState,
+  TicketState,
+  UserRole,
+  ValidationVote,
+} from "@prisma/client";
 import bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+
+if (process.env.NODE_ENV === "production" && demoInternalPassword === "CivicOS@123") {
+  throw new Error("DEMO_INTERNAL_PASSWORD must replace the local demo password in production");
+}
 
 const ids = {
   wards: {
@@ -23,6 +37,16 @@ const ids = {
   },
   roadSegments: {
     flagship: "80000000-0000-4000-8000-000000000001",
+  },
+  generalDemo: {
+    ticket: "90000000-0000-4000-8000-000000000001",
+    observation: "90000000-0000-4000-8000-000000000002",
+    image: "90000000-0000-4000-8000-000000000003",
+    inspection: "90000000-0000-4000-8000-000000000004",
+    project: "90000000-0000-4000-8000-000000000005",
+    dependency: "90000000-0000-4000-8000-000000000006",
+    workNote: "90000000-0000-4000-8000-000000000007",
+    completionEvidence: "90000000-0000-4000-8000-000000000008",
   },
 } as const;
 
@@ -191,6 +215,258 @@ async function seedEngineerWorkflowDemo(): Promise<void> {
   }
 }
 
+// Master Spec Part I §31 — a complete, non-road lifecycle that remains visible
+// as one coherent audit trail after every rehearsal reset.
+async function seedGeneralEndToEndDemo(): Promise<void> {
+  const demo = ids.generalDemo;
+  const reporterId = "40000000-0000-4000-8000-000000000002";
+  const projectHeadId = "40000000-0000-4000-8000-000000000103";
+  const engineerId = "40000000-0000-4000-8000-000000000203";
+  const validatorIds = communityValidators.slice(0, 3).map(({ id }) => id);
+  const at = (day: number, hour = 4) => new Date(Date.UTC(2026, 6, day, hour));
+  const evidenceBaseUrl = "https://placehold.co/1200x800/e7ecf7/1f2937.jpg";
+
+  await prisma.$executeRaw`
+    INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "aiRetryCount", "createdAt")
+    VALUES (${demo.ticket}::uuid, ${categories[1].id}::uuid, ${reporterId}::uuid, ${ids.agencies.bescom}::uuid,
+      ST_SetSRID(ST_MakePoint(77.6408, 12.9784), 4326), ${ids.wards.indiranagar}::uuid,
+      ${TicketState.CLOSED}::"TicketState", 'Streetlight outage outside Indiranagar Metro',
+      'CMH Road, near Indiranagar Metro Station, Bengaluru', 1, ${at(1)})
+    ON CONFLICT ("id") DO UPDATE SET
+      "categoryId" = EXCLUDED."categoryId", "reporterId" = EXCLUDED."reporterId",
+      "assignedAgencyId" = EXCLUDED."assignedAgencyId", "coordinates" = EXCLUDED."coordinates",
+      "wardId" = EXCLUDED."wardId", "roadSegmentId" = NULL, "state" = EXCLUDED."state",
+      "title" = EXCLUDED."title", "address" = EXCLUDED."address", "aiRetryCount" = EXCLUDED."aiRetryCount",
+      "manualReviewRecommended" = FALSE, "duplicateReviewRecommended" = FALSE, "createdAt" = EXCLUDED."createdAt"
+  `;
+
+  await prisma.observation.upsert({
+    where: { id: demo.observation },
+    update: {
+      ticketId: demo.ticket,
+      submitterId: reporterId,
+      imageUrl: `${evidenceBaseUrl}?text=Streetlight+outage+CMH+Road`,
+      note: "Two consecutive streetlights are dark beside the metro exit, making the footpath unsafe after dusk.",
+      latitude: 12.9784,
+      longitude: 77.6408,
+      address: "CMH Road, near Indiranagar Metro Station, Bengaluru",
+      createdAt: at(1),
+    },
+    create: {
+      id: demo.observation,
+      ticketId: demo.ticket,
+      submitterId: reporterId,
+      imageUrl: `${evidenceBaseUrl}?text=Streetlight+outage+CMH+Road`,
+      note: "Two consecutive streetlights are dark beside the metro exit, making the footpath unsafe after dusk.",
+      latitude: 12.9784,
+      longitude: 77.6408,
+      address: "CMH Road, near Indiranagar Metro Station, Bengaluru",
+      createdAt: at(1),
+    },
+  });
+  await prisma.image.upsert({
+    where: { id: demo.image },
+    update: {
+      observationId: demo.observation,
+      url: `${evidenceBaseUrl}?text=Streetlight+outage+CMH+Road`,
+      objectKey: "demo/general/streetlight-outage.jpg",
+      isPrimary: true,
+      aiRelevanceScore: 0.94,
+      uploadedAt: at(1),
+      createdAt: at(1),
+    },
+    create: {
+      id: demo.image,
+      observationId: demo.observation,
+      url: `${evidenceBaseUrl}?text=Streetlight+outage+CMH+Road`,
+      objectKey: "demo/general/streetlight-outage.jpg",
+      isPrimary: true,
+      aiRelevanceScore: 0.94,
+      uploadedAt: at(1),
+      createdAt: at(1),
+    },
+  });
+
+  for (const [index, validatorId] of validatorIds.entries()) {
+    const requestId = `91000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+    await prisma.validationRequest.upsert({
+      where: { ticketId_citizenId: { ticketId: demo.ticket, citizenId: validatorId } },
+      update: { batchNumber: 1, distanceMeters: 180 + index * 55, notifiedAt: at(1, 5), expiresAt: at(4, 5), respondedAt: at(2, 5 + index) },
+      create: { id: requestId, ticketId: demo.ticket, citizenId: validatorId, batchNumber: 1, distanceMeters: 180 + index * 55, notifiedAt: at(1, 5), expiresAt: at(4, 5), respondedAt: at(2, 5 + index) },
+    });
+    await prisma.validation.upsert({
+      where: { ticketId_validatorId: { ticketId: demo.ticket, validatorId } },
+      update: { vote: ValidationVote.CONFIRM, counted: true, createdAt: at(2, 5 + index) },
+      create: { id: `92000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, ticketId: demo.ticket, validatorId, vote: ValidationVote.CONFIRM, counted: true, createdAt: at(2, 5 + index) },
+    });
+  }
+
+  await prisma.inspectionReport.upsert({
+    where: { id: demo.inspection },
+    update: {
+      ticketId: demo.ticket,
+      submittedById: projectHeadId,
+      fileUrl: `${evidenceBaseUrl}?text=BESCOM+inspection+report`,
+      objectKey: "demo/general/streetlight-inspection.jpg",
+      contentType: "image/jpeg",
+      notes: "Inspection confirmed two failed LED luminaires and a damaged feeder junction. Traffic-side access support requested.",
+      uploadedAt: at(4),
+      createdAt: at(4),
+    },
+    create: {
+      id: demo.inspection,
+      ticketId: demo.ticket,
+      submittedById: projectHeadId,
+      fileUrl: `${evidenceBaseUrl}?text=BESCOM+inspection+report`,
+      objectKey: "demo/general/streetlight-inspection.jpg",
+      contentType: "image/jpeg",
+      notes: "Inspection confirmed two failed LED luminaires and a damaged feeder junction. Traffic-side access support requested.",
+      uploadedAt: at(4),
+      createdAt: at(4),
+    },
+  });
+
+  await prisma.project.upsert({
+    where: { id: demo.project },
+    update: {
+      ticketId: demo.ticket,
+      agencyId: ids.agencies.bescom,
+      engineerId,
+      state: ProjectState.CLOSED,
+      plannedStart: at(7),
+      plannedEnd: at(9, 12),
+      workDescription: "Isolate the feeder, replace both LED luminaires and junction components, then test illumination after dusk.",
+      dependencyFlags: ["Traffic-side access support"],
+      createdAt: at(5),
+    },
+    create: {
+      id: demo.project,
+      ticketId: demo.ticket,
+      agencyId: ids.agencies.bescom,
+      engineerId,
+      state: ProjectState.CLOSED,
+      plannedStart: at(7),
+      plannedEnd: at(9, 12),
+      workDescription: "Isolate the feeder, replace both LED luminaires and junction components, then test illumination after dusk.",
+      dependencyFlags: ["Traffic-side access support"],
+      createdAt: at(5),
+    },
+  });
+  await prisma.dependency.upsert({
+    where: { id: demo.dependency },
+    update: {
+      projectId: demo.project,
+      requestingAgencyId: ids.agencies.bescom,
+      respondingAgencyId: ids.agencies.pwd,
+      assignedEngineerId: "40000000-0000-4000-8000-000000000201",
+      state: DependencyState.FULFILLED,
+      requirement: "Provide a safe roadside work zone and temporary access protection for the lighting crew.",
+      deadline: at(7),
+      respondedAt: at(5, 8),
+      createdAt: at(5, 5),
+    },
+    create: {
+      id: demo.dependency,
+      projectId: demo.project,
+      requestingAgencyId: ids.agencies.bescom,
+      respondingAgencyId: ids.agencies.pwd,
+      assignedEngineerId: "40000000-0000-4000-8000-000000000201",
+      state: DependencyState.FULFILLED,
+      requirement: "Provide a safe roadside work zone and temporary access protection for the lighting crew.",
+      deadline: at(7),
+      respondedAt: at(5, 8),
+      createdAt: at(5, 5),
+    },
+  });
+  const dependencyTransitions = [
+    { fromState: null, toState: DependencyState.PENDING_RESPONSE, reason: "DEPENDENCY_REQUESTED", actedById: projectHeadId, createdAt: at(5, 5) },
+    { fromState: DependencyState.PENDING_RESPONSE, toState: DependencyState.ASSIGNED, reason: "ENGINEER_ASSIGNED", actedById: "40000000-0000-4000-8000-000000000101", createdAt: at(5, 8) },
+    { fromState: DependencyState.ASSIGNED, toState: DependencyState.FULFILLED, reason: "FIELD_SUPPORT_COMPLETED", actedById: "40000000-0000-4000-8000-000000000201", createdAt: at(7, 3) },
+  ] as const;
+  for (const [index, transition] of dependencyTransitions.entries()) {
+    await prisma.dependencyStateTransition.upsert({
+      where: { id: `93000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}` },
+      update: transition,
+      create: { id: `93000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, dependencyId: demo.dependency, ...transition },
+    });
+  }
+
+  await prisma.projectWorkNote.upsert({
+    where: { id: demo.workNote },
+    update: { projectId: demo.project, authorId: engineerId, note: "Both luminaires replaced; feeder junction sealed and evening illumination test passed.", createdAt: at(9, 11) },
+    create: { id: demo.workNote, projectId: demo.project, authorId: engineerId, note: "Both luminaires replaced; feeder junction sealed and evening illumination test passed.", createdAt: at(9, 11) },
+  });
+  await prisma.completionEvidence.upsert({
+    where: { id: demo.completionEvidence },
+    update: {
+      projectId: demo.project,
+      ticketId: demo.ticket,
+      submittedById: engineerId,
+      photoUrl: `${evidenceBaseUrl}?text=Streetlights+restored`,
+      objectKey: "demo/general/streetlight-completed.jpg",
+      contentType: "image/jpeg",
+      notes: "Both lights operational after dusk; junction enclosure and work area restored.",
+      uploadedAt: at(9, 13),
+      createdAt: at(9, 12),
+    },
+    create: {
+      id: demo.completionEvidence,
+      projectId: demo.project,
+      ticketId: demo.ticket,
+      submittedById: engineerId,
+      photoUrl: `${evidenceBaseUrl}?text=Streetlights+restored`,
+      objectKey: "demo/general/streetlight-completed.jpg",
+      contentType: "image/jpeg",
+      notes: "Both lights operational after dusk; junction enclosure and work area restored.",
+      uploadedAt: at(9, 13),
+      createdAt: at(9, 12),
+    },
+  });
+  for (const [index, validatorId] of validatorIds.entries()) {
+    await prisma.completionVerificationRequest.upsert({
+      where: { completionEvidenceId_citizenId: { completionEvidenceId: demo.completionEvidence, citizenId: validatorId } },
+      update: { notifiedAt: at(9, 13), respondedAt: at(10, 5 + index) },
+      create: { id: `94000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, completionEvidenceId: demo.completionEvidence, citizenId: validatorId, notifiedAt: at(9, 13), respondedAt: at(10, 5 + index) },
+    });
+    await prisma.completionVerification.upsert({
+      where: { completionEvidenceId_validatorId: { completionEvidenceId: demo.completionEvidence, validatorId } },
+      update: { decision: CompletionVerificationDecision.VERIFIED, note: "Lighting is restored and the footpath is visibly illuminated.", createdAt: at(10, 5 + index) },
+      create: { id: `95000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, completionEvidenceId: demo.completionEvidence, validatorId, decision: CompletionVerificationDecision.VERIFIED, note: "Lighting is restored and the footpath is visibly illuminated.", createdAt: at(10, 5 + index) },
+    });
+  }
+
+  const ticketStates = [
+    TicketState.DRAFT,
+    TicketState.AI_CHECK_PENDING,
+    TicketState.PENDING_VALIDATION,
+    TicketState.VALIDATED,
+    TicketState.ROUTED_TO_AGENCY,
+    TicketState.INSPECTION_DUE,
+    TicketState.INSPECTION_COMPLETE,
+    TicketState.PROJECT_CREATED,
+    TicketState.ENGINEER_ASSIGNED,
+    TicketState.WORK_IN_PROGRESS,
+    TicketState.WORK_COMPLETED,
+    TicketState.AWAITING_CITIZEN_VERIFICATION,
+    TicketState.CLOSED,
+  ];
+  for (const [index, toState] of ticketStates.entries()) {
+    await prisma.ticketStateTransition.upsert({
+      where: { id: `96000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}` },
+      update: { ticketId: demo.ticket, fromState: index === 0 ? null : ticketStates[index - 1], toState, reason: "PART_I_31_DEMO", createdAt: at(Math.min(index + 1, 10), 4 + index % 5) },
+      create: { id: `96000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, ticketId: demo.ticket, fromState: index === 0 ? null : ticketStates[index - 1], toState, reason: "PART_I_31_DEMO", createdAt: at(Math.min(index + 1, 10), 4 + index % 5) },
+    });
+  }
+  const projectStates = [ProjectState.CREATED, ProjectState.PENDING_UPTAKE, ProjectState.UPTAKEN, ProjectState.TIMELINE_SET, ProjectState.ACTIVE, ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION, ProjectState.CLOSED];
+  for (const [index, toState] of projectStates.entries()) {
+    await prisma.projectStateTransition.upsert({
+      where: { id: `97000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}` },
+      update: { projectId: demo.project, fromState: index === 0 ? null : projectStates[index - 1], toState, reason: "PART_I_31_DEMO", actedById: index < 2 ? projectHeadId : index === projectStates.length - 1 ? validatorIds[2] : engineerId, createdAt: at(5 + Math.min(index, 5), 5 + index) },
+      create: { id: `97000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, projectId: demo.project, fromState: index === 0 ? null : projectStates[index - 1], toState, reason: "PART_I_31_DEMO", actedById: index < 2 ? projectHeadId : index === projectStates.length - 1 ? validatorIds[2] : engineerId, createdAt: at(5 + Math.min(index, 5), 5 + index) },
+    });
+  }
+}
+
 // Delta §6 — deterministic flagship story: pipeline → cable → consolidated restoration → resurfacing.
 async function seedRoadCuttingDemo(): Promise<void> {
   await prisma.$executeRaw`
@@ -207,6 +483,15 @@ async function seedRoadCuttingDemo(): Promise<void> {
     { suffix: "02", agencyId: ids.agencies.bwssb, engineerId: "40000000-0000-4000-8000-000000000202", title: "BWSSB pipeline intervention on Segment X", purpose: "pipeline", start: new Date("2027-06-10T00:00:00.000Z"), end: new Date("2027-06-16T23:59:59.999Z"), offset: 20, length: 260, refs: [] as string[] },
     { suffix: "03", agencyId: ids.agencies.bescom, engineerId: "40000000-0000-4000-8000-000000000203", title: "BESCOM cable intervention on Segment X", purpose: "cable", start: new Date("2027-06-15T00:00:00.000Z"), end: new Date("2027-06-18T23:59:59.999Z"), offset: 100, length: 180, refs: ["83000000-0000-4000-8000-000000000002"] },
   ] as const;
+
+  const projectIds = work.map((item) => `82000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`);
+  // Delta §6 rehearsal reset — remove mutable warning/action history before
+  // restoring the exact scripted timelines. Core fixtures are upserted below.
+  await prisma.sequencingRecommendation.deleteMany({ where: { segmentId: ids.roadSegments.flagship } });
+  await prisma.roadConflictLog.deleteMany({ where: { segmentId: ids.roadSegments.flagship } });
+  await prisma.conflictLog.deleteMany({ where: { OR: [{ projectId: { in: projectIds } }, { conflictingProjectId: { in: projectIds } }] } });
+  await prisma.projectStateTransition.deleteMany({ where: { projectId: { in: projectIds } } });
+  await prisma.$executeRaw`DELETE FROM "Notification" WHERE "payload"->>'segmentId' = ${ids.roadSegments.flagship}`;
 
   for (const item of work) {
     const ticketId = `81000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
@@ -268,7 +553,7 @@ async function main(): Promise<void> {
     });
   }
 
-  const passwordHash = await bcrypt.hash("CivicOS@123", 12);
+  const passwordHash = await bcrypt.hash(demoInternalPassword, 12);
   const users: Array<Prisma.UserUncheckedCreateInput & { latitude?: number; longitude?: number }> = [
     { id: "40000000-0000-4000-8000-000000000001", role: UserRole.CITIZEN, phone: "+919876500001", wardId: ids.wards.koramangala, phoneVerifiedAt: new Date(), latitude: 12.935, longitude: 77.62 },
     { id: "40000000-0000-4000-8000-000000000002", role: UserRole.CITIZEN, phone: "+919876500002", wardId: ids.wards.indiranagar, phoneVerifiedAt: new Date(), latitude: 12.9784, longitude: 77.6408 },
@@ -301,12 +586,16 @@ async function main(): Promise<void> {
   }
 
   await seedEngineerWorkflowDemo();
+  await seedGeneralEndToEndDemo();
   await seedRoadCuttingDemo();
 
   console.log(`Seeded ${wards.length} wards, ${agencies.length} agencies, ${categories.length} categories, and ${users.length} users.`);
   console.log(`Seeded ${engineerDemoProjects.length} Executive Engineer demo projects.`);
+  console.log("Seeded the Part I §31 closed streetlight lifecycle with validation, dependency, execution, and citizen verification history.");
   console.log("Seeded Segment X flagship road-cutting scenario (PWD, BWSSB, BESCOM).");
-  console.log("Local internal-user password: CivicOS@123");
+  console.log(process.env.NODE_ENV === "production"
+    ? "Internal demo-user password loaded from DEMO_INTERNAL_PASSWORD."
+    : "Local internal-user password: CivicOS@123");
 }
 
 main()

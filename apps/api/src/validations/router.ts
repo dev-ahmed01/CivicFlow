@@ -5,6 +5,7 @@ import {
   submitCompletionVerificationSchema,
   submitValidationSchema,
   toCitizenTicketState,
+  updateCitizenLocationSchema,
   type TicketState as SharedTicketState,
 } from "@civicos/shared";
 import { requireAuth, requireRole } from "../auth/middleware";
@@ -29,6 +30,29 @@ function status(state: TicketState) {
 export function createValidationsRouter(): Router {
   const router = Router();
   router.use(requireAuth);
+
+  router.patch("/citizens/me/location", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {
+    const parsed = updateCitizenLocationSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "Invalid citizen location", details: parsed.error.flatten() });
+      return;
+    }
+    const { latitude, longitude } = parsed.data;
+    // Part III §9.2 — proximity eligibility uses the citizen's explicit device
+    // location; the server derives ward scope from admin-managed boundaries.
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET "lastKnownCoordinates" = ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326),
+          "wardId" = (
+            SELECT "id" FROM "Ward"
+            WHERE ST_Covers("boundary", ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326))
+            ORDER BY "name" ASC
+            LIMIT 1
+          )
+      WHERE "id" = ${request.auth!.userId}::uuid
+    `;
+    response.status(204).send();
+  }));
 
   router.get("/citizens/me/pending-validations", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {
     const citizenId = request.auth!.userId;

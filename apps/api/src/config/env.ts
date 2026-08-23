@@ -8,9 +8,12 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32),
   JWT_ACCESS_TTL: z.string().min(2).default("15m"),
   JWT_REFRESH_TTL: z.string().min(2).default("30d"),
-  OTP_PROVIDER: z.enum(["console"]).default("console"),
+  OTP_PROVIDER: z.enum(["console", "twilio"]).default("console"),
   OTP_TTL_MINUTES: z.coerce.number().int().positive().default(10),
   OTP_MOCK_CODE: z.string().regex(/^\d{6}$/).optional(),
+  TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
+  TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
+  TWILIO_FROM_NUMBER: z.string().regex(/^\+[1-9]\d{7,14}$/).optional(),
   S3_ENDPOINT: z.string().url().default("http://localhost:9000"),
   S3_REGION: z.string().min(1).default("us-east-1"),
   S3_BUCKET: z.string().min(1).default("civicos-images"),
@@ -24,13 +27,46 @@ const envSchema = z.object({
   DEPENDENCY_ESCALATION_POLL_MINUTES: z.coerce.number().int().positive().default(15),
   PUSH_DELIVERY_POLL_SECONDS: z.coerce.number().int().positive().default(15),
   EXPO_ACCESS_TOKEN: z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional()),
+  CORS_ORIGINS: z.string().min(1).optional(),
+}).superRefine((env, context) => {
+  if (env.NODE_ENV !== "production") return;
+
+  if (env.OTP_PROVIDER !== "twilio") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["OTP_PROVIDER"], message: "Production must use the Twilio OTP provider" });
+  }
+  if (env.OTP_MOCK_CODE) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["OTP_MOCK_CODE"], message: "OTP_MOCK_CODE is forbidden in production" });
+  }
+  for (const key of ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "CLIP_INFERENCE_URL", "CORS_ORIGINS"] as const) {
+    if (!env[key]) context.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is required in production` });
+  }
+  for (const [key, value] of [["S3_ENDPOINT", env.S3_ENDPOINT], ["S3_PUBLIC_BASE_URL", env.S3_PUBLIC_BASE_URL]] as const) {
+    const hostname = new URL(value).hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} cannot point to localhost in production` });
+    }
+  }
+  if (env.S3_ACCESS_KEY_ID === "civicos-local" || env.S3_SECRET_ACCESS_KEY === "civicos-local-secret") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["S3_ACCESS_KEY_ID"], message: "Local object-storage credentials are forbidden in production" });
+  }
+  if (env.CORS_ORIGINS) {
+    for (const origin of env.CORS_ORIGINS.split(",").map((item) => item.trim())) {
+      if (!z.string().url().safeParse(origin).success) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["CORS_ORIGINS"], message: `Invalid CORS origin: ${origin}` });
+      }
+    }
+  }
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
 
+export function parseEnv(values: NodeJS.ProcessEnv): AppEnv {
+  return envSchema.parse(values);
+}
+
 let cachedEnv: AppEnv | undefined;
 
 export function getEnv(): AppEnv {
-  cachedEnv ??= envSchema.parse(process.env);
+  cachedEnv ??= parseEnv(process.env);
   return cachedEnv;
 }

@@ -111,6 +111,11 @@ export const pointSchema = z.object({
   coordinates: z.tuple([z.number(), z.number()]),
 });
 
+export const updateCitizenLocationSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
+
 export const lineStringSchema = z.object({
   type: z.literal("LineString"),
   coordinates: z.array(z.tuple([z.number(), z.number()])).min(2),
@@ -752,6 +757,7 @@ export type RoadConflictSeverity = z.infer<typeof roadConflictSeveritySchema>;
 export type SequencingRecommendationOutcome = z.infer<typeof sequencingRecommendationOutcomeSchema>;
 export type CompletionVerificationDecision = z.infer<typeof completionVerificationDecisionSchema>;
 export type User = z.infer<typeof userSchema>;
+export type UpdateCitizenLocation = z.infer<typeof updateCitizenLocationSchema>;
 export type Ward = z.infer<typeof wardSchema>;
 export type Agency = z.infer<typeof agencySchema>;
 export type Category = z.infer<typeof categorySchema>;
