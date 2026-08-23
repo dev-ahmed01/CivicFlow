@@ -12,7 +12,8 @@
     "verify:auth": "tsx scripts/verify-auth.ts",
     "verify:phase2": "tsc -p tsconfig.json && node dist/scripts/verify-phase2.js",
     "verify:phase3": "tsc -p tsconfig.json && node dist/scripts/verify-phase3.js",
-    "verify:phase4": "tsc -p tsconfig.json && node dist/scripts/verify-phase4.js"
+    "verify:phase4": "tsc -p tsconfig.json && node dist/scripts/verify-phase4.js",
+    "verify:phase5": "tsc -p tsconfig.json && node dist/scripts/verify-phase5.js"
   },
   "dependencies": {
     "@civicos/shared": "workspace:*",

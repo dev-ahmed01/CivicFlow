@@ -35,6 +35,8 @@ export function ProjectHeadShell({ children }: { children: ReactNode }) {
           <Link className={pathname === "/project-head" ? "active" : ""} href="/project-head">Overview</Link>
           <Link className={pathname.startsWith("/project-head/tickets") && pathname !== "/project-head/tickets/new" ? "active" : ""} href="/project-head/tickets">Ticket queue</Link>
           <Link className={pathname.startsWith("/project-head/projects") ? "active" : ""} href="/project-head/projects">Projects</Link>
+          <Link className={pathname === "/project-head/dependencies/inbox" ? "active" : ""} href="/project-head/dependencies/inbox">Dependency inbox</Link>
+          <Link className={pathname === "/project-head/dependencies/outbox" ? "active" : ""} href="/project-head/dependencies/outbox">Dependency outbox</Link>
           <Link className={pathname === "/project-head/tickets/new" ? "active" : ""} href="/project-head/tickets/new">Create agency ticket</Link>
         </nav>
         <button className="portal-logout" type="button" onClick={logout}>Sign out</button>

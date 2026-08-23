@@ -17,7 +17,7 @@ export default function ProjectHeadDashboardPage() {
   const cards = data ? [
     { label: "New validated tickets", value: data.counts.newValidatedTickets, href: "/project-head/tickets?status=ROUTED_TO_AGENCY", tone: "green" },
     { label: "Inspections due", value: data.counts.inspectionsDue, href: "/project-head/tickets?status=INSPECTION_DUE", tone: "amber" },
-    { label: "Dependency requests pending", value: data.counts.dependencyRequestsPending, href: "/project-head", tone: "blue" },
+    { label: "Dependency requests pending", value: data.counts.dependencyRequestsPending, href: "/project-head/dependencies/inbox", tone: "blue" },
     { label: "Active projects", value: data.counts.activeProjects, href: "/project-head/projects", tone: "ink" },
   ] : [];
 

@@ -92,6 +92,7 @@ model User {
   otpChallenges        OtpChallenge[]
   refreshSessions      RefreshSession[]
   inspectionReports    InspectionReport[]
+  dependencyTransitions DependencyStateTransition[] @relation("DependencyTransitionActor")
 
   @@index([agencyId])
   @@index([wardId])
@@ -319,18 +320,41 @@ model Dependency {
   respondingAgencyId String          @db.Uuid
   assignedEngineerId String?         @db.Uuid
   state              DependencyState @default(REQUESTED)
+  requirement        String
+  deadline           DateTime
+  respondedAt        DateTime?
+  escalatedAt        DateTime?
   createdAt          DateTime        @default(now())
 
   project          Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   requestingAgency Agency  @relation("DependencyRequestingAgency", fields: [requestingAgencyId], references: [id], onDelete: Restrict)
   respondingAgency Agency  @relation("DependencyRespondingAgency", fields: [respondingAgencyId], references: [id], onDelete: Restrict)
   assignedEngineer User?   @relation("DependencyEngineer", fields: [assignedEngineerId], references: [id], onDelete: SetNull)
+  stateTransitions DependencyStateTransition[]
 
+  @@unique([projectId, respondingAgencyId])
   @@index([projectId])
   @@index([requestingAgencyId])
   @@index([respondingAgencyId])
   @@index([assignedEngineerId])
   @@index([state])
+  @@index([state, deadline])
+}
+
+model DependencyStateTransition {
+  id           String          @id @default(uuid()) @db.Uuid
+  dependencyId String          @db.Uuid
+  fromState    DependencyState?
+  toState      DependencyState
+  reason       String
+  actedById    String?         @db.Uuid
+  createdAt    DateTime        @default(now())
+
+  dependency Dependency @relation(fields: [dependencyId], references: [id], onDelete: Cascade)
+  actedBy    User?      @relation("DependencyTransitionActor", fields: [actedById], references: [id], onDelete: SetNull)
+
+  @@index([dependencyId, createdAt])
+  @@index([actedById])
 }
 
 model RoadSegment {

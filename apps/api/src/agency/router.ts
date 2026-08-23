@@ -80,6 +80,17 @@ export function createAgencyRouter(storage: ImageStorage): Router {
   );
 
   router.get(
+    "/agencies",
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requirePasswordResetComplete,
+    asyncRoute(async (_request, response) => {
+      response.json({
+        agencies: await prisma.agency.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, type: true } }),
+      });
+    }),
+  );
+
+  router.get(
     "/wards",
     requireRole(UserRole.PROJECT_HEAD, UserRole.ADMIN),
     requirePasswordResetComplete,

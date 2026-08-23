@@ -257,7 +257,28 @@ export const inspectionReportRequestSchema = z.discriminatedUnion("action", [
 export const createProjectSchema = z.object({
   ticketId: idSchema,
   engineerId: idSchema,
+  dependencies: z.array(z.object({
+    respondingAgencyId: idSchema,
+    requirement: z.string().trim().min(10).max(2000),
+  })).max(20).optional(),
 });
+
+export const createDependencyRequestsSchema = z.object({
+  dependencies: z.array(z.object({
+    respondingAgencyId: idSchema,
+    requirement: z.string().trim().min(10).max(2000),
+  })).min(1).max(20),
+});
+
+export const dependencyDirectionSchema = z.enum(["sent", "received"]);
+export const dependencyResponseSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("ASSIGN_ENGINEER"), engineerId: idSchema.optional() }),
+  z.object({ action: z.literal("DECLINE_UNAVAILABLE") }),
+  z.object({ action: z.literal("DECLINE_NOT_CONCERNED") }),
+  z.object({ action: z.literal("RESEND") }),
+  z.object({ action: z.literal("MARK_ASSIGNED_OUT_OF_BAND") }),
+  z.object({ action: z.literal("FULFILL") }),
+]);
 
 export const updateCategoryRoutingSchema = z.object({ primaryAgencyId: idSchema });
 export const updateRoutingRulesSchema = z.object({ dependencyAgencyIds: z.array(idSchema).max(50) });
@@ -365,7 +386,22 @@ export const dependencySchema = z.object({
   respondingAgencyId: idSchema,
   assignedEngineerId: idSchema.nullable(),
   state: dependencyStateSchema,
+  requirement: z.string().min(1),
+  deadline: dateSchema,
+  respondedAt: dateSchema.nullable(),
+  escalatedAt: dateSchema.nullable(),
   createdAt: dateSchema,
+});
+
+export const dependencyListItemSchema = dependencySchema.extend({
+  project: z.object({
+    id: idSchema,
+    ticket: z.object({ id: idSchema, title: z.string() }).nullable(),
+  }),
+  requestingAgency: agencySchema,
+  respondingAgency: agencySchema,
+  assignedEngineer: engineerSummarySchema.nullable(),
+  contacts: z.array(z.object({ email: z.string().email() })),
 });
 
 export const roadSegmentSchema = z.object({
@@ -453,6 +489,9 @@ export type SubmitValidation = z.infer<typeof submitValidationSchema>;
 export type SubmitValidationResult = z.infer<typeof submitValidationResultSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type Dependency = z.infer<typeof dependencySchema>;
+export type DependencyListItem = z.infer<typeof dependencyListItemSchema>;
+export type DependencyResponse = z.infer<typeof dependencyResponseSchema>;
+export type CreateDependencyRequests = z.infer<typeof createDependencyRequestsSchema>;
 export type RoadSegment = z.infer<typeof roadSegmentSchema>;
 export type Intervention = z.infer<typeof interventionSchema>;
 export type Notification = z.infer<typeof notificationSchema>;

@@ -1,4 +1,13 @@
-import type { CategorySummary, CitizenTicketSummary, PendingValidation, SubmitValidationResult, ValidationVote } from "@civicos/shared";
+import type {
+  CategorySummary,
+  CitizenTicketSummary,
+  DependencyListItem,
+  DependencyResponse,
+  PendingValidation,
+  SubmitValidationResult,
+  UserRole,
+  ValidationVote,
+} from "@civicos/shared";
 
 const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://10.0.2.2:4000";
 const accessToken = process.env.EXPO_PUBLIC_ACCESS_TOKEN ?? "";
@@ -18,6 +27,31 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await response.json() as T & { error?: string };
   if (!response.ok) throw new Error(body.error ?? "Request failed");
   return body;
+}
+
+export type CurrentAuth = {
+  userId: string;
+  role: UserRole;
+  agencyId: string | null;
+  wardId: string | null;
+  mustResetPassword: boolean;
+};
+
+export async function loadCurrentAuth(): Promise<CurrentAuth> {
+  const result = await apiFetch<{ auth: CurrentAuth }>("/protected/me");
+  return result.auth;
+}
+
+export async function loadDependencies(direction: "sent" | "received"): Promise<DependencyListItem[]> {
+  const result = await apiFetch<{ dependencies: DependencyListItem[] }>(`/dependencies?direction=${direction}`);
+  return result.dependencies;
+}
+
+export async function respondToDependency(dependencyId: string, response: DependencyResponse): Promise<void> {
+  await apiFetch(`/dependencies/${dependencyId}/respond`, {
+    method: "POST",
+    body: JSON.stringify(response),
+  });
 }
 
 async function uploadFile(target: UploadTarget, image: LocalImage): Promise<void> {

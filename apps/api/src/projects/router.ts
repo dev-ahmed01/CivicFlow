@@ -3,6 +3,7 @@ import { ProjectState, TicketState, UserRole, prisma } from "db";
 import { createProjectSchema, projectStateSchema } from "@civicos/shared";
 import { z } from "zod";
 import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/middleware";
+import { createDependencyRequests, DependencyActionError } from "../dependencies/service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -78,7 +79,19 @@ export function createProjectsRouter(): Router {
         await transaction.notification.create({
           data: { userId: engineer.id, type: "PROJECT_ASSIGNMENT", payload: { projectId: created.id, ticketId: ticket.id } },
         });
-        return { kind: "created" as const, project: created };
+        const dependencies = await createDependencyRequests(
+          transaction,
+          created.id,
+          agencyId,
+          parsed.data.dependencies ?? [],
+          request.auth!.userId,
+        );
+        return { kind: "created" as const, project: created, dependencies };
+      }).catch((error: unknown) => {
+        if (error instanceof DependencyActionError) {
+          return { kind: "dependency" as const, error: error.message, status: error.status };
+        }
+        throw error;
       });
 
       if (project.kind === "missing") {
@@ -89,7 +102,11 @@ export function createProjectsRouter(): Router {
         response.status(409).json({ error: `Project cannot be created from ${project.state}` });
         return;
       }
-      response.status(201).json({ project: project.project });
+      if (project.kind === "dependency") {
+        response.status(project.status).json({ error: project.error });
+        return;
+      }
+      response.status(201).json({ project: project.project, dependencies: project.dependencies });
     }),
   );
 

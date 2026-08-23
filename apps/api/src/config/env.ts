@@ -21,6 +21,7 @@ const envSchema = z.object({
   CLIP_INFERENCE_TOKEN: z.string().min(1).optional(),
   CRON_SECRET: z.string().min(32).optional(),
   VALIDATION_REBATCH_POLL_MINUTES: z.coerce.number().int().positive().default(15),
+  DEPENDENCY_ESCALATION_POLL_MINUTES: z.coerce.number().int().positive().default(15),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

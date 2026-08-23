@@ -2,13 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 import type { CategorySummary, CitizenTicketSummary, PendingValidation, ValidationVote } from "@civicos/shared";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { loadCategories, loadMyTickets, loadPendingValidations, submitReport, validateTicket, type DraftReport, type LocalImage } from "./src/api";
+import { loadCategories, loadCurrentAuth, loadMyTickets, loadPendingValidations, submitReport, validateTicket, type DraftReport, type LocalImage } from "./src/api";
+import { EngineerDependenciesApp } from "./src/engineer-dependencies";
 import { CategoryScreen, ConfirmationScreen, EvidenceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type ConfirmedLocation } from "./src/screens";
 import { colors } from "./src/theme";
 
 type Screen = "home" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "tickets" | "validations" | "verification";
 
 export default function App() {
+  const [viewerRole, setViewerRole] = useState<"ENGINEER" | "OTHER" | "LOADING">("LOADING");
+  const [engineerUserId, setEngineerUserId] = useState<string>();
   const [screen, setScreen] = useState<Screen>("home");
   const [categories, setCategories] = useState<CategorySummary[]>([]);
   const [categoryError, setCategoryError] = useState<string>();
@@ -30,8 +33,19 @@ export default function App() {
   const [validationSubmitting, setValidationSubmitting] = useState(false);
 
   useEffect(() => {
-    void loadCategories().then(setCategories).catch((error: unknown) => setCategoryError(error instanceof Error ? error.message : "Could not load issue types"));
+    void (async () => {
+      try {
+        const auth = await loadCurrentAuth();
+        if (auth.role === "ENGINEER") { setEngineerUserId(auth.userId); setViewerRole("ENGINEER"); return; }
+      } catch { /* Public/citizen startup continues without an internal role. */ }
+      setViewerRole("OTHER");
+      try { setCategories(await loadCategories()); }
+      catch (error) { setCategoryError(error instanceof Error ? error.message : "Could not load issue types"); }
+    })();
   }, []);
+
+  if (viewerRole === "ENGINEER" && engineerUserId) return <><StatusBar style="dark" /><EngineerDependenciesApp currentUserId={engineerUserId} /></>;
+  if (viewerRole === "LOADING") return <><StatusBar style="dark" /><Shell><View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loadingText}>Loading CivicOS…</Text></View></Shell></>;
 
   const updateLocation = useCallback((next: ConfirmedLocation) => setLocation(next), []);
   const reset = () => {

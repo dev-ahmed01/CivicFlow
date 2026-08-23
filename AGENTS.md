@@ -33,7 +33,7 @@ _(Update this section as phases complete — Codex should read it to know what a
 - [x] Phase 2 — Citizen reporting flow + AI relevance + duplicate detection
 - [x] Phase 3 — Community verification
 - [x] Phase 4 — Agency routing + Project Head core workflows
-- [ ] Phase 5 — Dependency system
+- [x] Phase 5 — Dependency system
 - [ ] Phase 6 — Executive Engineer workflows
 - [ ] Phase 7 — Conflict detection engine (generic)
 - [ ] Phase 8 — Road-Cutting Intelligence Layer (flagship)
