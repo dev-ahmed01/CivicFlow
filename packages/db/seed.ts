@@ -90,6 +90,9 @@ const routingRules = [
 
 const adminConfigs = [
   { key: "auth.otp_max_attempts", value: 5, description: "Maximum failed verification attempts for one OTP challenge" },
+  // Delta §6 — inputs for the explicitly simulated restoration-savings formula.
+  { key: "road.simulated_restoration_cost_per_meter", value: 1800, description: "Illustrative road restoration cost per affected metre in INR; never presented as measured" },
+  { key: "road.simulated_avoided_rework_factor", value: 0.65, description: "Illustrative fraction of restoration work assumed avoided after an accepted sequencing recommendation" },
   { key: "verification.default_radius_meters", value: 500, description: "Default citizen verification radius when a ward override is absent" },
   { key: "verification.daily_cap", value: 10, description: "Maximum validations a citizen may submit per day" },
   { key: "verification.quorum", value: 3, description: "Independent confirmations required to validate a ticket" },

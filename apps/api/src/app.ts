@@ -20,6 +20,7 @@ import { createAdminRouter } from "./admin/router";
 import { createDependenciesRouter, createDependencyJobsRouter } from "./dependencies/router";
 import { createRoadIntelligenceRouter } from "./road-intelligence/router";
 import { createNotificationsRouter } from "./notifications/router";
+import { createAnalyticsRouter } from "./analytics/router";
 
 export interface AppDependencies {
   otpProvider?: OtpProvider;
@@ -54,6 +55,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.use(createDependenciesRouter());
   app.use(createRoadIntelligenceRouter());
   app.use(createNotificationsRouter());
+  app.use(createAnalyticsRouter());
   app.use("/admin", createAdminRouter());
 
   // Part III §17.2 — protected routes always authenticate, enforce role, then scope.

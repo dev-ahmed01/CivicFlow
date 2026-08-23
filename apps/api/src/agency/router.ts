@@ -11,6 +11,7 @@ import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/
 import type { ImageStorage } from "../images/storage";
 import { checkProjectConflicts } from "../conflicts/service";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
+import { buildAnalyticsReport } from "../analytics/service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -49,7 +50,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
     requirePasswordResetComplete,
     asyncRoute(async (request, response) => {
       const agencyId = projectHeadAgency(request);
-      const [agency, newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects] = await Promise.all([
+      const [agency, newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects, analytics] = await Promise.all([
         prisma.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { id: true, name: true } }),
         prisma.ticket.count({ where: { assignedAgencyId: agencyId, state: TicketState.ROUTED_TO_AGENCY } }),
         prisma.ticket.count({ where: { assignedAgencyId: agencyId, state: TicketState.INSPECTION_DUE } }),
@@ -62,8 +63,21 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         prisma.project.count({
           where: { agencyId, state: { notIn: [ProjectState.CLOSED, ProjectState.CANCELLED] } },
         }),
+        buildAnalyticsReport({ agencyId }),
       ]);
-      response.json({ agency, counts: { newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects } });
+      response.json({
+        agency,
+        counts: { newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects },
+        performance: {
+          ticketsResolved: analytics.totals.ticketsResolved,
+          resolutionRatePercent: analytics.totals.resolutionRatePercent,
+          averageInspectionHours: analytics.inspectionTimeByAgency[0]?.averageHours ?? null,
+          dependencyEscalationRatePercent: analytics.dependencyEscalationByAgency[0]?.ratePercent ?? 0,
+          reworkRatePercent: analytics.citizenNotResolvedByAgency[0]?.ratePercent ?? 0,
+          roadConflicts: analytics.totals.roadConflicts,
+          simulatedRestorationCostSaved: analytics.simulatedRestorationCostSaved,
+        },
+      });
     }),
   );
 

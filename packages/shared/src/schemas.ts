@@ -343,6 +343,43 @@ export const dependencyResponseSchema = z.discriminatedUnion("action", [
 export const updateCategoryRoutingSchema = z.object({ primaryAgencyId: idSchema });
 export const updateRoutingRulesSchema = z.object({ dependencyAgencyIds: z.array(idSchema).max(50) });
 
+export const adminCategoryInputSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  primaryAgencyId: idSchema,
+  adminEditable: z.boolean().default(true),
+});
+export const adminAgencyInputSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  type: z.string().trim().min(2).max(80),
+});
+export const adminWardInputSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  boundary: polygonSchema,
+  verificationRadiusOverrideMeters: z.number().int().positive().nullable().default(null),
+});
+export const adminConfigInputSchema = z.object({
+  key: z.string().trim().min(2).max(160).regex(/^[a-z0-9._-]+$/),
+  value: z.unknown(),
+  description: z.string().trim().min(2).max(500),
+});
+export const adminUserInputSchema = z.object({
+  role: userRoleSchema,
+  email: z.string().email().nullable().optional(),
+  phone: z.string().regex(/^\+[1-9]\d{7,14}$/).nullable().optional(),
+  password: z.string().min(12).optional(),
+  agencyId: idSchema.nullable().optional(),
+  wardId: idSchema.nullable().optional(),
+  mustResetPassword: z.boolean().default(true),
+}).superRefine((value, context) => {
+  if (value.role === "CITIZEN" && !value.phone) context.addIssue({ code: z.ZodIssueCode.custom, path: ["phone"], message: "Citizens require a phone" });
+  if (value.role !== "CITIZEN" && !value.email) context.addIssue({ code: z.ZodIssueCode.custom, path: ["email"], message: "Internal users require an email" });
+  if (["PROJECT_HEAD", "ENGINEER"].includes(value.role) && !value.agencyId) context.addIssue({ code: z.ZodIssueCode.custom, path: ["agencyId"], message: "Agency role requires an agency" });
+});
+export const adminRoutingRuleInputSchema = z.object({
+  categoryId: idSchema,
+  dependencyAgencyId: idSchema,
+});
+
 export const wardSummarySchema = wardSchema.pick({ id: true, name: true });
 export const engineerSummarySchema = z.object({ id: idSchema, email: z.string().email().nullable() });
 export const routingAgencySuggestionSchema = agencySchema.pick({ id: true, name: true, type: true });
@@ -683,7 +720,10 @@ export const verifyOtpSchema = requestOtpSchema.extend({
 export const internalLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+  totpCode: z.string().regex(/^\d{6}$/).optional(),
 });
+
+export const totpCodeSchema = z.object({ code: z.string().regex(/^\d{6}$/) });
 
 export const resetPasswordSchema = z.object({
   currentPassword: z.string().min(8),

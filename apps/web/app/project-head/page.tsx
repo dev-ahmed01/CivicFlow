@@ -5,7 +5,19 @@ import { useEffect, useState } from "react";
 import type { ProjectHeadDashboardCounts } from "@civicos/shared";
 import { apiFetch } from "./_lib/api";
 
-type DashboardResponse = { agency: { id: string; name: string }; counts: ProjectHeadDashboardCounts };
+type DashboardResponse = {
+  agency: { id: string; name: string };
+  counts: ProjectHeadDashboardCounts;
+  performance: {
+    ticketsResolved: number;
+    resolutionRatePercent: number;
+    averageInspectionHours: number | null;
+    dependencyEscalationRatePercent: number;
+    reworkRatePercent: number;
+    roadConflicts: number;
+    simulatedRestorationCostSaved: { amountInr: number; label: "Simulated/Illustrative" };
+  };
+};
 
 export default function ProjectHeadDashboardPage() {
   const [data, setData] = useState<DashboardResponse>();
@@ -29,6 +41,17 @@ export default function ProjectHeadDashboardPage() {
       <section className="metric-grid" aria-label="Agency summary">
         {cards.map((card) => <Link className={`metric-card ${card.tone}`} href={card.href} key={card.label}><span>{card.label}</span><strong>{card.value}</strong><small>View details →</small></Link>)}
       </section>
+      {data ? <section className="portal-panel analytics-summary" aria-labelledby="agency-performance-title">
+        <div><p className="eyebrow">Real-data performance</p><h2 id="agency-performance-title">Agency delivery indicators</h2></div>
+        <div className="analytics-mini-grid">
+          <div><span>Resolved</span><strong>{data.performance.ticketsResolved}</strong><small>{data.performance.resolutionRatePercent}% of created tickets</small></div>
+          <div><span>Avg. inspection time</span><strong>{data.performance.averageInspectionHours ?? "—"}</strong><small>hours from ticket creation</small></div>
+          <div><span>Dependency escalation</span><strong>{data.performance.dependencyEscalationRatePercent}%</strong><small>of dependency requests</small></div>
+          <div><span>Citizen “not resolved”</span><strong>{data.performance.reworkRatePercent}%</strong><small>completion responses</small></div>
+          <div><span>Road conflicts</span><strong>{data.performance.roadConflicts}</strong><small>recorded advisory detections</small></div>
+          <div className="simulated-metric"><span>Restoration cost saved</span><strong>₹{data.performance.simulatedRestorationCostSaved.amountInr.toLocaleString("en-IN")}</strong><small>{data.performance.simulatedRestorationCostSaved.label}</small></div>
+        </div>
+      </section> : null}
       <section className="portal-panel quick-actions"><div><p className="eyebrow">Next actions</p><h2>Keep work moving</h2></div><div><Link href="/project-head/tickets">Review validated queue</Link><Link href="/project-head/projects">Track active projects</Link></div></section>
     </>
   );
