@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { CategorySummary, CitizenTicketSummary, PendingValidation, ValidationVote } from "@civicos/shared";
+import type { CategorySummary, CitizenTicketSummary, CompletionVerificationDecision, PendingCompletionVerification, PendingValidation, ValidationVote } from "@civicos/shared";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
@@ -10,15 +10,16 @@ import { colors } from "./theme";
 
 export function Shell({ children }: { children: ReactNode }) { return <SafeAreaView style={styles.safe}><View style={styles.shell}>{children}</View></SafeAreaView>; }
 
-export function HomeScreen({ onReport, onTickets, onValidations }: { onReport: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void }) {
+export function HomeScreen({ onReport, onTickets, onValidations, onCompletionValidations, onEngineerLogin }: { onReport: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void; onCompletionValidations: () => void; onEngineerLogin: () => void }) {
   return <Shell><ScrollView contentContainerStyle={styles.content}>
     <View style={styles.brand}><Text style={styles.brandMark}>C</Text><Text style={styles.brandName}>CivicOS</Text></View>
     <View style={styles.hero}><Text style={styles.kicker}>Your city, heard</Text><Text style={styles.heroTitle}>Spot a civic issue?</Text><Text style={styles.body}>Share a photo and location. We’ll keep you updated in plain language.</Text><PrimaryButton onPress={onReport}>Report an Issue</PrimaryButton></View>
     <Pressable accessibilityRole="button" style={styles.validationBanner} onPress={onValidations}><View><Text style={styles.kicker}>Community check</Text><Text style={styles.cardTitle}>Nearby verification requests</Text><Text style={styles.cardHint}>Help confirm an issue close to you</Text></View><Text style={styles.bannerArrow}>›</Text></Pressable>
+    <Pressable accessibilityRole="button" style={styles.validationBanner} onPress={onCompletionValidations}><View><Text style={styles.kicker}>Completion check</Text><Text style={styles.cardTitle}>Verify completed work</Text><Text style={styles.cardHint}>Review evidence for issues you validated</Text></View><Text style={styles.bannerArrow}>›</Text></Pressable>
     <Text style={styles.sectionTitle}>My tickets</Text><View style={styles.row}>
       <Pressable style={styles.statCard} onPress={() => onTickets("ongoing")}><Text style={styles.statIcon}>◷</Text><Text style={styles.cardTitle}>Ongoing</Text><Text style={styles.cardHint}>Track current reports</Text></Pressable>
       <Pressable style={styles.statCard} onPress={() => onTickets("past")}><Text style={styles.statIcon}>✓</Text><Text style={styles.cardTitle}>Past</Text><Text style={styles.cardHint}>See closed reports</Text></Pressable>
-    </View>
+    </View><SecondaryButton onPress={onEngineerLogin}>Executive Engineer sign in</SecondaryButton>
   </ScrollView></Shell>;
 }
 
@@ -77,6 +78,14 @@ const validationActions: Array<{ vote: ValidationVote; label: string; style: "co
 
 export function VerificationRequestScreen({ validation, submitting, onBack, onSubmit }: { validation: PendingValidation; submitting: boolean; onBack: () => void; onSubmit: (vote: ValidationVote) => void }) {
   return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Nearby verification request" title="Can you confirm this?" onBack={onBack} /><View style={styles.validationPhoto}><Image source={{ uri: validation.imageUrl }} resizeMode="cover" style={styles.photo} /></View><View style={styles.ticketCard}><Text style={styles.kicker}>{validation.category.name}</Text><Text style={styles.cardTitle}>{validation.title}</Text><Text style={styles.cardHint}>{Math.round(validation.distanceMeters)} m from your last known location</Text></View><Text style={styles.body}>Choose the response that best matches what you can verify. Other people’s responses stay private until after you answer.</Text><View style={styles.validationActions}>{validationActions.map((action) => <Pressable accessibilityRole="button" disabled={submitting} key={action.vote} onPress={() => onSubmit(action.vote)} style={[styles.voteButton, action.style === "confirm" ? styles.voteConfirm : action.style === "reject" ? styles.voteReject : styles.voteNeutral, submitting && styles.disabled]}><Text style={[styles.voteLabel, action.style === "confirm" ? styles.voteConfirmLabel : action.style === "reject" ? styles.voteRejectLabel : undefined]}>{action.label}</Text></Pressable>)}</View></ScrollView></Shell>;
+}
+
+export function CompletionVerificationListScreen({ completions, loading, error, onBack, onOpen }: { completions: PendingCompletionVerification[]; loading: boolean; error?: string; onBack: () => void; onOpen: (completion: PendingCompletionVerification) => void }) {
+  return <Shell><View style={styles.content}><ScreenHeader eyebrow="Completion verification" title="Work awaiting your check" onBack={onBack} />{loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}<FlatList data={completions} keyExtractor={(item) => item.evidenceId} ListEmptyComponent={!loading ? <Text style={styles.body}>No completed work needs your review.</Text> : null} renderItem={({ item }) => <Pressable accessibilityRole="button" onPress={() => onOpen(item)} style={styles.ticketCard}><Text style={styles.kicker}>Ticket {item.ticketId.slice(0, 8)}</Text><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.cardHint}>Submitted {new Date(item.submittedAt).toLocaleDateString()}</Text></Pressable>} /></View></Shell>;
+}
+
+export function CompletionVerificationScreen({ completion, submitting, onBack, onSubmit }: { completion: PendingCompletionVerification; submitting: boolean; onBack: () => void; onSubmit: (decision: CompletionVerificationDecision) => void }) {
+  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Completion verification" title="Does the completed work look right?" onBack={onBack} /><View style={styles.validationPhoto}><Image source={{ uri: completion.photoUrl }} resizeMode="cover" style={styles.photo} /></View><View style={styles.ticketCard}><Text style={styles.cardTitle}>{completion.title}</Text><Text style={styles.body}>{completion.notes}</Text></View><PrimaryButton disabled={submitting} onPress={() => onSubmit("VERIFIED")}>Verify completion</PrimaryButton><Pressable accessibilityRole="button" disabled={submitting} onPress={() => onSubmit("REWORK_REQUESTED")} style={[styles.voteButton, styles.voteReject, submitting && styles.disabled]}><Text style={[styles.voteLabel, styles.voteRejectLabel]}>Request rework</Text></Pressable></ScrollView></Shell>;
 }
 
 const styles = StyleSheet.create({

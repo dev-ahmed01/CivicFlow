@@ -92,7 +92,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
 
   router.get(
     "/wards",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
     requirePasswordResetComplete,
     asyncRoute(async (_request, response) => {
       response.json({ wards: await prisma.ward.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }) });

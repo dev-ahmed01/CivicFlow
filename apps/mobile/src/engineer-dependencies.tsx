@@ -48,7 +48,7 @@ function DependencyCard({ dependency, direction, currentUserId, now, busy, onRes
   </View>;
 }
 
-export function EngineerDependenciesApp({ currentUserId }: { currentUserId: string }) {
+export function EngineerDependenciesApp({ currentUserId, onBack }: { currentUserId: string; onBack?: () => void }) {
   const [direction, setDirection] = useState<Direction>("received");
   const [dependencies, setDependencies] = useState<DependencyListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,7 +84,7 @@ export function EngineerDependenciesApp({ currentUserId }: { currentUserId: stri
   };
 
   return <Shell><View style={styles.screen}>
-    <View style={styles.header}><Text style={styles.eyebrow}>Executive Engineer</Text><Text style={styles.heading}>Dependencies</Text><Text style={styles.intro}>Coordinate work requested by your agency and partner agencies.</Text></View>
+    <View style={styles.header}>{onBack ? <Pressable accessibilityRole="button" onPress={onBack}><Text style={styles.back}>‹ Back</Text></Pressable> : null}<Text style={styles.eyebrow}>Executive Engineer</Text><Text style={styles.heading}>Dependencies</Text><Text style={styles.intro}>Coordinate work requested by your agency and partner agencies.</Text></View>
     <View style={styles.tabs}>
       {(["received", "sent"] as const).map((item) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: direction === item }} key={item} onPress={() => setDirection(item)} style={[styles.tab, direction === item && styles.tabActive]}><Text style={[styles.tabLabel, direction === item && styles.tabLabelActive]}>{item === "received" ? "Inbox" : "Outbox"}{direction === item ? ` (${visibleCount})` : ""}</Text></Pressable>)}
     </View>
@@ -96,6 +96,7 @@ export function EngineerDependenciesApp({ currentUserId }: { currentUserId: stri
 const styles = StyleSheet.create({
   screen: { flex: 1, gap: 16, padding: 20, paddingTop: 28 },
   header: { gap: 6 },
+  back: { color: colors.primary, fontSize: 16, fontWeight: "800", marginBottom: 8 },
   eyebrow: { color: colors.primary, fontSize: 13, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" },
   heading: { color: colors.ink, fontSize: 32, fontWeight: "900" },
   intro: { color: colors.muted, fontSize: 15, lineHeight: 22 },

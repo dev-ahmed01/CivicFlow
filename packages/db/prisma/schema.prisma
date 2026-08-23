@@ -29,7 +29,7 @@ enum TicketState {
   ENGINEER_ASSIGNED
   WORK_IN_PROGRESS
   WORK_COMPLETED
-  PENDING_CITIZEN_VERIFICATION
+  AWAITING_CITIZEN_VERIFICATION
   RESOLVED
   CLOSED
   REJECTED
@@ -38,15 +38,21 @@ enum TicketState {
 
 enum ProjectState {
   CREATED
-  ENGINEER_ASSIGNED
-  ACCEPTED
+  PENDING_UPTAKE
+  UPTAKEN
   TIMELINE_SET
   CONFLICT_CHECKED
-  WORK_IN_PROGRESS
-  WORK_COMPLETED
-  PENDING_CITIZEN_VERIFICATION
+  ACTIVE
+  MODIFIED
+  COMPLETED
+  AWAITING_VERIFICATION
   CLOSED
   CANCELLED
+}
+
+enum CompletionVerificationDecision {
+  VERIFIED
+  REWORK_REQUESTED
 }
 
 enum DependencyState {
@@ -93,6 +99,11 @@ model User {
   refreshSessions      RefreshSession[]
   inspectionReports    InspectionReport[]
   dependencyTransitions DependencyStateTransition[] @relation("DependencyTransitionActor")
+  projectTransitions   ProjectStateTransition[] @relation("ProjectTransitionActor")
+  projectWorkNotes     ProjectWorkNote[]
+  completionEvidence   CompletionEvidence[] @relation("CompletionEvidenceSubmitter")
+  completionVerificationRequests CompletionVerificationRequest[]
+  completionVerifications CompletionVerification[]
 
   @@index([agencyId])
   @@index([wardId])
@@ -179,6 +190,7 @@ model Ticket {
   project        Project?
   stateTransitions TicketStateTransition[]
   inspectionReports InspectionReport[]
+  completionEvidence CompletionEvidence[]
 
   @@index([categoryId])
   @@index([reporterId])
@@ -298,19 +310,107 @@ model Project {
   state        ProjectState @default(CREATED)
   plannedStart DateTime?
   plannedEnd   DateTime?
+  workDescription String?
+  dependencyFlags Json         @default("[]")
   engineerId   String?      @db.Uuid
   createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   ticket       Ticket?       @relation(fields: [ticketId], references: [id], onDelete: SetNull)
   agency       Agency        @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   engineer     User?         @relation("ProjectEngineer", fields: [engineerId], references: [id], onDelete: SetNull)
   dependencies Dependency[]
   intervention Intervention?
+  stateTransitions ProjectStateTransition[]
+  workNotes ProjectWorkNote[]
+  completionEvidence CompletionEvidence[]
 
   @@index([ticketId])
   @@index([agencyId])
   @@index([engineerId])
   @@index([state])
+}
+
+model ProjectStateTransition {
+  id        String       @id @default(uuid()) @db.Uuid
+  projectId String       @db.Uuid
+  fromState ProjectState?
+  toState   ProjectState
+  reason    String
+  actedById String?      @db.Uuid
+  createdAt DateTime     @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actedBy User?   @relation("ProjectTransitionActor", fields: [actedById], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([actedById])
+}
+
+model ProjectWorkNote {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @db.Uuid
+  authorId  String   @db.Uuid
+  note      String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@index([authorId])
+}
+
+model CompletionEvidence {
+  id            String    @id @default(uuid()) @db.Uuid
+  projectId     String    @db.Uuid
+  ticketId      String    @db.Uuid
+  submittedById String    @db.Uuid
+  photoUrl      String
+  objectKey     String    @unique
+  contentType   String
+  notes         String
+  uploadedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ticket      Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  submittedBy User    @relation("CompletionEvidenceSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+  verificationRequests CompletionVerificationRequest[]
+  verifications CompletionVerification[]
+
+  @@index([projectId, createdAt])
+  @@index([ticketId])
+  @@index([submittedById])
+}
+
+model CompletionVerificationRequest {
+  id                   String    @id @default(uuid()) @db.Uuid
+  completionEvidenceId String    @db.Uuid
+  citizenId            String    @db.Uuid
+  notifiedAt           DateTime  @default(now())
+  respondedAt          DateTime?
+
+  completionEvidence CompletionEvidence @relation(fields: [completionEvidenceId], references: [id], onDelete: Cascade)
+  citizen           User               @relation(fields: [citizenId], references: [id], onDelete: Cascade)
+
+  @@unique([completionEvidenceId, citizenId])
+  @@index([citizenId, respondedAt])
+}
+
+model CompletionVerification {
+  id                   String                         @id @default(uuid()) @db.Uuid
+  completionEvidenceId String                         @db.Uuid
+  validatorId          String                         @db.Uuid
+  decision             CompletionVerificationDecision
+  note                 String?
+  createdAt            DateTime                       @default(now())
+
+  completionEvidence CompletionEvidence @relation(fields: [completionEvidenceId], references: [id], onDelete: Cascade)
+  validator          User               @relation(fields: [validatorId], references: [id], onDelete: Restrict)
+
+  @@unique([completionEvidenceId, validatorId])
+  @@index([validatorId, createdAt])
 }
 
 model Dependency {

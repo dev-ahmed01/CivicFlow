@@ -1,16 +1,21 @@
 import type {
   CategorySummary,
   CitizenTicketSummary,
+  CompletionVerificationDecision,
   DependencyListItem,
   DependencyResponse,
+  EngineerProjectDetail,
   PendingValidation,
+  PendingCompletionVerification,
+  ProjectListItem,
+  ProjectState,
   SubmitValidationResult,
   UserRole,
   ValidationVote,
 } from "@civicos/shared";
 
 const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://10.0.2.2:4000";
-const accessToken = process.env.EXPO_PUBLIC_ACCESS_TOKEN ?? "";
+let accessToken = process.env.EXPO_PUBLIC_ACCESS_TOKEN ?? "";
 
 type LocalImage = { uri: string; fileName: string; contentType: "image/jpeg" | "image/png" | "image/webp" | "image/heic" };
 type UploadTarget = { uploadUrl: string; headers: { "Content-Type": string } };
@@ -42,6 +47,22 @@ export async function loadCurrentAuth(): Promise<CurrentAuth> {
   return result.auth;
 }
 
+export async function internalLogin(email: string, password: string): Promise<CurrentAuth> {
+  const result = await apiFetch<{
+    user: { id: string; role: UserRole; agencyId: string | null };
+    accessToken: string;
+    requiresPasswordReset: boolean;
+  }>("/auth/internal/login", { method: "POST", body: JSON.stringify({ email, password }) });
+  if (result.user.role !== "ENGINEER" || !result.user.agencyId) throw new Error("Use an Executive Engineer account");
+  if (result.requiresPasswordReset) throw new Error("Reset this account's temporary password before continuing");
+  accessToken = result.accessToken;
+  return { userId: result.user.id, role: result.user.role, agencyId: result.user.agencyId, wardId: null, mustResetPassword: false };
+}
+
+export function clearInternalSession(): void {
+  accessToken = "";
+}
+
 export async function loadDependencies(direction: "sent" | "received"): Promise<DependencyListItem[]> {
   const result = await apiFetch<{ dependencies: DependencyListItem[] }>(`/dependencies?direction=${direction}`);
   return result.dependencies;
@@ -52,6 +73,45 @@ export async function respondToDependency(dependencyId: string, response: Depend
     method: "POST",
     body: JSON.stringify(response),
   });
+}
+
+export async function loadEngineerProjects(scope: "mine" | "assigned" | "geographic", filters: { agencyId?: string; status?: ProjectState } = {}): Promise<ProjectListItem[]> {
+  const query = new URLSearchParams({ scope });
+  if (filters.agencyId) query.set("agency", filters.agencyId);
+  if (filters.status) query.set("status", filters.status);
+  const result = await apiFetch<{ projects: ProjectListItem[] }>(`/projects?${query.toString()}`);
+  return result.projects;
+}
+
+export async function loadEngineerProject(projectId: string): Promise<EngineerProjectDetail> {
+  const result = await apiFetch<{ project: EngineerProjectDetail }>(`/projects/${projectId}`);
+  return result.project;
+}
+
+export async function uptakeProject(projectId: string): Promise<void> {
+  await apiFetch(`/projects/${projectId}/uptake`, { method: "POST" });
+}
+
+export async function updateProjectTimeline(projectId: string, input: { plannedStart: string; plannedEnd: string; workDescription: string; dependencyFlags: string[] }): Promise<void> {
+  await apiFetch(`/projects/${projectId}/timeline`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export async function updateProjectStatus(projectId: string, input: { state?: "COMPLETED"; note?: string }): Promise<void> {
+  await apiFetch(`/projects/${projectId}/status`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export async function submitCompletionEvidence(projectId: string, image: LocalImage, notes: string): Promise<void> {
+  const target = await apiFetch<{ evidenceId: string; upload: UploadTarget }>(`/projects/${projectId}/completion`, {
+    method: "POST",
+    body: JSON.stringify({ action: "presign", fileName: image.fileName, contentType: image.contentType, notes }),
+  });
+  await uploadFile(target.upload, image);
+  await apiFetch(`/projects/${projectId}/completion`, { method: "POST", body: JSON.stringify({ action: "complete", evidenceId: target.evidenceId }) });
+}
+
+export async function loadAgencies(): Promise<Array<{ id: string; name: string }>> {
+  const result = await apiFetch<{ agencies: Array<{ id: string; name: string }> }>("/agencies");
+  return result.agencies;
 }
 
 async function uploadFile(target: UploadTarget, image: LocalImage): Promise<void> {
@@ -79,6 +139,18 @@ export async function validateTicket(ticketId: string, vote: ValidationVote): Pr
   return apiFetch<SubmitValidationResult>(`/tickets/${ticketId}/validate`, {
     method: "POST",
     body: JSON.stringify({ vote }),
+  });
+}
+
+export async function loadPendingCompletionVerifications(): Promise<PendingCompletionVerification[]> {
+  const result = await apiFetch<{ completions: PendingCompletionVerification[] }>("/citizens/me/pending-completion-verifications");
+  return result.completions;
+}
+
+export async function verifyCompletion(evidenceId: string, decision: CompletionVerificationDecision, note?: string): Promise<void> {
+  await apiFetch(`/completion-evidence/${evidenceId}/verify`, {
+    method: "POST",
+    body: JSON.stringify({ decision, note }),
   });
 }
 

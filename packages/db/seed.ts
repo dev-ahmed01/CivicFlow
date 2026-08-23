@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient, UserRole } from "@prisma/client";
+import { Prisma, PrismaClient, ProjectState, TicketState, UserRole, ValidationVote } from "@prisma/client";
 import bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
@@ -112,6 +112,13 @@ const communityValidators = Array.from({ length: 30 }, (_unused, index) => ({
   longitude: 77.62,
 }));
 
+const engineerDemoProjects = [
+  { suffix: "01", title: "Repair failed carriageway near Koramangala 5th Block", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.ENGINEER_ASSIGNED, projectState: ProjectState.PENDING_UPTAKE, wardId: ids.wards.koramangala, categoryId: categories[0].id, longitude: 77.6212, latitude: 12.9348, start: null, end: null },
+  { suffix: "02", title: "Restore damaged road shoulder on 80 Feet Road", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.WORK_IN_PROGRESS, projectState: ProjectState.ACTIVE, wardId: ids.wards.koramangala, categoryId: categories[0].id, longitude: 77.6241, latitude: 12.9361, start: new Date("2026-08-20T00:00:00.000Z"), end: new Date("2026-09-03T23:59:59.999Z") },
+  { suffix: "03", title: "Replace leaking distribution valve in HSR Layout", agencyId: ids.agencies.bwssb, engineerId: "40000000-0000-4000-8000-000000000202", ticketState: TicketState.WORK_IN_PROGRESS, projectState: ProjectState.ACTIVE, wardId: ids.wards.hsrLayout, categoryId: categories[2].id, longitude: 77.6389, latitude: 12.9116, start: new Date("2026-08-22T00:00:00.000Z"), end: new Date("2026-09-08T23:59:59.999Z") },
+  { suffix: "04", title: "Complete pothole patching near Forum junction", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.WORK_COMPLETED, projectState: ProjectState.COMPLETED, wardId: ids.wards.koramangala, categoryId: categories[0].id, longitude: 77.6118, latitude: 12.9342, start: new Date("2026-08-15T00:00:00.000Z"), end: new Date("2026-08-22T23:59:59.999Z") },
+] as const;
+
 async function seedWards(): Promise<void> {
   for (const ward of wards) {
     await prisma.$executeRaw`
@@ -121,6 +128,58 @@ async function seedWards(): Promise<void> {
         "name" = EXCLUDED."name",
         "boundary" = EXCLUDED."boundary"
     `;
+  }
+}
+
+async function seedEngineerWorkflowDemo(): Promise<void> {
+  for (const item of engineerDemoProjects) {
+    const ticketId = `50000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
+    const observationId = `60000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
+    const projectId = `70000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
+    await prisma.$executeRaw`
+      INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
+      VALUES (${ticketId}::uuid, ${item.categoryId}::uuid, ${"40000000-0000-4000-8000-000000000001"}::uuid,
+        ${item.agencyId}::uuid, ST_SetSRID(ST_MakePoint(${item.longitude}, ${item.latitude}), 4326), ${item.wardId}::uuid,
+        ${item.ticketState}::"TicketState", ${item.title}, ${`${item.title}, Bengaluru`}, NOW())
+      ON CONFLICT ("id") DO UPDATE SET
+        "assignedAgencyId" = EXCLUDED."assignedAgencyId", "coordinates" = EXCLUDED."coordinates", "state" = EXCLUDED."state",
+        "title" = EXCLUDED."title", "address" = EXCLUDED."address"
+    `;
+    await prisma.observation.upsert({
+      where: { id: observationId },
+      update: { imageUrl: `https://images.civicos.local/demo/${item.suffix}.jpg`, note: "Field evidence captured during initial assessment." },
+      create: { id: observationId, ticketId, submitterId: "40000000-0000-4000-8000-000000000001", imageUrl: `https://images.civicos.local/demo/${item.suffix}.jpg`, note: "Field evidence captured during initial assessment." },
+    });
+    await prisma.image.upsert({
+      where: { objectKey: `demo/engineer/${item.suffix}.jpg` },
+      update: { url: `https://images.civicos.local/demo/${item.suffix}.jpg`, uploadedAt: new Date() },
+      create: { observationId, url: `https://images.civicos.local/demo/${item.suffix}.jpg`, objectKey: `demo/engineer/${item.suffix}.jpg`, isPrimary: true, uploadedAt: new Date() },
+    });
+    await prisma.inspectionReport.upsert({
+      where: { objectKey: `demo/engineer/${item.suffix}-inspection.pdf` },
+      update: { notes: "Site inspected; execution scope and safety controls confirmed.", uploadedAt: new Date() },
+      create: { ticketId, submittedById: item.agencyId === ids.agencies.pwd ? "40000000-0000-4000-8000-000000000101" : "40000000-0000-4000-8000-000000000102", fileUrl: `https://images.civicos.local/demo/${item.suffix}-inspection.pdf`, objectKey: `demo/engineer/${item.suffix}-inspection.pdf`, contentType: "application/pdf", notes: "Site inspected; execution scope and safety controls confirmed.", uploadedAt: new Date() },
+    });
+    await prisma.project.upsert({
+      where: { id: projectId },
+      update: { agencyId: item.agencyId, engineerId: item.engineerId, state: item.projectState, plannedStart: item.start, plannedEnd: item.end, workDescription: item.start ? "Execute the inspected scope with field safety controls and restore the public area." : null, dependencyFlags: item.agencyId === ids.agencies.pwd ? ["Traffic coordination"] : ["Road restoration coordination"] },
+      create: { id: projectId, ticketId, agencyId: item.agencyId, engineerId: item.engineerId, state: item.projectState, plannedStart: item.start, plannedEnd: item.end, workDescription: item.start ? "Execute the inspected scope with field safety controls and restore the public area." : null, dependencyFlags: item.agencyId === ids.agencies.pwd ? ["Traffic coordination"] : ["Road restoration coordination"] },
+    });
+    const transitionId = `71000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
+    await prisma.projectStateTransition.upsert({
+      where: { id: transitionId },
+      update: { toState: item.projectState, reason: "DEMO_WORKFLOW_STATE" },
+      create: { id: transitionId, projectId, fromState: null, toState: item.projectState, reason: "DEMO_WORKFLOW_STATE", actedById: item.engineerId },
+    });
+    if (item.projectState === ProjectState.COMPLETED) {
+      for (let number = 1; number <= 3; number += 1) {
+        await prisma.validation.upsert({
+          where: { ticketId_validatorId: { ticketId, validatorId: communityValidators[number - 1]!.id } },
+          update: { vote: ValidationVote.CONFIRM, counted: true },
+          create: { ticketId, validatorId: communityValidators[number - 1]!.id, vote: ValidationVote.CONFIRM, counted: true },
+        });
+      }
+    }
   }
 }
 
@@ -191,7 +250,10 @@ async function main(): Promise<void> {
     }
   }
 
+  await seedEngineerWorkflowDemo();
+
   console.log(`Seeded ${wards.length} wards, ${agencies.length} agencies, ${categories.length} categories, and ${users.length} users.`);
+  console.log(`Seeded ${engineerDemoProjects.length} Executive Engineer demo projects.`);
   console.log("Local internal-user password: CivicOS@123");
 }
 

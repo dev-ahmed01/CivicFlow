@@ -21,7 +21,7 @@ export const ticketStateSchema = z.enum([
   "ENGINEER_ASSIGNED",
   "WORK_IN_PROGRESS",
   "WORK_COMPLETED",
-  "PENDING_CITIZEN_VERIFICATION",
+  "AWAITING_CITIZEN_VERIFICATION",
   "RESOLVED",
   "CLOSED",
   "REJECTED",
@@ -60,22 +60,25 @@ export function toCitizenTicketState(state: TicketState): CitizenTicketState {
     return "INSPECTION_AND_PLANNING";
   }
   if (["WORK_IN_PROGRESS", "WORK_COMPLETED"].includes(state)) return "WORK_IN_PROGRESS";
-  if (state === "PENDING_CITIZEN_VERIFICATION") return "AWAITING_CONFIRMATION";
+  if (state === "AWAITING_CITIZEN_VERIFICATION") return "AWAITING_CONFIRMATION";
   return "CLOSED";
 }
 
 export const projectStateSchema = z.enum([
   "CREATED",
-  "ENGINEER_ASSIGNED",
-  "ACCEPTED",
+  "PENDING_UPTAKE",
+  "UPTAKEN",
   "TIMELINE_SET",
   "CONFLICT_CHECKED",
-  "WORK_IN_PROGRESS",
-  "WORK_COMPLETED",
-  "PENDING_CITIZEN_VERIFICATION",
+  "ACTIVE",
+  "MODIFIED",
+  "COMPLETED",
+  "AWAITING_VERIFICATION",
   "CLOSED",
   "CANCELLED",
 ]);
+
+export const completionVerificationDecisionSchema = z.enum(["VERIFIED", "REWORK_REQUESTED"]);
 
 export const dependencyStateSchema = z.enum([
   "REQUESTED",
@@ -263,6 +266,38 @@ export const createProjectSchema = z.object({
   })).max(20).optional(),
 });
 
+export const updateProjectTimelineSchema = z.object({
+  plannedStart: z.string().datetime(),
+  plannedEnd: z.string().datetime(),
+  workDescription: z.string().trim().min(10).max(4000),
+  dependencyFlags: z.array(z.string().trim().min(2).max(200)).max(30).default([]),
+}).refine((value) => new Date(value.plannedEnd) >= new Date(value.plannedStart), {
+  message: "End date must be on or after the start date",
+  path: ["plannedEnd"],
+});
+
+export const updateProjectStatusSchema = z.object({
+  state: z.literal("COMPLETED").optional(),
+  note: z.string().trim().min(3).max(3000).optional(),
+}).refine((value) => value.state !== undefined || value.note !== undefined, {
+  message: "Choose a status update or add a work note",
+});
+
+export const completionEvidenceRequestSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("presign"),
+    fileName: z.string().trim().min(1).max(200),
+    contentType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic"]),
+    notes: z.string().trim().min(3).max(3000),
+  }),
+  z.object({ action: z.literal("complete"), evidenceId: idSchema }),
+]);
+
+export const submitCompletionVerificationSchema = z.object({
+  decision: completionVerificationDecisionSchema,
+  note: z.string().trim().max(1000).optional(),
+});
+
 export const createDependencyRequestsSchema = z.object({
   dependencies: z.array(z.object({
     respondingAgencyId: idSchema,
@@ -327,8 +362,11 @@ export const projectListItemSchema = z.object({
   state: projectStateSchema,
   plannedStart: dateSchema.nullable(),
   plannedEnd: dateSchema.nullable(),
+  workDescription: z.string().nullable(),
+  dependencyFlags: z.array(z.string()),
   engineerId: idSchema.nullable(),
   createdAt: dateSchema,
+  updatedAt: dateSchema,
   agency: agencySchema.pick({ id: true, name: true }),
   engineer: engineerSummarySchema.nullable(),
   ticket: z.object({ id: idSchema, title: z.string(), ward: wardSummarySchema }).nullable(),
@@ -375,8 +413,54 @@ export const projectSchema = z.object({
   state: projectStateSchema,
   plannedStart: dateSchema.nullable(),
   plannedEnd: dateSchema.nullable(),
+  workDescription: z.string().nullable(),
+  dependencyFlags: z.array(z.string()),
   engineerId: idSchema.nullable(),
   createdAt: dateSchema,
+  updatedAt: dateSchema,
+});
+
+export const projectConflictSchema = z.object({
+  projectId: idSchema,
+  conflictingProjectId: idSchema,
+  reason: z.string(),
+  severity: z.enum(["LOW", "MEDIUM", "HIGH"]),
+});
+
+export const projectStateTransitionSchema = z.object({
+  id: idSchema,
+  fromState: projectStateSchema.nullable(),
+  toState: projectStateSchema,
+  reason: z.string(),
+  createdAt: dateSchema,
+});
+
+export const projectWorkNoteSchema = z.object({
+  id: idSchema,
+  note: z.string(),
+  createdAt: dateSchema,
+  author: engineerSummarySchema,
+});
+
+export const completionEvidenceSchema = z.object({
+  id: idSchema,
+  projectId: idSchema,
+  ticketId: idSchema,
+  photoUrl: z.string().url(),
+  contentType: z.string(),
+  notes: z.string(),
+  uploadedAt: dateSchema.nullable(),
+  createdAt: dateSchema,
+});
+
+export const pendingCompletionVerificationSchema = z.object({
+  evidenceId: idSchema,
+  projectId: idSchema,
+  ticketId: idSchema,
+  title: z.string(),
+  photoUrl: z.string().url(),
+  notes: z.string(),
+  submittedAt: dateSchema,
 });
 
 export const dependencySchema = z.object({
@@ -402,6 +486,26 @@ export const dependencyListItemSchema = dependencySchema.extend({
   respondingAgency: agencySchema,
   assignedEngineer: engineerSummarySchema.nullable(),
   contacts: z.array(z.object({ email: z.string().email() })),
+});
+
+export const engineerProjectDetailSchema = projectListItemSchema.extend({
+  editable: z.boolean(),
+  ticket: z.object({
+    id: idSchema,
+    title: z.string(),
+    address: z.string(),
+    state: ticketStateSchema,
+    ward: wardSummarySchema,
+    category: categorySummarySchema,
+    observations: z.array(z.object({ imageUrl: z.string().url(), note: z.string().nullable() })),
+    inspectionReports: z.array(inspectionReportSummarySchema),
+  }).nullable(),
+  dependencies: z.array(dependencySchema.extend({
+    respondingAgency: agencySchema.pick({ id: true, name: true }),
+  })),
+  stateTransitions: z.array(projectStateTransitionSchema),
+  workNotes: z.array(projectWorkNoteSchema),
+  completionEvidence: z.array(completionEvidenceSchema),
 });
 
 export const roadSegmentSchema = z.object({
@@ -474,6 +578,7 @@ export type CitizenTicketState = z.infer<typeof citizenTicketStateSchema>;
 export type ProjectState = z.infer<typeof projectStateSchema>;
 export type DependencyState = z.infer<typeof dependencyStateSchema>;
 export type ValidationVote = z.infer<typeof validationVoteSchema>;
+export type CompletionVerificationDecision = z.infer<typeof completionVerificationDecisionSchema>;
 export type User = z.infer<typeof userSchema>;
 export type Ward = z.infer<typeof wardSchema>;
 export type Agency = z.infer<typeof agencySchema>;
@@ -488,6 +593,10 @@ export type PendingValidation = z.infer<typeof pendingValidationSchema>;
 export type SubmitValidation = z.infer<typeof submitValidationSchema>;
 export type SubmitValidationResult = z.infer<typeof submitValidationResultSchema>;
 export type Project = z.infer<typeof projectSchema>;
+export type ProjectConflict = z.infer<typeof projectConflictSchema>;
+export type EngineerProjectDetail = z.infer<typeof engineerProjectDetailSchema>;
+export type CompletionEvidence = z.infer<typeof completionEvidenceSchema>;
+export type PendingCompletionVerification = z.infer<typeof pendingCompletionVerificationSchema>;
 export type Dependency = z.infer<typeof dependencySchema>;
 export type DependencyListItem = z.infer<typeof dependencyListItemSchema>;
 export type DependencyResponse = z.infer<typeof dependencyResponseSchema>;

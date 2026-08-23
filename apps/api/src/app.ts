@@ -48,7 +48,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   ));
   app.use(createValidationsRouter());
   app.use(createAgencyRouter(imageStorage));
-  app.use(createProjectsRouter());
+  app.use(createProjectsRouter(imageStorage));
   app.use(createDependenciesRouter());
   app.use("/admin", createAdminRouter());
 

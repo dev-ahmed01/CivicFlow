@@ -136,7 +136,7 @@ async function main(): Promise<void> {
     await request(app).post(`/tickets/${direct.id}/inspection-report`).set("Authorization", `Bearer ${bwssbToken}`).send({ action: "presign", fileName: "forbidden.pdf", contentType: "application/pdf", notes: "Must not be accepted." }).expect(404);
 
     const projectResponse = await request(app).post("/projects").set("Authorization", `Bearer ${pwdToken}`).send({ ticketId: direct.id, engineerId: pwdEngineerId }).expect(201);
-    assert.equal(projectResponse.body.project.state, ProjectState.CREATED);
+    assert.equal(projectResponse.body.project.state, ProjectState.PENDING_UPTAKE);
     assert.equal(projectResponse.body.project.engineer.id, pwdEngineerId);
     assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: direct.id } })).state, TicketState.ENGINEER_ASSIGNED);
     await request(app).get(`/projects/${projectResponse.body.project.id}`).set("Authorization", `Bearer ${bwssbToken}`).expect(404);

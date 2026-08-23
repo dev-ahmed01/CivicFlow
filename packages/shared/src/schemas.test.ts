@@ -9,8 +9,8 @@ describe("shared schemas", () => {
   });
 
   it("contains future ticket workflow states", () => {
-    expect(ticketStateSchema.parse("PENDING_CITIZEN_VERIFICATION")).toBe(
-      "PENDING_CITIZEN_VERIFICATION",
+    expect(ticketStateSchema.parse("AWAITING_CITIZEN_VERIFICATION")).toBe(
+      "AWAITING_CITIZEN_VERIFICATION",
     );
   });
 

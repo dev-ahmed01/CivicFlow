@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CategorySummary, CitizenTicketSummary, PendingValidation, ValidationVote } from "@civicos/shared";
+import type { CategorySummary, CitizenTicketSummary, CompletionVerificationDecision, PendingCompletionVerification, PendingValidation, ValidationVote } from "@civicos/shared";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { loadCategories, loadCurrentAuth, loadMyTickets, loadPendingValidations, submitReport, validateTicket, type DraftReport, type LocalImage } from "./src/api";
-import { EngineerDependenciesApp } from "./src/engineer-dependencies";
-import { CategoryScreen, ConfirmationScreen, EvidenceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type ConfirmedLocation } from "./src/screens";
+import { clearInternalSession, loadCategories, loadCurrentAuth, loadMyTickets, loadPendingCompletionVerifications, loadPendingValidations, submitReport, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage } from "./src/api";
+import { EngineerLoginScreen, EngineerProjectsApp } from "./src/engineer-projects";
+import { CategoryScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type ConfirmedLocation } from "./src/screens";
 import { colors } from "./src/theme";
 
-type Screen = "home" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "tickets" | "validations" | "verification";
+type Screen = "home" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "engineer-login";
 
 export default function App() {
   const [viewerRole, setViewerRole] = useState<"ENGINEER" | "OTHER" | "LOADING">("LOADING");
-  const [engineerUserId, setEngineerUserId] = useState<string>();
+  const [engineerAuth, setEngineerAuth] = useState<CurrentAuth>();
   const [screen, setScreen] = useState<Screen>("home");
   const [categories, setCategories] = useState<CategorySummary[]>([]);
   const [categoryError, setCategoryError] = useState<string>();
@@ -31,12 +31,17 @@ export default function App() {
   const [validationsLoading, setValidationsLoading] = useState(false);
   const [validationsError, setValidationsError] = useState<string>();
   const [validationSubmitting, setValidationSubmitting] = useState(false);
+  const [completionValidations, setCompletionValidations] = useState<PendingCompletionVerification[]>([]);
+  const [selectedCompletion, setSelectedCompletion] = useState<PendingCompletionVerification>();
+  const [completionLoading, setCompletionLoading] = useState(false);
+  const [completionError, setCompletionError] = useState<string>();
+  const [completionSubmitting, setCompletionSubmitting] = useState(false);
 
   useEffect(() => {
     void (async () => {
       try {
         const auth = await loadCurrentAuth();
-        if (auth.role === "ENGINEER") { setEngineerUserId(auth.userId); setViewerRole("ENGINEER"); return; }
+        if (auth.role === "ENGINEER") { setEngineerAuth(auth); setViewerRole("ENGINEER"); return; }
       } catch { /* Public/citizen startup continues without an internal role. */ }
       setViewerRole("OTHER");
       try { setCategories(await loadCategories()); }
@@ -44,7 +49,7 @@ export default function App() {
     })();
   }, []);
 
-  if (viewerRole === "ENGINEER" && engineerUserId) return <><StatusBar style="dark" /><EngineerDependenciesApp currentUserId={engineerUserId} /></>;
+  if (viewerRole === "ENGINEER" && engineerAuth) return <><StatusBar style="dark" /><EngineerProjectsApp auth={engineerAuth} onLogout={() => { clearInternalSession(); setEngineerAuth(undefined); setViewerRole("OTHER"); setScreen("home"); }} /></>;
   if (viewerRole === "LOADING") return <><StatusBar style="dark" /><Shell><View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loadingText}>Loading CivicOS…</Text></View></Shell></>;
 
   const updateLocation = useCallback((next: ConfirmedLocation) => setLocation(next), []);
@@ -59,6 +64,10 @@ export default function App() {
     setScreen("validations"); setValidationsLoading(true); setValidationsError(undefined);
     void loadPendingValidations().then(setValidations).catch((error: unknown) => setValidationsError(error instanceof Error ? error.message : "Could not load nearby requests")).finally(() => setValidationsLoading(false));
   };
+  const openCompletionValidations = () => {
+    setScreen("completion-validations"); setCompletionLoading(true); setCompletionError(undefined);
+    void loadPendingCompletionVerifications().then(setCompletionValidations).catch((error: unknown) => setCompletionError(error instanceof Error ? error.message : "Could not load completion checks")).finally(() => setCompletionLoading(false));
+  };
   const submitValidationVote = async (vote: ValidationVote) => {
     if (!selectedValidation) return;
     setValidationSubmitting(true);
@@ -69,6 +78,17 @@ export default function App() {
       setSelectedValidation(undefined); setScreen("validations");
     } catch (error) { Alert.alert("Couldn’t record response", error instanceof Error ? error.message : "Please try again."); }
     finally { setValidationSubmitting(false); }
+  };
+  const submitCompletionVote = async (decision: CompletionVerificationDecision) => {
+    if (!selectedCompletion) return;
+    setCompletionSubmitting(true);
+    try {
+      await verifyCompletion(selectedCompletion.evidenceId, decision);
+      Alert.alert(decision === "VERIFIED" ? "Completion verified" : "Rework requested", "Your response has been recorded.");
+      setCompletionValidations((current) => current.filter((item) => item.evidenceId !== selectedCompletion.evidenceId));
+      setSelectedCompletion(undefined); setScreen("completion-validations");
+    } catch (error) { Alert.alert("Couldn't record response", error instanceof Error ? error.message : "Please try again."); }
+    finally { setCompletionSubmitting(false); }
   };
   const completeSubmission = async () => {
     if (!selectedCategory || !images[0] || !location) return;
@@ -93,7 +113,10 @@ export default function App() {
   else if (screen === "tickets") content = <TicketsScreen filter={ticketFilter} tickets={tickets} loading={ticketsLoading} error={ticketsError} onBack={() => setScreen("home")} />;
   else if (screen === "validations") content = <VerificationListScreen validations={validations} loading={validationsLoading} error={validationsError} onBack={() => setScreen("home")} onOpen={(validation) => { setSelectedValidation(validation); setScreen("verification"); }} />;
   else if (screen === "verification" && selectedValidation) content = <VerificationRequestScreen validation={selectedValidation} submitting={validationSubmitting} onBack={() => setScreen("validations")} onSubmit={(vote) => void submitValidationVote(vote)} />;
-  else content = <HomeScreen onReport={() => setScreen("category")} onTickets={openTickets} onValidations={openValidations} />;
+  else if (screen === "completion-validations") content = <CompletionVerificationListScreen completions={completionValidations} loading={completionLoading} error={completionError} onBack={() => setScreen("home")} onOpen={(completion) => { setSelectedCompletion(completion); setScreen("completion-verification"); }} />;
+  else if (screen === "completion-verification" && selectedCompletion) content = <CompletionVerificationScreen completion={selectedCompletion} submitting={completionSubmitting} onBack={() => setScreen("completion-validations")} onSubmit={(decision) => void submitCompletionVote(decision)} />;
+  else if (screen === "engineer-login") content = <EngineerLoginScreen onCancel={() => setScreen("home")} onLogin={(auth) => { setEngineerAuth(auth); setViewerRole("ENGINEER"); }} />;
+  else content = <HomeScreen onReport={() => setScreen("category")} onTickets={openTickets} onValidations={openValidations} onCompletionValidations={openCompletionValidations} onEngineerLogin={() => setScreen("engineer-login")} />;
   return <><StatusBar style="dark" />{content}</>;
 }
 
