@@ -8,6 +8,7 @@ import type {
   PendingValidation,
   PendingCompletionVerification,
   ProjectConflict,
+  RoadConflict,
   ProjectListItem,
   ProjectState,
   SubmitValidationResult,
@@ -94,8 +95,23 @@ export async function uptakeProject(projectId: string): Promise<void> {
 }
 
 export async function updateProjectTimeline(projectId: string, input: { plannedStart: string; plannedEnd: string; workDescription: string; dependencyFlags: string[] }): Promise<ProjectConflict[]> {
-  const result = await apiFetch<{ conflicts: ProjectConflict[] }>(`/projects/${projectId}/timeline`, { method: "PATCH", body: JSON.stringify(input) });
-  return result.conflicts;
+  const result = await apiFetch<{ conflicts: ProjectConflict[]; roadConflicts: RoadConflict[] }>(`/projects/${projectId}/timeline`, { method: "PATCH", body: JSON.stringify(input) });
+  // M-E6 — preserve the established warning sheet while labeling road-specific checks.
+  const roadWarnings: ProjectConflict[] = result.roadConflicts.map((conflict) => ({
+    id: conflict.id,
+    projectId: conflict.projectId,
+    conflictingProjectId: conflict.conflictingProjectId ?? conflict.projectId,
+    conflictingProjectName: `Road · ${conflict.type.replaceAll("_", " ")}`,
+    conflictingAgency: conflict.conflictingAgency ?? { id: conflict.projectId, name: "Single-record segment risk" },
+    overlapStart: new Date(input.plannedStart),
+    overlapEnd: new Date(input.plannedEnd),
+    locationDescription: conflict.segmentName,
+    distanceMeters: null,
+    reason: conflict.reason,
+    severity: conflict.severity === "HIGH" ? "PROMINENT" : "INLINE",
+    detectedAt: conflict.detectedAt,
+  }));
+  return [...result.conflicts, ...roadWarnings];
 }
 
 export async function updateProjectStatus(projectId: string, input: { state?: "COMPLETED"; note?: string }): Promise<void> {

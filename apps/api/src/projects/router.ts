@@ -13,6 +13,7 @@ import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/
 import { checkProjectConflicts } from "../conflicts/service";
 import { createDependencyRequests, DependencyActionError } from "../dependencies/service";
 import type { ImageStorage } from "../images/storage";
+import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -79,6 +80,7 @@ const projectInclude = {
   stateTransitions: { orderBy: { createdAt: "asc" as const } },
   workNotes: { include: { author: { select: { id: true, email: true } } }, orderBy: { createdAt: "desc" as const } },
   completionEvidence: { where: { uploadedAt: { not: null } }, orderBy: { createdAt: "desc" as const } },
+  intervention: { include: { segment: { select: { id: true, roadName: true, wardId: true, surfaceType: true, lastRestorationDate: true, ward: { select: { id: true, name: true } } } } } },
 } satisfies Prisma.ProjectInclude;
 
 export function createProjectsRouter(storage: ImageStorage): Router {
@@ -104,35 +106,84 @@ export function createProjectsRouter(storage: ImageStorage): Router {
 
       const result = await prisma.$transaction(async (transaction) => {
         // Part III §17.2 — lock and scope the ticket before any state mutation.
-        const rows = await transaction.$queryRaw<Array<{ id: string; state: TicketState; assignedAgencyId: string | null }>>`
-          SELECT "id", "state", "assignedAgencyId" FROM "Ticket"
+        const rows = await transaction.$queryRaw<Array<{ id: string; state: TicketState; assignedAgencyId: string | null; categoryId: string; wardId: string }>>`
+          SELECT "id", "state", "assignedAgencyId", "categoryId", "wardId" FROM "Ticket"
           WHERE "id" = ${parsed.data.ticketId}::uuid FOR UPDATE
         `;
         const ticket = rows[0];
         if (!ticket || ticket.assignedAgencyId !== agencyId) return { kind: "missing" as const };
-        if (ticket.state !== TicketState.INSPECTION_COMPLETE) return { kind: "state" as const, state: ticket.state };
+        const roadCategory = await isRoadCategory(transaction, ticket.categoryId);
+        const existing = await transaction.project.findUnique({ where: { ticketId: ticket.id }, include: { intervention: true } });
+        if (ticket.state !== TicketState.INSPECTION_COMPLETE && !(ticket.state === TicketState.PROJECT_CREATED && existing?.state === ProjectState.CREATED)) {
+          return { kind: "state" as const, state: ticket.state };
+        }
+        if (roadCategory && !parsed.data.intervention && !existing?.intervention) return { kind: "road-input" as const };
+        if (!roadCategory && parsed.data.intervention) return { kind: "not-road" as const };
 
-        const created = await transaction.project.create({
-          data: {
-            ticketId: ticket.id,
-            agencyId,
-            engineerId: engineer.id,
-            state: ProjectState.PENDING_UPTAKE,
-            stateTransitions: { create: [
-              { fromState: null, toState: ProjectState.CREATED, reason: "PROJECT_CREATED", actedById: request.auth!.userId },
-              { fromState: ProjectState.CREATED, toState: ProjectState.PENDING_UPTAKE, reason: "ENGINEER_ASSIGNED", actedById: request.auth!.userId },
-            ] },
-          },
+        if (parsed.data.intervention) {
+          const segment = await transaction.roadSegment.findFirst({ where: { id: parsed.data.intervention.segmentId, wardId: ticket.wardId }, select: { id: true } });
+          if (!segment) return { kind: "segment" as const };
+          const refs = await transaction.intervention.count({ where: { id: { in: parsed.data.intervention.dependencyRefs }, segmentId: segment.id } });
+          if (refs !== new Set(parsed.data.intervention.dependencyRefs).size) return { kind: "refs" as const };
+          if (existing?.intervention && parsed.data.intervention.dependencyRefs.includes(existing.intervention.id)) return { kind: "refs" as const };
+        }
+
+        const intervention = parsed.data.intervention;
+        const created = existing
+          ? await transaction.project.update({
+            where: { id: existing.id },
+            data: {
+              engineerId: engineer.id,
+              state: ProjectState.PENDING_UPTAKE,
+              ...(intervention ? { plannedStart: new Date(intervention.plannedStart), plannedEnd: new Date(intervention.plannedEnd) } : {}),
+              stateTransitions: { create: { fromState: ProjectState.CREATED, toState: ProjectState.PENDING_UPTAKE, reason: "ENGINEER_ASSIGNED", actedById: request.auth!.userId } },
+              ...(intervention ? { intervention: { update: {
+                segmentId: intervention.segmentId,
+                purpose: intervention.purpose,
+                plannedStart: new Date(intervention.plannedStart),
+                plannedEnd: new Date(intervention.plannedEnd),
+                affectedLengthM: intervention.affectedLengthM,
+                startOffsetM: intervention.startOffsetM,
+                dependencyRefs: intervention.dependencyRefs,
+              } } } : {}),
+            },
+            include: { engineer: { select: { id: true, email: true } }, ticket: { select: { id: true, title: true } } },
+          })
+          : await transaction.project.create({
+            data: {
+              ticketId: ticket.id,
+              agencyId,
+              engineerId: engineer.id,
+              state: ProjectState.PENDING_UPTAKE,
+              ...(intervention ? { plannedStart: new Date(intervention.plannedStart), plannedEnd: new Date(intervention.plannedEnd) } : {}),
+              stateTransitions: { create: [
+                { fromState: null, toState: ProjectState.CREATED, reason: "PROJECT_CREATED", actedById: request.auth!.userId },
+                { fromState: ProjectState.CREATED, toState: ProjectState.PENDING_UPTAKE, reason: "ENGINEER_ASSIGNED", actedById: request.auth!.userId },
+              ] },
+              ...(intervention ? { intervention: { create: {
+                segmentId: intervention.segmentId,
+                requestingAgencyId: agencyId,
+                purpose: intervention.purpose,
+                plannedStart: new Date(intervention.plannedStart),
+                plannedEnd: new Date(intervention.plannedEnd),
+                affectedLengthM: intervention.affectedLengthM,
+                startOffsetM: intervention.startOffsetM,
+                dependencyRefs: intervention.dependencyRefs,
+              } } } : {}),
+            },
           include: { engineer: { select: { id: true, email: true } }, ticket: { select: { id: true, title: true } } },
-        });
-        await transaction.ticket.update({ where: { id: ticket.id }, data: { state: TicketState.ENGINEER_ASSIGNED } });
+          });
+        await transaction.ticket.update({ where: { id: ticket.id }, data: { state: TicketState.ENGINEER_ASSIGNED, ...(intervention ? { roadSegmentId: intervention.segmentId } : {}) } });
         await transaction.ticketStateTransition.createMany({ data: [
-          { ticketId: ticket.id, fromState: TicketState.INSPECTION_COMPLETE, toState: TicketState.PROJECT_CREATED, reason: "PROJECT_CREATED" },
+          ...(existing ? [] : [{ ticketId: ticket.id, fromState: TicketState.INSPECTION_COMPLETE, toState: TicketState.PROJECT_CREATED, reason: "PROJECT_CREATED" as const }]),
           { ticketId: ticket.id, fromState: TicketState.PROJECT_CREATED, toState: TicketState.ENGINEER_ASSIGNED, reason: "ENGINEER_ASSIGNED" },
         ] });
         await transaction.notification.create({ data: { userId: engineer.id, type: "PROJECT_ASSIGNMENT", payload: { projectId: created.id, ticketId: ticket.id } } });
         const dependencies = await createDependencyRequests(transaction, created.id, agencyId, parsed.data.dependencies ?? [], request.auth!.userId);
-        return { kind: "created" as const, project: created, dependencies };
+        // Delta §4.3 — generic Phase 7 check remains unchanged and runs first.
+        const conflicts = intervention || existing?.intervention ? await checkProjectConflicts(transaction, created.id) : [];
+        const roadConflicts = intervention || existing?.intervention ? await checkRoadConflicts(transaction, created.id) : [];
+        return { kind: "created" as const, project: created, dependencies, conflicts, roadConflicts };
       }).catch((error: unknown) => {
         if (error instanceof DependencyActionError) return { kind: "dependency" as const, error: error.message, status: error.status };
         throw error;
@@ -141,7 +192,11 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       if (result.kind === "missing") response.status(404).json({ error: "Ticket not found" });
       else if (result.kind === "state") response.status(409).json({ error: `Project cannot be created from ${result.state}` });
       else if (result.kind === "dependency") response.status(result.status).json({ error: result.error });
-      else response.status(201).json({ project: result.project, dependencies: result.dependencies });
+      else if (result.kind === "road-input") response.status(422).json({ error: "Road Damage projects require road-segment intervention details" });
+      else if (result.kind === "not-road") response.status(422).json({ error: "Interventions are only available for the configured Road Damage category" });
+      else if (result.kind === "segment") response.status(422).json({ error: "Choose a road segment in the ticket ward" });
+      else if (result.kind === "refs") response.status(422).json({ error: "Every intervention dependency must reference work on the same road segment" });
+      else response.status(201).json({ project: result.project, dependencies: result.dependencies, conflicts: result.conflicts, roadConflicts: result.roadConflicts });
     }),
   );
 
@@ -257,10 +312,15 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           dependencyFlags: parsed.data.dependencyFlags,
           state: interimState,
         } });
+        await transaction.intervention.updateMany({ where: { projectId: project.id }, data: {
+          plannedStart: new Date(parsed.data.plannedStart),
+          plannedEnd: new Date(parsed.data.plannedEnd),
+        } });
         await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: project.state, toState: interimState, reason: initialTimeline ? "TIMELINE_SET" : "TIMELINE_MODIFIED", actedById: request.auth!.userId } });
 
         // Part III §11 — advisory only. Phase 7 fills the function body.
         const conflicts = await checkProjectConflicts(transaction, project.id);
+        const roadConflicts = await checkRoadConflicts(transaction, project.id);
         if (initialTimeline) {
           await transaction.project.update({ where: { id: project.id }, data: { state: ProjectState.CONFLICT_CHECKED } });
           await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: ProjectState.TIMELINE_SET, toState: ProjectState.CONFLICT_CHECKED, reason: "CONFLICT_CHECK_COMPLETE", actedById: request.auth!.userId } });
@@ -276,11 +336,11 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           }
         }
         if (!initialTimeline) await notifyProjectStakeholders(transaction, project, "PROJECT_TIMELINE_MODIFIED", { conflicts: conflicts.length });
-        return { kind: "updated" as const, conflicts };
+        return { kind: "updated" as const, conflicts, roadConflicts };
       });
       if (result.kind === "missing") response.status(404).json({ error: "Assigned project not found" });
       else if (result.kind === "state") response.status(409).json({ error: `Timeline cannot be set from ${result.state}` });
-      else response.json({ project: await prisma.project.findUniqueOrThrow({ where: { id: routeId(request) } }), conflicts: result.conflicts });
+      else response.json({ project: await prisma.project.findUniqueOrThrow({ where: { id: routeId(request) } }), conflicts: result.conflicts, roadConflicts: result.roadConflicts });
     }),
   );
 

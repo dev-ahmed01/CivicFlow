@@ -9,6 +9,8 @@ import {
 import { z } from "zod";
 import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/middleware";
 import type { ImageStorage } from "../images/storage";
+import { checkProjectConflicts } from "../conflicts/service";
+import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -186,6 +188,25 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         response.status(422).json({ error: "Choose an available category and ward" });
         return;
       }
+      const roadCategory = await isRoadCategory(prisma, category.id);
+      if (roadCategory !== Boolean(input.intervention)) {
+        response.status(422).json({ error: roadCategory
+          ? "Road Damage work requires road-segment intervention details"
+          : "Intervention details are only available for the configured Road Damage category" });
+        return;
+      }
+      if (input.intervention) {
+        const segment = await prisma.roadSegment.findFirst({ where: { id: input.intervention.segmentId, wardId: ward.id }, select: { id: true } });
+        if (!segment) {
+          response.status(422).json({ error: "Choose a road segment in the selected ward" });
+          return;
+        }
+        const referenceCount = await prisma.intervention.count({ where: { id: { in: input.intervention.dependencyRefs }, segmentId: segment.id } });
+        if (referenceCount !== new Set(input.intervention.dependencyRefs).size) {
+          response.status(422).json({ error: "Every intervention dependency must reference work on the same road segment" });
+          return;
+        }
+      }
       if (input.location) {
         const contained = await prisma.$queryRaw<Array<{ covered: boolean }>>`
           SELECT ST_Covers("boundary", ST_SetSRID(ST_MakePoint(${input.location.longitude}, ${input.location.latitude}), 4326)) AS "covered"
@@ -204,7 +225,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
       const upload = storage.createUpload(objectKey, input.evidence.contentType);
       const title = `${category.name}: ${input.description}`.slice(0, 160);
       const address = input.location?.address ?? `${ward.name}, Bengaluru`;
-      await prisma.$transaction(async (transaction) => {
+      const result = await prisma.$transaction(async (transaction) => {
         if (input.location) {
           await transaction.$executeRaw`
             INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
@@ -239,8 +260,37 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         await transaction.ticketStateTransition.create({
           data: { ticketId, fromState: null, toState: TicketState.ROUTED_TO_AGENCY, reason: "AGENCY_ORIGINATED" },
         });
+        if (!input.intervention) return { projectId: null, conflicts: [], roadConflicts: [] };
+
+        const intervention = input.intervention;
+        const project = await transaction.project.create({
+          data: {
+            ticketId,
+            agencyId,
+            state: ProjectState.CREATED,
+            plannedStart: new Date(intervention.plannedStart),
+            plannedEnd: new Date(intervention.plannedEnd),
+            stateTransitions: { create: { fromState: null, toState: ProjectState.CREATED, reason: "PLANNED_INTERVENTION_CREATED", actedById: request.auth!.userId } },
+            intervention: { create: {
+              segmentId: intervention.segmentId,
+              requestingAgencyId: agencyId,
+              purpose: intervention.purpose,
+              plannedStart: new Date(intervention.plannedStart),
+              plannedEnd: new Date(intervention.plannedEnd),
+              affectedLengthM: intervention.affectedLengthM,
+              startOffsetM: intervention.startOffsetM,
+              dependencyRefs: intervention.dependencyRefs,
+            } },
+          },
+        });
+        await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.PROJECT_CREATED, roadSegmentId: intervention.segmentId } });
+        await transaction.ticketStateTransition.create({ data: { ticketId, fromState: TicketState.ROUTED_TO_AGENCY, toState: TicketState.PROJECT_CREATED, reason: "PLANNED_INTERVENTION_CREATED" } });
+        // Delta §4.3 — the unchanged Phase 7 engine runs before road-specific checks.
+        const conflicts = await checkProjectConflicts(transaction, project.id);
+        const roadConflicts = await checkRoadConflicts(transaction, project.id);
+        return { projectId: project.id, conflicts, roadConflicts };
       });
-      response.status(201).json({ ticketId, imageId, upload, state: TicketState.ROUTED_TO_AGENCY });
+      response.status(201).json({ ticketId, imageId, upload, state: input.intervention ? TicketState.PROJECT_CREATED : TicketState.ROUTED_TO_AGENCY, ...result });
     }),
   );
 

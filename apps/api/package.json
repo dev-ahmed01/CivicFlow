@@ -15,7 +15,8 @@
     "verify:phase4": "tsc -p tsconfig.json && node dist/scripts/verify-phase4.js",
     "verify:phase5": "tsc -p tsconfig.json && node dist/scripts/verify-phase5.js",
     "verify:phase6": "tsc -p tsconfig.json && node dist/scripts/verify-phase6.js",
-    "verify:phase7": "tsc -p tsconfig.json && node dist/scripts/verify-phase7.js"
+    "verify:phase7": "tsc -p tsconfig.json && node dist/scripts/verify-phase7.js",
+    "verify:phase8": "tsc -p tsconfig.json && node dist/scripts/verify-phase8.js"
   },
   "dependencies": {
     "@civicos/shared": "workspace:*",

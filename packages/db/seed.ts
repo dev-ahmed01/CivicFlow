@@ -21,6 +21,9 @@ const ids = {
     animalHusbandry: "20000000-0000-4000-8000-000000000008",
     publicAmenities: "20000000-0000-4000-8000-000000000009",
   },
+  roadSegments: {
+    flagship: "80000000-0000-4000-8000-000000000001",
+  },
 } as const;
 
 const wards = [
@@ -98,6 +101,8 @@ const adminConfigs = [
   { key: "ai_relevance.max_retries", value: 3, description: "Maximum relevance-check retries before manual-review recommendation" },
   { key: "ai_relevance.pass_threshold", value: 0.6, description: "Minimum hosted image/category relevance confidence" },
   { key: "conflict.radius_meters", value: 200, description: "Default generic project conflict radius" },
+  { key: "road.category_id", value: categories[0].id, description: "Admin-configured category that enables Road-Cutting Intelligence" },
+  { key: "road.repeated_excavation_days", value: 90, description: "Days after restoration during which a new excavation receives an advisory warning" },
 ] as const;
 
 // Part III §9.3 — deterministic, progressively farther Koramangala citizens
@@ -183,6 +188,48 @@ async function seedEngineerWorkflowDemo(): Promise<void> {
   }
 }
 
+// Delta §6 — deterministic flagship story: pipeline → cable → consolidated restoration → resurfacing.
+async function seedRoadCuttingDemo(): Promise<void> {
+  await prisma.$executeRaw`
+    INSERT INTO "RoadSegment" ("id", "roadName", "geometry", "wardId", "surfaceType", "lastRestorationDate")
+    VALUES (${ids.roadSegments.flagship}::uuid, 'Segment X · 80 Feet Road',
+      ST_GeomFromText('LINESTRING(77.6205 12.9340,77.6250 12.9360)', 4326),
+      ${ids.wards.koramangala}::uuid, 'Asphalt', ${new Date("2027-04-01T00:00:00.000Z")})
+    ON CONFLICT ("id") DO UPDATE SET "roadName" = EXCLUDED."roadName", "geometry" = EXCLUDED."geometry",
+      "wardId" = EXCLUDED."wardId", "surfaceType" = EXCLUDED."surfaceType", "lastRestorationDate" = EXCLUDED."lastRestorationDate"
+  `;
+
+  const work = [
+    { suffix: "01", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", title: "Planned resurfacing on Segment X", purpose: "resurfacing", start: new Date("2027-06-20T00:00:00.000Z"), end: new Date("2027-06-24T23:59:59.999Z"), offset: 0, length: 420, refs: [] as string[] },
+    { suffix: "02", agencyId: ids.agencies.bwssb, engineerId: "40000000-0000-4000-8000-000000000202", title: "BWSSB pipeline intervention on Segment X", purpose: "pipeline", start: new Date("2027-06-10T00:00:00.000Z"), end: new Date("2027-06-16T23:59:59.999Z"), offset: 20, length: 260, refs: [] as string[] },
+    { suffix: "03", agencyId: ids.agencies.bescom, engineerId: "40000000-0000-4000-8000-000000000203", title: "BESCOM cable intervention on Segment X", purpose: "cable", start: new Date("2027-06-15T00:00:00.000Z"), end: new Date("2027-06-18T23:59:59.999Z"), offset: 100, length: 180, refs: ["83000000-0000-4000-8000-000000000002"] },
+  ] as const;
+
+  for (const item of work) {
+    const ticketId = `81000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
+    const projectId = `82000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
+    const interventionId = `83000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
+    await prisma.$executeRaw`
+      INSERT INTO "Ticket" ("id", "categoryId", "assignedAgencyId", "coordinates", "wardId", "roadSegmentId", "state", "title", "address", "createdAt")
+      VALUES (${ticketId}::uuid, ${categories[0].id}::uuid, ${item.agencyId}::uuid,
+        ST_SetSRID(ST_MakePoint(77.6225, 12.9350), 4326), ${ids.wards.koramangala}::uuid,
+        ${ids.roadSegments.flagship}::uuid, ${TicketState.WORK_IN_PROGRESS}::"TicketState", ${item.title}, '80 Feet Road, Koramangala, Bengaluru', NOW())
+      ON CONFLICT ("id") DO UPDATE SET "assignedAgencyId" = EXCLUDED."assignedAgencyId", "roadSegmentId" = EXCLUDED."roadSegmentId",
+        "state" = EXCLUDED."state", "title" = EXCLUDED."title"
+    `;
+    await prisma.project.upsert({
+      where: { id: projectId },
+      update: { agencyId: item.agencyId, engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title },
+      create: { id: projectId, ticketId, agencyId: item.agencyId, engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title },
+    });
+    await prisma.intervention.upsert({
+      where: { projectId },
+      update: { segmentId: ids.roadSegments.flagship, requestingAgencyId: item.agencyId, purpose: item.purpose, plannedStart: item.start, plannedEnd: item.end, startOffsetM: item.offset, affectedLengthM: item.length, dependencyRefs: [...item.refs] },
+      create: { id: interventionId, projectId, segmentId: ids.roadSegments.flagship, requestingAgencyId: item.agencyId, purpose: item.purpose, plannedStart: item.start, plannedEnd: item.end, startOffsetM: item.offset, affectedLengthM: item.length, dependencyRefs: [...item.refs] },
+    });
+  }
+}
+
 async function main(): Promise<void> {
   await seedWards();
 
@@ -251,9 +298,11 @@ async function main(): Promise<void> {
   }
 
   await seedEngineerWorkflowDemo();
+  await seedRoadCuttingDemo();
 
   console.log(`Seeded ${wards.length} wards, ${agencies.length} agencies, ${categories.length} categories, and ${users.length} users.`);
   console.log(`Seeded ${engineerDemoProjects.length} Executive Engineer demo projects.`);
+  console.log("Seeded Segment X flagship road-cutting scenario (PWD, BWSSB, BESCOM).");
   console.log("Local internal-user password: CivicOS@123");
 }
 

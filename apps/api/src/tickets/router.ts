@@ -181,11 +181,12 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
   router.use(requireAuth);
 
   router.get("/categories", requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN), asyncRoute(async (_request, response) => {
-    const categories = await prisma.category.findMany({
+    const [categories, roadConfig] = await Promise.all([prisma.category.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
-    });
-    response.json({ categories });
+    }), prisma.adminConfig.findUnique({ where: { key: "road.category_id" }, select: { value: true } })]);
+    const roadCategoryId = typeof roadConfig?.value === "string" ? roadConfig.value : null;
+    response.json({ categories: categories.map((category) => ({ ...category, roadIntelligenceEnabled: category.id === roadCategoryId })) });
   }));
 
   router.post("/tickets", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {
@@ -389,7 +390,7 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
           orderBy: { createdAt: "desc" },
           select: { id: true, fileUrl: true, contentType: true, notes: true, uploadedAt: true, createdAt: true },
         },
-        project: { select: { id: true, state: true, engineerId: true } },
+        project: { select: { id: true, state: true, engineerId: true, plannedStart: true, plannedEnd: true, intervention: true } },
       },
     });
     // Part III §7 — dependency agencies are advisory pre-suggestions only.
@@ -402,7 +403,12 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
         description: internal.observations[0]?.note ?? null,
         evidence: internal.observations[0]?.images ?? [],
         inspectionReports: internal.inspectionReports,
-        project: internal.project,
+        project: internal.project ? { ...internal.project, intervention: internal.project.intervention ? {
+          ...internal.project.intervention,
+          dependencyRefs: Array.isArray(internal.project.intervention.dependencyRefs)
+            ? internal.project.intervention.dependencyRefs.filter((item): item is string => typeof item === "string")
+            : [],
+        } : null } : null,
         routingSuggestions: internal.category.routingRules.map((rule) => rule.dependencyAgency),
       },
     });

@@ -55,6 +55,27 @@ enum ConflictSeverity {
   INLINE
 }
 
+enum RoadConflictType {
+  SPATIAL
+  TEMPORAL
+  SEQUENCING_VIOLATION
+  RESTORATION_TOO_EARLY
+  REPEATED_EXCAVATION_RISK
+  DUPLICATE_INTERVENTION
+}
+
+enum RoadConflictSeverity {
+  HIGH
+  MEDIUM_HIGH
+  MEDIUM
+}
+
+enum SequencingRecommendationOutcome {
+  ACCEPTED
+  MODIFIED
+  DISMISSED
+}
+
 enum CompletionVerificationDecision {
   VERIFIED
   REWORK_REQUESTED
@@ -109,6 +130,7 @@ model User {
   completionEvidence   CompletionEvidence[] @relation("CompletionEvidenceSubmitter")
   completionVerificationRequests CompletionVerificationRequest[]
   completionVerifications CompletionVerification[]
+  sequencingRecommendationLogs SequencingRecommendationLog[]
 
   @@index([agencyId])
   @@index([wardId])
@@ -142,6 +164,8 @@ model Agency {
   requestedInterventions Intervention[]
   projectConflictLogs     ConflictLog[] @relation("ConflictLogProjectAgency")
   conflictingProjectLogs ConflictLog[] @relation("ConflictLogConflictingAgency")
+  roadConflictLogs        RoadConflictLog[] @relation("RoadConflictProjectAgency")
+  conflictingRoadLogs     RoadConflictLog[] @relation("RoadConflictConflictingAgency")
 }
 
 model Category {
@@ -176,6 +200,7 @@ model Ticket {
   assignedAgencyId String?                             @db.Uuid
   coordinates      Unsupported("geometry(Point,4326)")
   wardId           String                              @db.Uuid
+  roadSegmentId    String?                             @db.Uuid
   state            TicketState                         @default(DRAFT)
   title            String                              @default("Civic issue") @db.VarChar(160)
   address          String                              @default("Location pending")
@@ -191,6 +216,7 @@ model Ticket {
   reporter       User?         @relation("TicketReporter", fields: [reporterId], references: [id], onDelete: SetNull)
   assignedAgency Agency?       @relation("TicketAssignedAgency", fields: [assignedAgencyId], references: [id], onDelete: SetNull)
   ward           Ward          @relation(fields: [wardId], references: [id], onDelete: Restrict)
+  roadSegment    RoadSegment?  @relation(fields: [roadSegmentId], references: [id], onDelete: SetNull)
   observations   Observation[]
   validations    Validation[]
   validationRequests ValidationRequest[]
@@ -203,6 +229,7 @@ model Ticket {
   @@index([reporterId])
   @@index([assignedAgencyId])
   @@index([wardId])
+  @@index([roadSegmentId])
   @@index([state])
   @@index([coordinates], type: Gist, map: "Ticket_coordinates_gist_idx")
 }
@@ -333,6 +360,8 @@ model Project {
   completionEvidence CompletionEvidence[]
   conflictLogs       ConflictLog[] @relation("ConflictLogProject")
   conflictingLogs   ConflictLog[] @relation("ConflictLogConflictingProject")
+  roadConflictLogs       RoadConflictLog[] @relation("RoadConflictProject")
+  conflictingRoadLogs   RoadConflictLog[] @relation("RoadConflictConflictingProject")
 
   @@index([ticketId])
   @@index([agencyId])
@@ -505,6 +534,10 @@ model RoadSegment {
 
   ward          Ward           @relation(fields: [wardId], references: [id], onDelete: Restrict)
   interventions Intervention[]
+  tickets       Ticket[]
+  roadConflictLogs RoadConflictLog[]
+  sequencingRecommendations SequencingRecommendation[]
+  sequencingRecommendationLogs SequencingRecommendationLog[]
 
   @@index([wardId])
   @@index([roadName])
@@ -520,7 +553,9 @@ model Intervention {
   plannedStart       DateTime
   plannedEnd         DateTime
   affectedLengthM    Float
+  startOffsetM       Float    @default(0)
   dependencyRefs     Json     @default("[]")
+  createdAt          DateTime @default(now())
 
   project          Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   segment          RoadSegment @relation(fields: [segmentId], references: [id], onDelete: Restrict)
@@ -529,6 +564,66 @@ model Intervention {
   @@index([projectId])
   @@index([segmentId])
   @@index([requestingAgencyId])
+}
+
+model RoadConflictLog {
+  id                   String               @id @default(uuid()) @db.Uuid
+  projectId            String               @db.Uuid
+  conflictingProjectId String?              @db.Uuid
+  segmentId            String               @db.Uuid
+  projectAgencyId      String               @db.Uuid
+  conflictingAgencyId  String?              @db.Uuid
+  type                 RoadConflictType
+  severity             RoadConflictSeverity
+  reason               String
+  fingerprint          String               @db.Char(64)
+  createdAt            DateTime             @default(now())
+
+  project            Project      @relation("RoadConflictProject", fields: [projectId], references: [id], onDelete: Cascade)
+  conflictingProject Project?     @relation("RoadConflictConflictingProject", fields: [conflictingProjectId], references: [id], onDelete: Cascade)
+  segment            RoadSegment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  projectAgency      Agency       @relation("RoadConflictProjectAgency", fields: [projectAgencyId], references: [id], onDelete: Restrict)
+  conflictingAgency  Agency?      @relation("RoadConflictConflictingAgency", fields: [conflictingAgencyId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, type, fingerprint])
+  @@index([projectId, createdAt])
+  @@index([conflictingProjectId, createdAt])
+  @@index([segmentId, createdAt])
+}
+
+model SequencingRecommendation {
+  id            String      @id @default(uuid()) @db.Uuid
+  segmentId     String      @db.Uuid
+  projectIds    Json
+  proposedOrder Json
+  explanation   String
+  ruleTrace     Json
+  fingerprint   String      @unique @db.Char(64)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  segment RoadSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  logs    SequencingRecommendationLog[]
+
+  @@index([segmentId, updatedAt])
+}
+
+model SequencingRecommendationLog {
+  id               String                          @id @default(uuid()) @db.Uuid
+  recommendationId String                          @db.Uuid
+  segmentId        String                          @db.Uuid
+  proposedOrder    Json
+  outcome          SequencingRecommendationOutcome
+  actedById        String                          @db.Uuid
+  actedAt          DateTime                        @default(now())
+
+  recommendation SequencingRecommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  segment        RoadSegment             @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  actedBy        User                    @relation(fields: [actedById], references: [id], onDelete: Restrict)
+
+  @@index([recommendationId, actedAt])
+  @@index([segmentId, actedAt])
+  @@index([actedById])
 }
 
 model Notification {

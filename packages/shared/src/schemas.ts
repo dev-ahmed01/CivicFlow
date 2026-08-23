@@ -91,6 +91,17 @@ export const dependencyStateSchema = z.enum([
 ]);
 
 export const validationVoteSchema = z.enum(["CONFIRM", "NOT_SURE", "REJECT"]);
+export const interventionPurposeSchema = z.enum(["pipeline", "cable", "OFC", "resurfacing", "other"]);
+export const roadConflictTypeSchema = z.enum([
+  "SPATIAL",
+  "TEMPORAL",
+  "SEQUENCING_VIOLATION",
+  "RESTORATION_TOO_EARLY",
+  "REPEATED_EXCAVATION_RISK",
+  "DUPLICATE_INTERVENTION",
+]);
+export const roadConflictSeveritySchema = z.enum(["HIGH", "MEDIUM_HIGH", "MEDIUM"]);
+export const sequencingRecommendationOutcomeSchema = z.enum(["ACCEPTED", "MODIFIED", "DISMISSED"]);
 
 const idSchema = z.string().uuid();
 const dateSchema = z.coerce.date();
@@ -226,6 +237,19 @@ export const uploadContentTypeSchema = z.enum([
   "application/pdf",
 ]);
 
+export const interventionInputSchema = z.object({
+  segmentId: idSchema,
+  purpose: interventionPurposeSchema,
+  plannedStart: z.string().datetime(),
+  plannedEnd: z.string().datetime(),
+  affectedLengthM: z.number().positive().max(100_000),
+  startOffsetM: z.number().nonnegative().max(100_000).default(0),
+  dependencyRefs: z.array(idSchema).max(50).default([]),
+}).refine((value) => new Date(value.plannedEnd) >= new Date(value.plannedStart), {
+  message: "End date must be on or after the start date",
+  path: ["plannedEnd"],
+});
+
 // Part II W-P9 — Phase 8 extends this base with road/intervention fields.
 export const agencyOriginatedTicketBaseSchema = z.object({
   categoryId: idSchema,
@@ -243,7 +267,7 @@ export const agencyOriginatedTicketBaseSchema = z.object({
 });
 
 export const agencyOriginatedTicketRequestSchema = z.discriminatedUnion("action", [
-  agencyOriginatedTicketBaseSchema.extend({ action: z.literal("create") }),
+  agencyOriginatedTicketBaseSchema.extend({ action: z.literal("create"), intervention: interventionInputSchema.optional() }),
   z.object({ action: z.literal("complete"), imageId: idSchema }),
 ]);
 
@@ -260,6 +284,7 @@ export const inspectionReportRequestSchema = z.discriminatedUnion("action", [
 export const createProjectSchema = z.object({
   ticketId: idSchema,
   engineerId: idSchema,
+  intervention: interventionInputSchema.optional(),
   dependencies: z.array(z.object({
     respondingAgencyId: idSchema,
     requirement: z.string().trim().min(10).max(2000),
@@ -346,7 +371,22 @@ export const projectHeadTicketDetailSchema = citizenTicketSummarySchema.extend({
   description: z.string().nullable(),
   evidence: z.array(z.object({ id: idSchema, url: z.string().url(), uploadedAt: dateSchema.nullable() })),
   inspectionReports: z.array(inspectionReportSummarySchema),
-  project: z.object({ id: idSchema, state: projectStateSchema, engineerId: idSchema.nullable() }).nullable(),
+  project: z.object({
+    id: idSchema,
+    state: projectStateSchema,
+    engineerId: idSchema.nullable(),
+    plannedStart: dateSchema.nullable(),
+    plannedEnd: dateSchema.nullable(),
+    intervention: z.object({
+      segmentId: idSchema,
+      purpose: interventionPurposeSchema,
+      plannedStart: dateSchema,
+      plannedEnd: dateSchema,
+      affectedLengthM: z.number().positive(),
+      startOffsetM: z.number().nonnegative(),
+      dependencyRefs: z.array(idSchema),
+    }).nullable(),
+  }).nullable(),
   routingSuggestions: z.array(routingAgencySuggestionSchema),
 });
 export const projectHeadDashboardCountsSchema = z.object({
@@ -530,11 +570,81 @@ export const interventionSchema = z.object({
   projectId: idSchema,
   segmentId: idSchema,
   requestingAgencyId: idSchema,
-  purpose: z.string().min(1),
+  purpose: interventionPurposeSchema,
   plannedStart: dateSchema,
   plannedEnd: dateSchema,
   affectedLengthM: z.number().positive(),
+  startOffsetM: z.number().nonnegative(),
   dependencyRefs: z.array(idSchema),
+  createdAt: dateSchema,
+});
+
+export const roadSegmentSummarySchema = roadSegmentSchema.omit({ geometry: true }).extend({
+  ward: wardSummarySchema,
+});
+
+export const roadInterventionHistoryItemSchema = interventionSchema.extend({
+  requestingAgency: agencySchema.pick({ id: true, name: true }),
+  project: z.object({
+    id: idSchema,
+    state: projectStateSchema,
+    ticket: z.object({ id: idSchema, title: z.string() }).nullable(),
+  }),
+});
+
+export const roadConflictSchema = z.object({
+  id: idSchema,
+  projectId: idSchema,
+  conflictingProjectId: idSchema.nullable(),
+  segmentId: idSchema,
+  segmentName: z.string().min(1),
+  type: roadConflictTypeSchema,
+  severity: roadConflictSeveritySchema,
+  reason: z.string().min(1),
+  conflictingAgency: agencySchema.pick({ id: true, name: true }).nullable(),
+  detectedAt: dateSchema,
+});
+
+export const sequencingOrderItemSchema = z.object({
+  projectId: idSchema.nullable(),
+  interventionId: idSchema.nullable(),
+  agencyName: z.string().min(1),
+  purpose: z.string().min(1),
+  plannedStart: dateSchema,
+  plannedEnd: dateSchema,
+  synthetic: z.boolean().default(false),
+});
+
+export const sequencingRecommendationSchema = z.object({
+  id: idSchema,
+  segmentId: idSchema,
+  projectIds: z.array(idSchema),
+  proposedOrder: z.array(sequencingOrderItemSchema),
+  explanation: z.string().min(1),
+  ruleTrace: z.array(z.object({ rule: z.number().int().min(1).max(6), reason: z.string().min(1), projectIds: z.array(idSchema) })),
+  createdAt: dateSchema,
+  updatedAt: dateSchema,
+  latestOutcome: sequencingRecommendationOutcomeSchema.nullable(),
+});
+
+export const sequencingRecommendationActionSchema = z.object({
+  outcome: sequencingRecommendationOutcomeSchema,
+  proposedOrder: z.array(sequencingOrderItemSchema).optional(),
+  timelineRevision: z.object({
+    projectId: idSchema,
+    plannedStart: z.string().datetime(),
+    plannedEnd: z.string().datetime(),
+  }).refine((value) => new Date(value.plannedEnd) >= new Date(value.plannedStart), {
+    message: "End date must be on or after the start date",
+    path: ["plannedEnd"],
+  }).optional(),
+}).superRefine((value, context) => {
+  if (value.outcome === "MODIFIED" && !value.proposedOrder && !value.timelineRevision) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "A modified recommendation needs a revised order or timeline" });
+  }
+  if (value.outcome === "DISMISSED" && value.timelineRevision) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Dismissal cannot revise a project timeline", path: ["timelineRevision"] });
+  }
 });
 
 export const notificationSchema = z.object({
@@ -586,6 +696,10 @@ export type CitizenTicketState = z.infer<typeof citizenTicketStateSchema>;
 export type ProjectState = z.infer<typeof projectStateSchema>;
 export type DependencyState = z.infer<typeof dependencyStateSchema>;
 export type ValidationVote = z.infer<typeof validationVoteSchema>;
+export type InterventionPurpose = z.infer<typeof interventionPurposeSchema>;
+export type RoadConflictType = z.infer<typeof roadConflictTypeSchema>;
+export type RoadConflictSeverity = z.infer<typeof roadConflictSeveritySchema>;
+export type SequencingRecommendationOutcome = z.infer<typeof sequencingRecommendationOutcomeSchema>;
 export type CompletionVerificationDecision = z.infer<typeof completionVerificationDecisionSchema>;
 export type User = z.infer<typeof userSchema>;
 export type Ward = z.infer<typeof wardSchema>;
@@ -611,6 +725,11 @@ export type DependencyResponse = z.infer<typeof dependencyResponseSchema>;
 export type CreateDependencyRequests = z.infer<typeof createDependencyRequestsSchema>;
 export type RoadSegment = z.infer<typeof roadSegmentSchema>;
 export type Intervention = z.infer<typeof interventionSchema>;
+export type RoadSegmentSummary = z.infer<typeof roadSegmentSummarySchema>;
+export type RoadInterventionHistoryItem = z.infer<typeof roadInterventionHistoryItemSchema>;
+export type RoadConflict = z.infer<typeof roadConflictSchema>;
+export type SequencingOrderItem = z.infer<typeof sequencingOrderItemSchema>;
+export type SequencingRecommendation = z.infer<typeof sequencingRecommendationSchema>;
 export type Notification = z.infer<typeof notificationSchema>;
 export type AdminConfig = z.infer<typeof adminConfigSchema>;
 export type AuthTokens = z.infer<typeof authTokensSchema>;

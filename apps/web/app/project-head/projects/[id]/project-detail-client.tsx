@@ -1,9 +1,12 @@
 "use client";
 
-import type { ProjectConflict, ProjectListItem } from "@civicos/shared";
+import type { ProjectConflict, ProjectListItem, SequencingRecommendationOutcome } from "@civicos/shared";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { RoadIntelligencePanel, type RoadIntelligenceData } from "../../../_components/road-intelligence-panel";
 import { apiFetch } from "../../_lib/api";
+
+const emptyRoadData: RoadIntelligenceData = { conflicts: [], recommendations: [], segment: null, interventionHistory: [] };
 
 function ConflictPanel({ conflicts }: { conflicts: ProjectConflict[] }) {
   if (conflicts.length === 0) return null;
@@ -13,19 +16,28 @@ function ConflictPanel({ conflicts }: { conflicts: ProjectConflict[] }) {
 export function ProjectDetailClient({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<ProjectListItem>();
   const [conflicts, setConflicts] = useState<ProjectConflict[]>([]);
+  const [roadData, setRoadData] = useState<RoadIntelligenceData>(emptyRoadData);
   const [error, setError] = useState<string>();
 
-  useEffect(() => {
+  const load = useCallback(() => {
     void Promise.all([
       apiFetch<{ project: ProjectListItem }>(`/projects/${projectId}`),
       apiFetch<{ conflicts: ProjectConflict[] }>(`/projects/${projectId}/conflicts`),
-    ]).then(([projectResult, conflictResult]) => {
+      apiFetch<RoadIntelligenceData>(`/projects/${projectId}/road-intelligence`),
+    ]).then(([projectResult, conflictResult, roadResult]) => {
       setProject(projectResult.project);
       setConflicts(conflictResult.conflicts);
+      setRoadData(roadResult);
     }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load project"));
   }, [projectId]);
+  useEffect(load, [load]);
+
+  const actOnRecommendation = async (recommendationId: string, outcome: SequencingRecommendationOutcome, revision?: { plannedStart: string; plannedEnd: string }) => {
+    await apiFetch(`/sequencing-recommendations/${recommendationId}/actions`, { method: "POST", body: JSON.stringify({ outcome, ...(revision ? { timelineRevision: { projectId, ...revision } } : {}) }) });
+    load();
+  };
 
   if (!project && !error) return <p className="portal-muted">Loading project…</p>;
   if (!project) return <p className="error" role="alert">{error}</p>;
-  return <><header className="portal-heading"><div><Link className="back-link" href="/project-head/projects">← Projects</Link><p className="eyebrow">Agency project</p><h1>{project.ticket?.title ?? "Project record"}</h1><p>Created {new Date(project.createdAt).toLocaleDateString("en-IN")}</p></div><span className="state-chip">{project.state.replaceAll("_", " ")}</span></header><ConflictPanel conflicts={conflicts} /><section className="portal-panel"><dl className="detail-list"><div><dt>Project ID</dt><dd><code>{project.id}</code></dd></div><div><dt>Ticket</dt><dd>{project.ticket ? <Link href={`/project-head/tickets/${project.ticket.id}`}>{project.ticket.id}</Link> : "Standalone"}</dd></div><div><dt>Ward</dt><dd>{project.ticket?.ward.name ?? "—"}</dd></div><div><dt>Engineer</dt><dd>{project.engineer?.email ?? "Unassigned"}</dd></div><div><dt>Timeline</dt><dd>{project.plannedStart && project.plannedEnd ? `${new Date(project.plannedStart).toLocaleDateString("en-IN")} – ${new Date(project.plannedEnd).toLocaleDateString("en-IN")}` : "Set by the Engineer in Phase 6"}</dd></div></dl></section></>;
+  return <><header className="portal-heading"><div><Link className="back-link" href="/project-head/projects">← Projects</Link><p className="eyebrow">Agency project</p><h1>{project.ticket?.title ?? "Project record"}</h1><p>Created {new Date(project.createdAt).toLocaleDateString("en-IN")}</p></div><span className="state-chip">{project.state.replaceAll("_", " ")}</span></header><ConflictPanel conflicts={conflicts} /><RoadIntelligencePanel data={roadData} projectId={projectId} plannedStart={project.plannedStart} plannedEnd={project.plannedEnd} onAction={actOnRecommendation} /><section className="portal-panel"><dl className="detail-list"><div><dt>Project ID</dt><dd><code>{project.id}</code></dd></div><div><dt>Ticket</dt><dd>{project.ticket ? <Link href={`/project-head/tickets/${project.ticket.id}`}>{project.ticket.id}</Link> : "Standalone"}</dd></div><div><dt>Ward</dt><dd>{project.ticket?.ward.name ?? "—"}</dd></div><div><dt>Engineer</dt><dd>{project.engineer?.email ?? "Unassigned"}</dd></div><div><dt>Timeline</dt><dd>{project.plannedStart && project.plannedEnd ? `${new Date(project.plannedStart).toLocaleDateString("en-IN")} – ${new Date(project.plannedEnd).toLocaleDateString("en-IN")}` : "Set by the Engineer in Phase 6"}</dd></div></dl></section></>;
 }
