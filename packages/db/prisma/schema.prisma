@@ -91,6 +91,7 @@ model User {
   notifications        Notification[]
   otpChallenges        OtpChallenge[]
   refreshSessions      RefreshSession[]
+  inspectionReports    InspectionReport[]
 
   @@index([agencyId])
   @@index([wardId])
@@ -176,6 +177,7 @@ model Ticket {
   validationRequests ValidationRequest[]
   project        Project?
   stateTransitions TicketStateTransition[]
+  inspectionReports InspectionReport[]
 
   @@index([categoryId])
   @@index([reporterId])
@@ -183,6 +185,24 @@ model Ticket {
   @@index([wardId])
   @@index([state])
   @@index([coordinates], type: Gist, map: "Ticket_coordinates_gist_idx")
+}
+
+model InspectionReport {
+  id            String    @id @default(uuid()) @db.Uuid
+  ticketId      String    @db.Uuid
+  submittedById String    @db.Uuid
+  fileUrl       String
+  objectKey     String    @unique
+  contentType   String
+  notes         String
+  uploadedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  ticket      Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  submittedBy User   @relation(fields: [submittedById], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@index([submittedById])
 }
 
 model Observation {

@@ -358,7 +358,54 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
       response.status(404).json({ error: "Ticket not found" });
       return;
     }
-    response.json({ ticket: serializeTicket(row) });
+    const ticket = serializeTicket(row);
+    if (request.auth!.role === UserRole.CITIZEN) {
+      response.json({ ticket });
+      return;
+    }
+    const internal = await prisma.ticket.findUniqueOrThrow({
+      where: { id: ticketId },
+      select: {
+        state: true,
+        reporterId: true,
+        ward: { select: { id: true, name: true } },
+        category: {
+          select: {
+            routingRules: {
+              orderBy: { dependencyAgency: { name: "asc" } },
+              select: { dependencyAgency: { select: { id: true, name: true, type: true } } },
+            },
+          },
+        },
+        observations: {
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: {
+            note: true,
+            images: { orderBy: { createdAt: "asc" }, select: { id: true, url: true, uploadedAt: true } },
+          },
+        },
+        inspectionReports: {
+          orderBy: { createdAt: "desc" },
+          select: { id: true, fileUrl: true, contentType: true, notes: true, uploadedAt: true, createdAt: true },
+        },
+        project: { select: { id: true, state: true, engineerId: true } },
+      },
+    });
+    // Part III §7 — dependency agencies are advisory pre-suggestions only.
+    response.json({
+      ticket: {
+        ...ticket,
+        internalState: internal.state,
+        reporterId: internal.reporterId,
+        ward: internal.ward,
+        description: internal.observations[0]?.note ?? null,
+        evidence: internal.observations[0]?.images ?? [],
+        inspectionReports: internal.inspectionReports,
+        project: internal.project,
+        routingSuggestions: internal.category.routingRules.map((rule) => rule.dependencyAgency),
+      },
+    });
   }));
 
   router.get("/tickets/:id/timeline", requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN), asyncRoute(async (request, response) => {

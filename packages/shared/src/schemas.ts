@@ -215,6 +215,104 @@ export const imageUploadRequestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("complete"), imageId: idSchema }),
 ]);
 
+export const uploadContentTypeSchema = z.enum([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "application/pdf",
+]);
+
+// Part II W-P9 — Phase 8 extends this base with road/intervention fields.
+export const agencyOriginatedTicketBaseSchema = z.object({
+  categoryId: idSchema,
+  description: z.string().trim().min(10).max(2000),
+  wardId: idSchema,
+  evidence: z.object({
+    fileName: z.string().trim().min(1).max(200),
+    contentType: uploadContentTypeSchema,
+  }),
+  location: z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    address: z.string().trim().min(3).max(500).optional(),
+  }).optional(),
+});
+
+export const agencyOriginatedTicketRequestSchema = z.discriminatedUnion("action", [
+  agencyOriginatedTicketBaseSchema.extend({ action: z.literal("create") }),
+  z.object({ action: z.literal("complete"), imageId: idSchema }),
+]);
+
+export const inspectionReportRequestSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("presign"),
+    fileName: z.string().trim().min(1).max(200),
+    contentType: uploadContentTypeSchema,
+    notes: z.string().trim().min(3).max(3000),
+  }),
+  z.object({ action: z.literal("complete"), reportId: idSchema }),
+]);
+
+export const createProjectSchema = z.object({
+  ticketId: idSchema,
+  engineerId: idSchema,
+});
+
+export const updateCategoryRoutingSchema = z.object({ primaryAgencyId: idSchema });
+export const updateRoutingRulesSchema = z.object({ dependencyAgencyIds: z.array(idSchema).max(50) });
+
+export const wardSummarySchema = wardSchema.pick({ id: true, name: true });
+export const engineerSummarySchema = z.object({ id: idSchema, email: z.string().email().nullable() });
+export const routingAgencySuggestionSchema = agencySchema.pick({ id: true, name: true, type: true });
+export const inspectionReportSummarySchema = z.object({
+  id: idSchema,
+  fileUrl: z.string().url(),
+  contentType: z.string(),
+  notes: z.string(),
+  uploadedAt: dateSchema.nullable(),
+  createdAt: dateSchema,
+});
+export const projectHeadTicketSummarySchema = z.object({
+  id: idSchema,
+  title: z.string(),
+  state: ticketStateSchema,
+  createdAt: dateSchema,
+  category: categorySummarySchema,
+  ward: wardSummarySchema,
+  validatedAt: dateSchema.nullable(),
+  inspectionDue: z.boolean(),
+});
+export const projectHeadTicketDetailSchema = citizenTicketSummarySchema.extend({
+  internalState: ticketStateSchema,
+  reporterId: idSchema.nullable(),
+  ward: wardSummarySchema,
+  description: z.string().nullable(),
+  evidence: z.array(z.object({ id: idSchema, url: z.string().url(), uploadedAt: dateSchema.nullable() })),
+  inspectionReports: z.array(inspectionReportSummarySchema),
+  project: z.object({ id: idSchema, state: projectStateSchema, engineerId: idSchema.nullable() }).nullable(),
+  routingSuggestions: z.array(routingAgencySuggestionSchema),
+});
+export const projectHeadDashboardCountsSchema = z.object({
+  newValidatedTickets: z.number().int().nonnegative(),
+  inspectionsDue: z.number().int().nonnegative(),
+  dependencyRequestsPending: z.number().int().nonnegative(),
+  activeProjects: z.number().int().nonnegative(),
+});
+export const projectListItemSchema = z.object({
+  id: idSchema,
+  ticketId: idSchema.nullable(),
+  agencyId: idSchema,
+  state: projectStateSchema,
+  plannedStart: dateSchema.nullable(),
+  plannedEnd: dateSchema.nullable(),
+  engineerId: idSchema.nullable(),
+  createdAt: dateSchema,
+  agency: agencySchema.pick({ id: true, name: true }),
+  engineer: engineerSummarySchema.nullable(),
+  ticket: z.object({ id: idSchema, title: z.string(), ward: wardSummarySchema }).nullable(),
+});
+
 export const citizenTicketFilterSchema = z.enum(["ongoing", "past"]);
 
 export const validationSchema = z.object({
@@ -360,3 +458,14 @@ export type Intervention = z.infer<typeof interventionSchema>;
 export type Notification = z.infer<typeof notificationSchema>;
 export type AdminConfig = z.infer<typeof adminConfigSchema>;
 export type AuthTokens = z.infer<typeof authTokensSchema>;
+export type AgencyOriginatedTicketRequest = z.infer<typeof agencyOriginatedTicketRequestSchema>;
+export type InspectionReportRequest = z.infer<typeof inspectionReportRequestSchema>;
+export type CreateProject = z.infer<typeof createProjectSchema>;
+export type WardSummary = z.infer<typeof wardSummarySchema>;
+export type EngineerSummary = z.infer<typeof engineerSummarySchema>;
+export type RoutingAgencySuggestion = z.infer<typeof routingAgencySuggestionSchema>;
+export type InspectionReportSummary = z.infer<typeof inspectionReportSummarySchema>;
+export type ProjectHeadTicketSummary = z.infer<typeof projectHeadTicketSummarySchema>;
+export type ProjectHeadTicketDetail = z.infer<typeof projectHeadTicketDetailSchema>;
+export type ProjectHeadDashboardCounts = z.infer<typeof projectHeadDashboardCountsSchema>;
+export type ProjectListItem = z.infer<typeof projectListItemSchema>;

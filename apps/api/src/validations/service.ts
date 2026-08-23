@@ -1,4 +1,5 @@
 import { Prisma, TicketState, UserRole, prisma } from "db";
+import { routeValidatedTicket } from "../routing/service";
 
 const requestType = "VALIDATION_REQUEST";
 
@@ -199,13 +200,9 @@ export async function submitValidation(
       return { validationId: validation.id, counted: true, alreadyResolved: false, state: ticket.state };
     }
 
-    // Part III §10.2–§10.3 — both state transitions commit with the quorum vote.
-    await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.ROUTED_TO_AGENCY } });
-    await transaction.ticketStateTransition.createMany({ data: [
-      { ticketId, fromState: TicketState.PENDING_VALIDATION, toState: TicketState.VALIDATED, reason: "COMMUNITY_VALIDATION_QUORUM_MET" },
-      // TODO(Phase 4): replace this placeholder transition with table-driven agency routing.
-      { ticketId, fromState: TicketState.VALIDATED, toState: TicketState.ROUTED_TO_AGENCY, reason: "AWAITING_PHASE_4_ROUTING_LOOKUP" },
-    ] });
+    // Part III §§7, 10.2–10.3 — validation and table-driven assignment commit
+    // atomically, so an agency queue never observes a half-routed ticket.
+    await routeValidatedTicket(transaction, ticketId);
     return { validationId: validation.id, counted: true, alreadyResolved: false, state: TicketState.ROUTED_TO_AGENCY };
   });
 }
