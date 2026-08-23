@@ -9,6 +9,7 @@ import {
 } from "@civicos/shared";
 import { requireAuth, requireRole } from "../auth/middleware";
 import { runValidationRebatchJob, submitValidation, ValidationDailyCapError } from "./service";
+import { createNotifications } from "../notifications/service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -152,7 +153,7 @@ export function createValidationsRouter(): Router {
     const result = await prisma.$transaction(async (transaction) => {
       const invitation = await transaction.completionVerificationRequest.findUnique({
         where: { completionEvidenceId_citizenId: { completionEvidenceId: evidenceId, citizenId: request.auth!.userId } },
-        include: { completionEvidence: { include: { project: { select: { id: true, state: true, agencyId: true, engineerId: true } }, ticket: { select: { id: true, state: true } } } } },
+        include: { completionEvidence: { include: { project: { select: { id: true, state: true, agencyId: true, engineerId: true } }, ticket: { select: { id: true, state: true, reporterId: true } } } } },
       });
       if (!invitation) return { kind: "missing" as const };
       const evidence = invitation.completionEvidence;
@@ -197,11 +198,25 @@ export function createValidationsRouter(): Router {
         ] },
         select: { id: true },
       });
-      if (recipients.length > 0) await transaction.notification.createMany({ data: recipients.map(({ id }) => ({
+      if (recipients.length > 0) await createNotifications(transaction, recipients.map(({ id }) => ({
         userId: id,
         type: resolvedState === ProjectState.CLOSED ? "COMPLETION_VERIFIED" : "PROJECT_REWORK_REQUESTED",
         payload: { projectId: evidence.project.id, ticketId: evidence.ticket.id, evidenceId },
-      })) });
+      })));
+      if (resolvedState === ProjectState.CLOSED) {
+        const citizens = await transaction.user.findMany({
+          where: { OR: [
+            ...(evidence.ticket.reporterId ? [{ id: evidence.ticket.reporterId }] : []),
+            { validations: { some: { ticketId: evidence.ticket.id, counted: true } } },
+          ] },
+          select: { id: true },
+        });
+        await createNotifications(transaction, citizens.map(({ id }) => ({
+          userId: id,
+          type: "TICKET_RESOLVED",
+          payload: { projectId: evidence.project.id, ticketId: evidence.ticket.id, evidenceId },
+        })));
+      }
       return { kind: "recorded" as const, state: resolvedState, duplicate: false };
     });
     if (result.kind === "missing") {

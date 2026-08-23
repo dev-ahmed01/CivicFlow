@@ -5,6 +5,7 @@ import type {
   DependencyListItem,
   DependencyResponse,
   EngineerProjectDetail,
+  Notification,
   PendingValidation,
   PendingCompletionVerification,
   ProjectConflict,
@@ -170,6 +171,21 @@ export async function verifyCompletion(evidenceId: string, decision: CompletionV
     method: "POST",
     body: JSON.stringify({ decision, note }),
   });
+}
+
+export type MobileNotification = Omit<Notification, "createdAt"> & { createdAt: string };
+
+export async function loadNotifications(unread?: boolean): Promise<{ notifications: MobileNotification[]; unreadCount: number }> {
+  const query = unread === undefined ? "" : `?unread=${String(unread)}`;
+  return apiFetch(`/notifications${query}`);
+}
+
+export async function markNotificationRead(notificationId: string): Promise<void> {
+  await apiFetch(`/notifications/${notificationId}/read`, { method: "PATCH" });
+}
+
+export async function registerPushToken(token: string, platform: "ios" | "android"): Promise<void> {
+  await apiFetch("/notifications/push-tokens", { method: "POST", body: JSON.stringify({ token, platform }) });
 }
 
 export type DraftReport = {

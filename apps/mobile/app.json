@@ -12,7 +12,8 @@
     },
     "plugins": [
       ["expo-image-picker", { "photosPermission": "CivicOS uses your photos as evidence for civic reports.", "cameraPermission": "CivicOS uses your camera to photograph civic issues." }],
-      ["expo-location", { "locationWhenInUsePermission": "CivicOS uses your location to route civic reports to the right ward." }]
+      ["expo-location", { "locationWhenInUsePermission": "CivicOS uses your location to route civic reports to the right ward." }],
+      "expo-notifications"
     ]
   }
 }

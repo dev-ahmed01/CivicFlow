@@ -1,5 +1,6 @@
 import { Prisma, TicketState, UserRole, prisma } from "db";
 import { routeValidatedTicket } from "../routing/service";
+import { createNotifications } from "../notifications/service";
 
 const requestType = "VALIDATION_REQUEST";
 
@@ -99,8 +100,7 @@ async function createBatch(client: DatabaseClient, ticketId: string, now: Date):
       expiresAt,
     })),
   });
-  await client.notification.createMany({
-    data: candidates.map((candidate) => ({
+  await createNotifications(client, candidates.map((candidate) => ({
       userId: candidate.citizenId,
       type: requestType,
       payload: {
@@ -109,8 +109,7 @@ async function createBatch(client: DatabaseClient, ticketId: string, now: Date):
         distanceMeters: Math.round(candidate.distanceMeters),
         expiresAt: expiresAt.toISOString(),
       },
-    })),
-  });
+    })));
   return candidates.length;
 }
 

@@ -83,6 +83,14 @@ pnpm dev
 
 The compose service maps PostgreSQL to host port `5433` to avoid common conflicts with an existing local PostgreSQL installation. Local seeded internal accounts use `CivicOS@123`; accounts marked for first-login reset can only reach the password-reset flow until they change it.
 
+## Notifications
+
+Notification rows act as a transactional outbox. Citizen and Engineer devices register an Expo token with `POST /notifications/push-tokens`; the API worker sends pending mobile-role notifications through Expo every `PUSH_DELIVERY_POLL_SECONDS` (15 seconds by default), records each device result, retries transient failures up to five times, and disables tokens Expo reports as unregistered. Set `EXPO_ACCESS_TOKEN` only when Expo push access-token security is enabled. A physical-device EAS development or preview build with a configured EAS project ID is required for remote push; Expo Go is not used for production push verification.
+
+Web notification bells use 30-second polling against `GET /notifications?unread=true`. This keeps the unread badge authoritative to the database without adding a persistent websocket service. Opening a notification page fetches the reverse-chronological list and clears each visible unread row through `PATCH /notifications/{id}/read`. Project Head and Engineer pages provide the Part II §6.3 filters; the citizen page intentionally has none.
+
+Run the delivery/unread acceptance check against the seeded local database with `pnpm verify:phase9`.
+
 ## Demo scripts
 
 Two rehearsed end-to-end walkthroughs (built out fully in Phase 12):

@@ -14,6 +14,7 @@ import { checkProjectConflicts } from "../conflicts/service";
 import { createDependencyRequests, DependencyActionError } from "../dependencies/service";
 import type { ImageStorage } from "../images/storage";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
+import { createNotification, createNotifications } from "../notifications/service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -53,15 +54,14 @@ async function notifyProjectStakeholders(
     where: {
       OR: [
         { agencyId: project.agencyId, role: UserRole.PROJECT_HEAD },
+        ...(project.ticketId ? [{ reportedTickets: { some: { id: project.ticketId } } }] : []),
         ...(project.ticketId ? [{ validations: { some: { ticketId: project.ticketId, counted: true } } }] : []),
       ],
     },
     select: { id: true },
   });
   if (stakeholders.length > 0) {
-    await transaction.notification.createMany({
-      data: stakeholders.map(({ id }) => ({ userId: id, type, payload: { projectId: project.id, ...payload } })),
-    });
+    await createNotifications(transaction, stakeholders.map(({ id }) => ({ userId: id, type, payload: { projectId: project.id, ...payload } })));
   }
 }
 
@@ -178,7 +178,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           ...(existing ? [] : [{ ticketId: ticket.id, fromState: TicketState.INSPECTION_COMPLETE, toState: TicketState.PROJECT_CREATED, reason: "PROJECT_CREATED" as const }]),
           { ticketId: ticket.id, fromState: TicketState.PROJECT_CREATED, toState: TicketState.ENGINEER_ASSIGNED, reason: "ENGINEER_ASSIGNED" },
         ] });
-        await transaction.notification.create({ data: { userId: engineer.id, type: "PROJECT_ASSIGNMENT", payload: { projectId: created.id, ticketId: ticket.id } } });
+        await createNotification(transaction, { userId: engineer.id, type: "PROJECT_ASSIGNMENT", payload: { projectId: created.id, ticketId: ticket.id } });
         const dependencies = await createDependencyRequests(transaction, created.id, agencyId, parsed.data.dependencies ?? [], request.auth!.userId);
         // Delta §4.3 — generic Phase 7 check remains unchanged and runs first.
         const conflicts = intervention || existing?.intervention ? await checkProjectConflicts(transaction, created.id) : [];
@@ -335,7 +335,12 @@ export function createProjectsRouter(storage: ImageStorage): Router {
             await transaction.ticketStateTransition.create({ data: { ticketId: project.ticketId, fromState: ticket.state, toState: TicketState.WORK_IN_PROGRESS, reason: "EXECUTION_STARTED" } });
           }
         }
-        if (!initialTimeline) await notifyProjectStakeholders(transaction, project, "PROJECT_TIMELINE_MODIFIED", { conflicts: conflicts.length });
+        await notifyProjectStakeholders(
+          transaction,
+          project,
+          initialTimeline ? "WORK_STARTED" : "PROJECT_TIMELINE_MODIFIED",
+          { conflicts: conflicts.length },
+        );
         return { kind: "updated" as const, conflicts, roadConflicts };
       });
       if (result.kind === "missing") response.status(404).json({ error: "Assigned project not found" });
@@ -383,6 +388,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
             await transaction.ticketStateTransition.create({ data: { ticketId: project.ticketId, fromState: ticket.state, toState: TicketState.WORK_COMPLETED, reason: "WORK_COMPLETED" } });
           }
         }
+        await notifyProjectStakeholders(transaction, { ...project, agencyId: actorAgency(request) }, "WORK_COMPLETED", {});
         return { kind: "updated" as const };
       });
       if (result.kind === "missing") response.status(404).json({ error: "Assigned project not found" });
@@ -446,7 +452,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         await transaction.ticketStateTransition.create({ data: { ticketId: evidence.ticketId, fromState: TicketState.WORK_COMPLETED, toState: TicketState.AWAITING_CITIZEN_VERIFICATION, reason: "COMPLETION_EVIDENCE_SUBMITTED" } });
         if (validators.length > 0) {
           await transaction.completionVerificationRequest.createMany({ data: validators.map(({ validatorId }) => ({ completionEvidenceId: evidence.id, citizenId: validatorId })) });
-          await transaction.notification.createMany({ data: validators.map(({ validatorId }) => ({ userId: validatorId, type: "COMPLETION_VERIFICATION_REQUEST", payload: { projectId: project.id, ticketId: evidence.ticketId, evidenceId: evidence.id } })) });
+          await createNotifications(transaction, validators.map(({ validatorId }) => ({ userId: validatorId, type: "COMPLETION_VERIFICATION_REQUEST", payload: { projectId: project.id, ticketId: evidence.ticketId, evidenceId: evidence.id } })));
         }
         return { kind: "completed" as const, notified: validators.length };
       });

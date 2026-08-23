@@ -7,19 +7,23 @@ import {
   loadAgencies,
   loadEngineerProject,
   loadEngineerProjects,
+  loadNotifications,
   submitCompletionEvidence,
   uptakeProject,
   updateProjectStatus,
   updateProjectTimeline,
   type CurrentAuth,
   type LocalImage,
+  type MobileNotification,
 } from "./api";
 import { PrimaryButton, ScreenHeader, SecondaryButton } from "./components";
 import { EngineerDependenciesApp } from "./engineer-dependencies";
 import { Shell } from "./screens";
 import { colors } from "./theme";
+import { NotificationsScreen } from "./notifications";
+import { registerForPushNotifications } from "./push-notifications";
 
-type EngineerScreen = "dashboard" | "mine" | "assigned" | "detail" | "timeline" | "geographic" | "completion" | "dependencies";
+type EngineerScreen = "dashboard" | "mine" | "assigned" | "detail" | "timeline" | "geographic" | "completion" | "dependencies" | "notifications";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Please try again.";
@@ -143,13 +147,29 @@ export function EngineerProjectsApp({ auth, onLogout }: { auth: CurrentAuth; onL
   const [screen, setScreen] = useState<EngineerScreen>("dashboard");
   const [projectId, setProjectId] = useState<string>();
   const [timelineProject, setTimelineProject] = useState<EngineerProjectDetail>();
+  const [notificationUnread, setNotificationUnread] = useState(0);
+  useEffect(() => {
+    void registerForPushNotifications().catch(() => { /* In-app center remains available. */ });
+    let active = true;
+    const poll = () => { void loadNotifications(true).then((result) => { if (active) setNotificationUnread(result.unreadCount); }).catch(() => undefined); };
+    poll();
+    const timer = setInterval(poll, 30_000);
+    return () => { active = false; clearInterval(timer); };
+  }, [auth.userId]);
   const openProject = (id: string) => { setProjectId(id); setScreen("detail"); };
+  const openNotification = (notification: MobileNotification) => {
+    const nextProjectId = typeof notification.payload.projectId === "string" ? notification.payload.projectId : undefined;
+    if (nextProjectId) { openProject(nextProjectId); return; }
+    if (typeof notification.payload.dependencyId === "string") { setScreen("dependencies"); return; }
+    setScreen("dashboard");
+  };
   if (screen === "mine" || screen === "assigned" || screen === "geographic") return <ProjectsScreen scope={screen} auth={auth} onBack={() => setScreen("dashboard")} onOpen={openProject} />;
   if (screen === "dependencies") return <EngineerDependenciesApp currentUserId={auth.userId} onBack={() => setScreen("dashboard")} />;
+  if (screen === "notifications") return <NotificationsScreen role="ENGINEER" onBack={() => setScreen("dashboard")} onOpen={openNotification} onViewed={() => setNotificationUnread(0)} />;
   if (screen === "detail" && projectId) return <ProjectDetailScreen projectId={projectId} onBack={() => setScreen("dashboard")} onTimeline={(project) => { setTimelineProject(project); setScreen("timeline"); }} onCompletion={() => setScreen("completion")} />;
   if (screen === "timeline" && timelineProject) return <TimelineScreen project={timelineProject} onBack={() => setScreen("detail")} onSaved={() => setScreen("detail")} />;
   if (screen === "completion" && projectId) return <CompletionScreen projectId={projectId} onBack={() => setScreen("detail")} onSubmitted={() => { Alert.alert("Submitted", "The original citizen validators have been notified."); setScreen("detail"); }} />;
-  return <Shell><ScrollView contentContainerStyle={styles.content}><View style={styles.headerRow}><View><Text style={styles.kicker}>Executive Engineer</Text><Text style={styles.heading}>Field operations</Text></View><Pressable onPress={onLogout}><Text style={styles.logout}>Sign out</Text></Pressable></View><Text style={styles.intro}>Accept assigned work, set execution timelines, coordinate dependencies, and submit completion evidence.</Text><View style={styles.dashboardGrid}><Pressable onPress={() => setScreen("mine")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>◷</Text><Text style={styles.cardTitle}>My Projects</Text><Text style={styles.meta}>Ongoing work and updates</Text></Pressable><Pressable onPress={() => setScreen("assigned")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>↓</Text><Text style={styles.cardTitle}>Assigned Work</Text><Text style={styles.meta}>Uptake queue</Text></Pressable><Pressable onPress={() => setScreen("geographic")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>⌖</Text><Text style={styles.cardTitle}>Area Projects</Text><Text style={styles.meta}>Filterable list view</Text></Pressable><Pressable onPress={() => setScreen("dependencies")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>↔</Text><Text style={styles.cardTitle}>Dependencies</Text><Text style={styles.meta}>Agency coordination</Text></Pressable></View></ScrollView></Shell>;
+  return <Shell><ScrollView contentContainerStyle={styles.content}><View style={styles.headerRow}><View><Text style={styles.kicker}>Executive Engineer</Text><Text style={styles.heading}>Field operations</Text></View><Pressable onPress={onLogout}><Text style={styles.logout}>Sign out</Text></Pressable></View><Text style={styles.intro}>Accept assigned work, set execution timelines, coordinate dependencies, and submit completion evidence.</Text><View style={styles.dashboardGrid}><Pressable onPress={() => setScreen("mine")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>◷</Text><Text style={styles.cardTitle}>My Projects</Text><Text style={styles.meta}>Ongoing work and updates</Text></Pressable><Pressable onPress={() => setScreen("assigned")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>↓</Text><Text style={styles.cardTitle}>Assigned Work</Text><Text style={styles.meta}>Uptake queue</Text></Pressable><Pressable onPress={() => setScreen("geographic")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>⌖</Text><Text style={styles.cardTitle}>Area Projects</Text><Text style={styles.meta}>Filterable list view</Text></Pressable><Pressable onPress={() => setScreen("dependencies")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>↔</Text><Text style={styles.cardTitle}>Dependencies</Text><Text style={styles.meta}>Agency coordination</Text></Pressable><Pressable onPress={() => setScreen("notifications")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>♢</Text><Text style={styles.cardTitle}>Notifications{notificationUnread > 0 ? ` (${notificationUnread})` : ""}</Text><Text style={styles.meta}>Assignments, conflicts, and completion</Text></Pressable></View></ScrollView></Shell>;
 }
 
 const styles = StyleSheet.create({

@@ -1,4 +1,5 @@
-import { Prisma, TicketState } from "db";
+import { Prisma, TicketState, UserRole } from "db";
+import { createNotifications } from "../notifications/service";
 
 type DatabaseClient = Prisma.TransactionClient;
 
@@ -10,6 +11,7 @@ export async function routeValidatedTicket(
     where: { id: ticketId },
     select: {
       state: true,
+      reporterId: true,
       category: { select: { primaryAgencyId: true } },
     },
   });
@@ -41,5 +43,16 @@ export async function routeValidatedTicket(
       },
     ],
   });
+  const projectHeads = await client.user.findMany({
+    where: { agencyId, role: UserRole.PROJECT_HEAD },
+    select: { id: true },
+  });
+  await createNotifications(client, [
+    ...(ticket.reporterId ? [
+      { userId: ticket.reporterId, type: "TICKET_VALIDATED", payload: { ticketId } },
+      { userId: ticket.reporterId, type: "TICKET_ROUTED_TO_AGENCY", payload: { ticketId, agencyId } },
+    ] : []),
+    ...projectHeads.map(({ id }) => ({ userId: id, type: "TICKET_ROUTED_TO_AGENCY", payload: { ticketId, agencyId } })),
+  ]);
   return agencyId;
 }

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { ConflictSeverity, Prisma, type PrismaClient, ProjectState } from "db";
+import { ConflictSeverity, Prisma, type PrismaClient, ProjectState, UserRole } from "db";
 import type { ProjectConflict } from "@civicos/shared";
+import { createNotifications } from "../notifications/service";
 
 export type ConflictCheckClient = Prisma.TransactionClient | PrismaClient;
 
@@ -171,6 +172,14 @@ export async function checkProjectConflicts(
     const overlapEnd = new Date(Math.min(candidate.sourcePlannedEnd.getTime(), candidate.candidatePlannedEnd.getTime()));
     const description = locationDescription(candidate);
     const fingerprint = timelineFingerprint(first, second);
+    const existing = await client.conflictLog.findUnique({
+      where: { projectId_conflictingProjectId_timelineFingerprint: {
+        projectId: first.id,
+        conflictingProjectId: second.id,
+        timelineFingerprint: fingerprint,
+      } },
+      select: { id: true },
+    });
     const log = await client.conflictLog.upsert({
       where: { projectId_conflictingProjectId_timelineFingerprint: {
         projectId: first.id,
@@ -202,6 +211,31 @@ export async function checkProjectConflicts(
       },
       select: { id: true, createdAt: true },
     });
+    if (!existing) {
+      const projects = await client.project.findMany({
+        where: { id: { in: [first.id, second.id] } },
+        select: { engineerId: true },
+      });
+      const engineerIds = projects.flatMap((project) => project.engineerId ? [project.engineerId] : []);
+      const users = await client.user.findMany({
+        where: { OR: [
+          { agencyId: { in: [first.agencyId, second.agencyId] }, role: UserRole.PROJECT_HEAD },
+          ...(engineerIds.length ? [{ id: { in: engineerIds }, role: UserRole.ENGINEER }] : []),
+        ] },
+        select: { id: true, agencyId: true },
+      });
+      await createNotifications(client, users.map((user) => ({
+        userId: user.id,
+        type: "CONFLICT_DETECTED",
+        payload: {
+          conflictId: log.id,
+          projectId: user.agencyId === first.agencyId ? first.id : second.id,
+          conflictingProjectId: user.agencyId === first.agencyId ? second.id : first.id,
+          severity,
+          advisory: true,
+        },
+      })));
+    }
 
     return {
       id: log.id,

@@ -4,6 +4,7 @@ import {
   ProjectState,
   RoadConflictSeverity,
   RoadConflictType,
+  UserRole,
   type PrismaClient,
 } from "db";
 import type {
@@ -11,6 +12,7 @@ import type {
   SequencingOrderItem,
   SequencingRecommendation,
 } from "@civicos/shared";
+import { createNotifications } from "../notifications/service";
 
 export type RoadIntelligenceClient = Prisma.TransactionClient | PrismaClient;
 
@@ -326,12 +328,44 @@ export async function checkRoadConflicts(client: RoadIntelligenceClient, project
   const records = await segmentRecords(client, source.segmentId, config.categoryId);
   const detections = evaluateRoadConflicts(projectId, records, source.segment.lastRestorationDate, config.repeatedDays);
   const logged = await Promise.all(detections.map(async (item) => {
+    const existing = await client.roadConflictLog.findUnique({
+      where: { projectId_type_fingerprint: { projectId: item.projectId, type: item.type, fingerprint: item.fingerprint } },
+      select: { id: true },
+    });
     const row = await client.roadConflictLog.upsert({
       where: { projectId_type_fingerprint: { projectId: item.projectId, type: item.type, fingerprint: item.fingerprint } },
       update: { severity: item.severity, reason: item.reason },
       create: item,
       include: { conflictingAgency: { select: { id: true, name: true } }, segment: { select: { roadName: true } } },
     });
+    if (!existing) {
+      const agencyIds = [item.projectAgencyId, item.conflictingAgencyId].filter((id): id is string => id !== null);
+      const projects = await client.project.findMany({
+        where: { id: { in: [item.projectId, item.conflictingProjectId].filter((id): id is string => id !== null) } },
+        select: { engineerId: true },
+      });
+      const engineerIds = projects.flatMap((project) => project.engineerId ? [project.engineerId] : []);
+      const users = await client.user.findMany({
+        where: { OR: [
+          { agencyId: { in: agencyIds }, role: UserRole.PROJECT_HEAD },
+          ...(engineerIds.length ? [{ id: { in: engineerIds }, role: UserRole.ENGINEER }] : []),
+        ] },
+        select: { id: true, agencyId: true },
+      });
+      await createNotifications(client, users.map((user) => ({
+        userId: user.id,
+        type: "ROAD_CONFLICT_DETECTED",
+        payload: {
+          roadConflictId: row.id,
+          projectId: user.agencyId === item.projectAgencyId ? item.projectId : item.conflictingProjectId ?? item.projectId,
+          conflictingProjectId: item.conflictingProjectId,
+          segmentId: item.segmentId,
+          severity: item.severity,
+          conflictType: item.type,
+          advisory: true,
+        },
+      })));
+    }
     return {
       id: row.id,
       projectId: row.projectId,
@@ -358,9 +392,25 @@ export async function checkRoadConflicts(client: RoadIntelligenceClient, project
       });
       if (!existing) {
         const agencyIds = [...new Set(records.map((item) => item.agencyId))];
-        const users = await client.user.findMany({ where: { role: "PROJECT_HEAD", agencyId: { in: agencyIds } }, select: { id: true } });
+        const involvedProjects = await client.project.findMany({
+          where: { id: { in: records.map((item) => item.projectId) } },
+          select: { engineerId: true },
+        });
+        const engineerIds = involvedProjects.flatMap((project) => project.engineerId ? [project.engineerId] : []);
+        const users = await client.user.findMany({ where: { OR: [
+          { role: UserRole.PROJECT_HEAD, agencyId: { in: agencyIds } },
+          ...(engineerIds.length ? [{ role: UserRole.ENGINEER, id: { in: engineerIds } }] : []),
+        ] }, select: { id: true, agencyId: true } });
         if (users.length > 0) {
-          await client.notification.createMany({ data: users.map((user) => ({ userId: user.id, type: "SEQUENCING_RECOMMENDATION", payload: { recommendationId: recommendation.id, segmentId: source.segmentId } })) });
+          await createNotifications(client, users.map((user) => ({
+            userId: user.id,
+            type: "SEQUENCING_RECOMMENDATION",
+            payload: {
+              recommendationId: recommendation.id,
+              segmentId: source.segmentId,
+              projectId: records.find((item) => item.agencyId === user.agencyId)?.projectId ?? records[0]!.projectId,
+            },
+          })));
         }
       }
     }

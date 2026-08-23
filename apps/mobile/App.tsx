@@ -2,16 +2,20 @@ import { useCallback, useEffect, useState } from "react";
 import type { CategorySummary, CitizenTicketSummary, CompletionVerificationDecision, PendingCompletionVerification, PendingValidation, ValidationVote } from "@civicos/shared";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { clearInternalSession, loadCategories, loadCurrentAuth, loadMyTickets, loadPendingCompletionVerifications, loadPendingValidations, submitReport, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage } from "./src/api";
+import { clearInternalSession, loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, submitReport, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
 import { EngineerLoginScreen, EngineerProjectsApp } from "./src/engineer-projects";
 import { CategoryScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type ConfirmedLocation } from "./src/screens";
 import { colors } from "./src/theme";
+import { NotificationsScreen } from "./src/notifications";
+import { registerForPushNotifications } from "./src/push-notifications";
 
-type Screen = "home" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "engineer-login";
+type Screen = "home" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "engineer-login";
 
 export default function App() {
   const [viewerRole, setViewerRole] = useState<"ENGINEER" | "OTHER" | "LOADING">("LOADING");
   const [engineerAuth, setEngineerAuth] = useState<CurrentAuth>();
+  const [citizenAuth, setCitizenAuth] = useState<CurrentAuth>();
+  const [notificationUnread, setNotificationUnread] = useState(0);
   const [screen, setScreen] = useState<Screen>("home");
   const [categories, setCategories] = useState<CategorySummary[]>([]);
   const [categoryError, setCategoryError] = useState<string>();
@@ -42,12 +46,23 @@ export default function App() {
       try {
         const auth = await loadCurrentAuth();
         if (auth.role === "ENGINEER") { setEngineerAuth(auth); setViewerRole("ENGINEER"); return; }
+        if (auth.role === "CITIZEN") setCitizenAuth(auth);
       } catch { /* Public/citizen startup continues without an internal role. */ }
       setViewerRole("OTHER");
       try { setCategories(await loadCategories()); }
       catch (error) { setCategoryError(error instanceof Error ? error.message : "Could not load issue types"); }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!citizenAuth) return;
+    void registerForPushNotifications().catch(() => { /* In-app notifications remain available if push permission is denied. */ });
+    let active = true;
+    const poll = () => { void loadNotifications(true).then((result) => { if (active) setNotificationUnread(result.unreadCount); }).catch(() => undefined); };
+    poll();
+    const timer = setInterval(poll, 30_000);
+    return () => { active = false; clearInterval(timer); };
+  }, [citizenAuth]);
 
   if (viewerRole === "ENGINEER" && engineerAuth) return <><StatusBar style="dark" /><EngineerProjectsApp auth={engineerAuth} onLogout={() => { clearInternalSession(); setEngineerAuth(undefined); setViewerRole("OTHER"); setScreen("home"); }} /></>;
   if (viewerRole === "LOADING") return <><StatusBar style="dark" /><Shell><View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loadingText}>Loading CivicOS…</Text></View></Shell></>;
@@ -67,6 +82,11 @@ export default function App() {
   const openCompletionValidations = () => {
     setScreen("completion-validations"); setCompletionLoading(true); setCompletionError(undefined);
     void loadPendingCompletionVerifications().then(setCompletionValidations).catch((error: unknown) => setCompletionError(error instanceof Error ? error.message : "Could not load completion checks")).finally(() => setCompletionLoading(false));
+  };
+  const openNotification = (notification: MobileNotification) => {
+    if (notification.type === "VALIDATION_REQUEST") { openValidations(); return; }
+    if (notification.type === "COMPLETION_VERIFICATION_REQUEST") { openCompletionValidations(); return; }
+    openTickets(notification.type === "TICKET_RESOLVED" ? "past" : "ongoing");
   };
   const submitValidationVote = async (vote: ValidationVote) => {
     if (!selectedValidation) return;
@@ -115,8 +135,9 @@ export default function App() {
   else if (screen === "verification" && selectedValidation) content = <VerificationRequestScreen validation={selectedValidation} submitting={validationSubmitting} onBack={() => setScreen("validations")} onSubmit={(vote) => void submitValidationVote(vote)} />;
   else if (screen === "completion-validations") content = <CompletionVerificationListScreen completions={completionValidations} loading={completionLoading} error={completionError} onBack={() => setScreen("home")} onOpen={(completion) => { setSelectedCompletion(completion); setScreen("completion-verification"); }} />;
   else if (screen === "completion-verification" && selectedCompletion) content = <CompletionVerificationScreen completion={selectedCompletion} submitting={completionSubmitting} onBack={() => setScreen("completion-validations")} onSubmit={(decision) => void submitCompletionVote(decision)} />;
+  else if (screen === "notifications") content = <NotificationsScreen role="CITIZEN" onBack={() => setScreen("home")} onOpen={openNotification} onViewed={() => setNotificationUnread(0)} />;
   else if (screen === "engineer-login") content = <EngineerLoginScreen onCancel={() => setScreen("home")} onLogin={(auth) => { setEngineerAuth(auth); setViewerRole("ENGINEER"); }} />;
-  else content = <HomeScreen onReport={() => setScreen("category")} onTickets={openTickets} onValidations={openValidations} onCompletionValidations={openCompletionValidations} onEngineerLogin={() => setScreen("engineer-login")} />;
+  else content = <HomeScreen notificationUnread={notificationUnread} onNotifications={() => setScreen("notifications")} onReport={() => setScreen("category")} onTickets={openTickets} onValidations={openValidations} onCompletionValidations={openCompletionValidations} onEngineerLogin={() => setScreen("engineer-login")} />;
   return <><StatusBar style="dark" />{content}</>;
 }
 

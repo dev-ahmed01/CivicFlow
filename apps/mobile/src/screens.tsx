@@ -10,7 +10,7 @@ import { colors } from "./theme";
 
 export function Shell({ children }: { children: ReactNode }) { return <SafeAreaView style={styles.safe}><View style={styles.shell}>{children}</View></SafeAreaView>; }
 
-export function HomeScreen({ onReport, onTickets, onValidations, onCompletionValidations, onEngineerLogin }: { onReport: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void; onCompletionValidations: () => void; onEngineerLogin: () => void }) {
+export function HomeScreen({ notificationUnread, onNotifications, onReport, onTickets, onValidations, onCompletionValidations, onEngineerLogin }: { notificationUnread: number; onNotifications: () => void; onReport: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void; onCompletionValidations: () => void; onEngineerLogin: () => void }) {
   return <Shell><ScrollView contentContainerStyle={styles.content}>
     <View style={styles.brand}><Text style={styles.brandMark}>C</Text><Text style={styles.brandName}>CivicOS</Text></View>
     <View style={styles.hero}><Text style={styles.kicker}>Your city, heard</Text><Text style={styles.heroTitle}>Spot a civic issue?</Text><Text style={styles.body}>Share a photo and location. We’ll keep you updated in plain language.</Text><PrimaryButton onPress={onReport}>Report an Issue</PrimaryButton></View>
@@ -20,6 +20,7 @@ export function HomeScreen({ onReport, onTickets, onValidations, onCompletionVal
       <Pressable style={styles.statCard} onPress={() => onTickets("ongoing")}><Text style={styles.statIcon}>◷</Text><Text style={styles.cardTitle}>Ongoing</Text><Text style={styles.cardHint}>Track current reports</Text></Pressable>
       <Pressable style={styles.statCard} onPress={() => onTickets("past")}><Text style={styles.statIcon}>✓</Text><Text style={styles.cardTitle}>Past</Text><Text style={styles.cardHint}>See closed reports</Text></Pressable>
     </View><SecondaryButton onPress={onEngineerLogin}>Executive Engineer sign in</SecondaryButton>
+    <View accessibilityRole="tablist" style={styles.mobileTabs}><View accessibilityRole="tab" accessibilityState={{ selected: true }} style={[styles.mobileTab, styles.mobileTabActive]}><Text style={styles.mobileTabTextActive}>Home</Text></View><Pressable accessibilityRole="tab" accessibilityState={{ selected: false }} onPress={onNotifications} style={styles.mobileTab}><Text style={styles.mobileTabText}>Notifications{notificationUnread > 0 ? ` (${notificationUnread})` : ""}</Text></Pressable></View>
   </ScrollView></Shell>;
 }
 
@@ -138,6 +139,11 @@ const styles = StyleSheet.create({
   status: { backgroundColor: colors.primarySoft, borderRadius: 20, color: colors.primary, fontSize: 12, fontWeight: "800", overflow: "hidden", paddingHorizontal: 10, paddingVertical: 6 },
   validationBanner: { alignItems: "center", backgroundColor: colors.primarySoft, borderColor: colors.primary, borderRadius: 22, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", padding: 18 },
   bannerArrow: { color: colors.primary, fontSize: 34, fontWeight: "500" },
+  mobileTabs: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 16, borderWidth: 1, flexDirection: "row", marginTop: 8, padding: 4 },
+  mobileTab: { alignItems: "center", borderRadius: 12, flex: 1, paddingVertical: 11 },
+  mobileTabActive: { backgroundColor: colors.primary },
+  mobileTabText: { color: colors.muted, fontSize: 13, fontWeight: "800" },
+  mobileTabTextActive: { color: "white", fontSize: 13, fontWeight: "800" },
   validationPhoto: { backgroundColor: colors.surface, borderRadius: 22, height: 320, overflow: "hidden" },
   validationActions: { gap: 12 },
   voteButton: { alignItems: "center", borderRadius: 16, borderWidth: 1.5, padding: 16 },

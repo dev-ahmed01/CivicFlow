@@ -656,6 +656,16 @@ export const notificationSchema = z.object({
   createdAt: dateSchema,
 });
 
+export const notificationListResponseSchema = z.object({
+  notifications: z.array(notificationSchema),
+  unreadCount: z.number().int().nonnegative(),
+});
+
+export const registerPushTokenSchema = z.object({
+  token: z.string().regex(/^ExponentPushToken\[[A-Za-z0-9_-]+\]$|^ExpoPushToken\[[A-Za-z0-9_-]+\]$/, "Use an Expo push token"),
+  platform: z.enum(["ios", "android"]),
+});
+
 export const adminConfigSchema = z.object({
   key: z.string().min(1),
   value: z.unknown(),
@@ -731,6 +741,8 @@ export type RoadConflict = z.infer<typeof roadConflictSchema>;
 export type SequencingOrderItem = z.infer<typeof sequencingOrderItemSchema>;
 export type SequencingRecommendation = z.infer<typeof sequencingRecommendationSchema>;
 export type Notification = z.infer<typeof notificationSchema>;
+export type NotificationListResponse = z.infer<typeof notificationListResponseSchema>;
+export type RegisterPushToken = z.infer<typeof registerPushTokenSchema>;
 export type AdminConfig = z.infer<typeof adminConfigSchema>;
 export type AuthTokens = z.infer<typeof authTokensSchema>;
 export type AgencyOriginatedTicketRequest = z.infer<typeof agencyOriginatedTicketRequestSchema>;

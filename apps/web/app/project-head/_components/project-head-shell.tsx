@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { clearSession, getSession } from "../_lib/api";
+import { apiFetch } from "../_lib/api";
+import { NotificationBell } from "../../_components/notification-center";
 
 export function ProjectHeadShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -38,7 +40,9 @@ export function ProjectHeadShell({ children }: { children: ReactNode }) {
           <Link className={pathname === "/project-head/dependencies/inbox" ? "active" : ""} href="/project-head/dependencies/inbox">Dependency inbox</Link>
           <Link className={pathname === "/project-head/dependencies/outbox" ? "active" : ""} href="/project-head/dependencies/outbox">Dependency outbox</Link>
           <Link className={pathname === "/project-head/tickets/new" ? "active" : ""} href="/project-head/tickets/new">Create agency ticket</Link>
+          <Link className={pathname === "/project-head/notifications" ? "active" : ""} href="/project-head/notifications">Notifications</Link>
         </nav>
+        <NotificationBell apiFetch={apiFetch} href="/project-head/notifications" />
         <button className="portal-logout" type="button" onClick={logout}>Sign out</button>
       </aside>
       <main className="portal-content">{children}</main>

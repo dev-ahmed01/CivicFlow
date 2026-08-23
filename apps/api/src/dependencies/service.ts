@@ -1,5 +1,6 @@
 import { DependencyState, Prisma, UserRole, prisma } from "db";
 import type { CreateDependencyRequests, DependencyResponse, UserRole as SharedUserRole } from "@civicos/shared";
+import { createNotification, createNotifications } from "../notifications/service";
 
 type DatabaseClient = Prisma.TransactionClient;
 type DependencyInput = CreateDependencyRequests["dependencies"][number];
@@ -31,9 +32,7 @@ async function notifyAgency(
     select: { id: true },
   });
   if (recipients.length > 0) {
-    await client.notification.createMany({
-      data: recipients.map(({ id: userId }) => ({ userId, type, payload })),
-    });
+    await createNotifications(client, recipients.map(({ id: userId }) => ({ userId, type, payload })));
   }
 }
 
@@ -196,7 +195,7 @@ export async function respondToDependency(
     await transition(transaction, dependency.id, dependency.state, toState, reason, actor.userId);
     await notifyAgency(transaction, dependency.requestingAgencyId, [UserRole.PROJECT_HEAD], "DEPENDENCY_RESPONSE", { dependencyId, projectId: dependency.projectId, state: toState });
     if (assignedEngineerId) {
-      await transaction.notification.create({ data: { userId: assignedEngineerId, type: "DEPENDENCY_ASSIGNMENT", payload: { dependencyId, projectId: dependency.projectId } } });
+      await createNotification(transaction, { userId: assignedEngineerId, type: "DEPENDENCY_ASSIGNMENT", payload: { dependencyId, projectId: dependency.projectId } });
     }
     return updated;
   });

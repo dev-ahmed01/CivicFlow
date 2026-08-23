@@ -93,3 +93,35 @@ code { background: #eef4f1; border-radius: 6px; color: #284c42; font-family: ui-
 .history-list article { border-top: 1px solid var(--line); padding: 14px 0; }.history-list article > div { align-items: center; display: flex; justify-content: space-between; }
 .history-list article p { color: var(--muted); margin: 7px 0; }.history-list article small { color: #526d65; }
 @media (max-width: 620px) { .revision-dates { grid-template-columns: 1fr; }.sequencing-heading { flex-direction: column; } }
+
+/* Part II §6 — shared notification center; conflicts remain warning amber. */
+.notification-bell { align-items: center; background: #183a31; border: 1px solid #34544c; border-radius: 12px; color: white; display: inline-flex; height: 44px; justify-content: center; margin-top: auto; position: relative; text-decoration: none; width: 44px; }
+.notification-bell > span { font-size: 27px; line-height: 1; transform: rotate(180deg); }
+.notification-bell > strong { align-items: center; background: #d54242; border: 2px solid #102d25; border-radius: 999px; display: flex; font-size: 9px; height: 20px; justify-content: center; min-width: 20px; padding: 0 4px; position: absolute; right: -7px; top: -7px; }
+.portal-sidebar .notification-bell + .portal-logout { margin-top: 12px; width: 100%; }
+.site-header .notification-bell { background: #eef6f2; border-color: var(--line); color: var(--ink); height: 40px; margin: 0; width: 40px; }
+.site-header .notification-bell > strong { border-color: white; color: white; }
+.citizen-notification-wrap { margin: 0 auto; max-width: 920px; padding: 55px 24px 90px; }
+.notification-page { width: 100%; }
+.notification-filters { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 28px; }
+.notification-filters button { background: white; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); cursor: pointer; font: inherit; font-size: 13px; font-weight: 800; padding: 9px 14px; }
+.notification-filters button.active { background: var(--ink); border-color: var(--ink); color: white; }
+.notification-groups { display: grid; gap: 30px; }
+.notification-groups > section > h2 { color: var(--muted); font-size: 12px; letter-spacing: .8px; margin: 0 0 10px; text-transform: uppercase; }
+.notification-list { background: white; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+.notification-row { align-items: center; border-top: 1px solid #e7eeea; color: var(--ink); display: grid; gap: 15px; grid-template-columns: 42px minmax(0, 1fr) auto; padding: 17px 19px; text-decoration: none; }
+.notification-row:first-child { border-top: 0; }
+a.notification-row:hover { background: #f8fbf9; }
+.notification-icon { align-items: center; border-radius: 50%; display: flex; font-size: 17px; font-weight: 900; height: 40px; justify-content: center; width: 40px; }
+.notification-icon.info { background: #e7f0ff; color: #2563eb; }
+.notification-icon.success { background: #e3f5e9; color: #15803d; }
+.notification-icon.warning { background: #fff2d2; color: #9a6700; }
+.notification-icon.danger { background: #fde7e7; color: #b91c1c; }
+.notification-copy { display: grid; gap: 6px; }
+.notification-copy strong { font-size: 14px; line-height: 1.4; }
+.notification-copy small { color: var(--muted); }
+.notification-arrow { color: #729087; font-size: 25px; }
+.notification-empty { align-items: center; background: white; border: 1px dashed #b9cbc4; border-radius: 18px; color: var(--muted); display: flex; gap: 13px; justify-content: center; padding: 48px 20px; }
+.notification-empty > span { color: var(--primary); font-size: 30px; transform: rotate(180deg); }
+.notification-empty p { margin: 0; }
+@media (max-width: 780px) { .portal-sidebar .notification-bell { margin: 16px 0 0; }.notification-row { grid-template-columns: 38px minmax(0, 1fr) auto; padding: 15px; }.notification-icon { height: 36px; width: 36px; } }
