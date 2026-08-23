@@ -12,6 +12,7 @@ import {
 import { requireAuth, requireRole } from "../auth/middleware";
 import type { ImageStorage } from "../images/storage";
 import { cosineSimilarity, type ImageRelevanceService } from "../images/relevance";
+import { enterPendingValidation } from "../validations/service";
 
 const terminalStates: TicketState[] = [TicketState.RESOLVED, TicketState.CLOSED, TicketState.REJECTED, TicketState.CANCELLED];
 
@@ -169,12 +170,9 @@ async function finalizeNewTicket(ticketId: string, visualEmbedding: number[] | n
   }
 
   const current = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { state: true } });
-  await prisma.$transaction([
-    prisma.ticket.update({ where: { id: ticketId }, data: { state: TicketState.PENDING_VALIDATION } }),
-    prisma.ticketStateTransition.create({
-      data: { ticketId, fromState: current.state, toState: TicketState.PENDING_VALIDATION, reason: "RELEVANCE_CHECK_COMPLETE" },
-    }),
-  ]);
+  await prisma.$transaction(async (transaction) => {
+    await enterPendingValidation(transaction, ticketId, current.state);
+  });
   return { ticketId, shared: false };
 }
 

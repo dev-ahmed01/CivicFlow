@@ -61,6 +61,7 @@ enum DependencyState {
 
 enum ValidationVote {
   CONFIRM
+  NOT_SURE
   REJECT
 }
 
@@ -76,6 +77,7 @@ model User {
   totpEnabled       Boolean   @default(false)
   agencyId          String?   @db.Uuid
   wardId            String?   @db.Uuid
+  lastKnownCoordinates Unsupported("geometry(Point,4326)")?
   createdAt         DateTime  @default(now())
 
   agency               Agency?          @relation(fields: [agencyId], references: [id], onDelete: SetNull)
@@ -83,6 +85,7 @@ model User {
   reportedTickets      Ticket[]         @relation("TicketReporter")
   observations         Observation[]
   validations          Validation[]
+  validationRequests   ValidationRequest[]
   engineeringProjects  Project[]        @relation("ProjectEngineer")
   assignedDependencies Dependency[]     @relation("DependencyEngineer")
   notifications        Notification[]
@@ -92,6 +95,7 @@ model User {
   @@index([agencyId])
   @@index([wardId])
   @@index([role])
+  @@index([lastKnownCoordinates], type: Gist, map: "User_lastKnownCoordinates_gist_idx")
 }
 
 model Ward {
@@ -169,6 +173,7 @@ model Ticket {
   ward           Ward          @relation(fields: [wardId], references: [id], onDelete: Restrict)
   observations   Observation[]
   validations    Validation[]
+  validationRequests ValidationRequest[]
   project        Project?
   stateTransitions TicketStateTransition[]
 
@@ -234,6 +239,7 @@ model Validation {
   ticketId    String         @db.Uuid
   validatorId String         @db.Uuid
   vote        ValidationVote
+  counted     Boolean        @default(true)
   createdAt   DateTime       @default(now())
 
   ticket    Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
@@ -242,6 +248,26 @@ model Validation {
   @@unique([ticketId, validatorId])
   @@index([ticketId])
   @@index([validatorId])
+  @@index([validatorId, createdAt])
+}
+
+model ValidationRequest {
+  id             String   @id @default(uuid()) @db.Uuid
+  ticketId       String   @db.Uuid
+  citizenId      String   @db.Uuid
+  batchNumber    Int
+  distanceMeters Float
+  notifiedAt     DateTime @default(now())
+  expiresAt      DateTime
+  respondedAt    DateTime?
+
+  ticket  Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  citizen User   @relation(fields: [citizenId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, citizenId])
+  @@index([ticketId, batchNumber])
+  @@index([citizenId, expiresAt])
+  @@index([expiresAt])
 }
 
 model Project {

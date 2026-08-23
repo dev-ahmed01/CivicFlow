@@ -87,7 +87,7 @@ export const dependencyStateSchema = z.enum([
   "FULFILLED",
 ]);
 
-export const validationVoteSchema = z.enum(["CONFIRM", "REJECT"]);
+export const validationVoteSchema = z.enum(["CONFIRM", "NOT_SURE", "REJECT"]);
 
 const idSchema = z.string().uuid();
 const dateSchema = z.coerce.date();
@@ -119,6 +119,7 @@ export const userSchema = z.object({
   totpEnabled: z.boolean(),
   agencyId: idSchema.nullable(),
   wardId: idSchema.nullable(),
+  lastKnownCoordinates: pointSchema.nullable(),
   createdAt: dateSchema,
 });
 
@@ -221,7 +222,31 @@ export const validationSchema = z.object({
   ticketId: idSchema,
   validatorId: idSchema,
   vote: validationVoteSchema,
+  counted: z.boolean(),
   createdAt: dateSchema,
+});
+
+// Part III §9 — deliberately excludes aggregate vote/count data to prevent anchoring.
+export const pendingValidationSchema = z.object({
+  ticketId: idSchema,
+  title: z.string().min(1),
+  category: categorySummarySchema,
+  imageUrl: z.string().url(),
+  distanceMeters: z.number().nonnegative(),
+  expiresAt: dateSchema,
+});
+
+export const submitValidationSchema = z.object({
+  vote: validationVoteSchema,
+});
+
+export const submitValidationResultSchema = z.object({
+  validationId: idSchema,
+  recorded: z.literal(true),
+  counted: z.boolean(),
+  alreadyResolved: z.boolean(),
+  status: citizenTicketStateSchema,
+  statusLabel: z.string(),
 });
 
 export const projectSchema = z.object({
@@ -325,6 +350,9 @@ export type RoutingRule = z.infer<typeof routingRuleSchema>;
 export type Ticket = z.infer<typeof ticketSchema>;
 export type Observation = z.infer<typeof observationSchema>;
 export type Validation = z.infer<typeof validationSchema>;
+export type PendingValidation = z.infer<typeof pendingValidationSchema>;
+export type SubmitValidation = z.infer<typeof submitValidationSchema>;
+export type SubmitValidationResult = z.infer<typeof submitValidationResultSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type Dependency = z.infer<typeof dependencySchema>;
 export type RoadSegment = z.infer<typeof roadSegmentSchema>;

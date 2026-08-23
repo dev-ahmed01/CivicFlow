@@ -31,7 +31,7 @@ Read this before every task. This file encodes conventions that must not be re-d
 _(Update this section as phases complete — Codex should read it to know what already exists before starting a new phase.)_
 - [x] Phase 1 — Foundation (monorepo, data model, auth)
 - [x] Phase 2 — Citizen reporting flow + AI relevance + duplicate detection
-- [ ] Phase 3 — Community verification
+- [x] Phase 3 — Community verification
 - [ ] Phase 4 — Agency routing + Project Head core workflows
 - [ ] Phase 5 — Dependency system
 - [ ] Phase 6 — Executive Engineer workflows

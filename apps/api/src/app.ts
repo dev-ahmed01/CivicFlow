@@ -13,6 +13,7 @@ import { getEnv } from "./config/env";
 import { createImageRelevanceService, type ImageRelevanceService } from "./images/relevance";
 import { S3CompatibleStorage, type ImageStorage } from "./images/storage";
 import { createTicketsRouter } from "./tickets/router";
+import { createValidationJobsRouter, createValidationsRouter } from "./validations/router";
 
 export interface AppDependencies {
   otpProvider?: OtpProvider;
@@ -34,10 +35,12 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   });
 
   app.use("/auth", createAuthRouter(resolvedDependencies.otpProvider ?? createOtpProvider(env)));
+  app.use(createValidationJobsRouter(env.CRON_SECRET));
   app.use(createTicketsRouter(
     resolvedDependencies.imageRelevance ?? createImageRelevanceService(env),
     resolvedDependencies.imageStorage ?? new S3CompatibleStorage(env),
   ));
+  app.use(createValidationsRouter());
 
   // Part III §17.2 — protected routes always authenticate, enforce role, then scope.
   app.get(

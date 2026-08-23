@@ -14,7 +14,8 @@
     "db:generate": "pnpm --filter db db:generate",
     "db:migrate": "pnpm --filter db exec prisma migrate dev",
     "db:seed": "pnpm --filter db exec prisma db seed",
-    "verify:auth": "pnpm --filter api verify:auth"
+    "verify:auth": "pnpm --filter api verify:auth",
+    "verify:phase3": "pnpm --filter api verify:phase3"
   },
   "devDependencies": {
     "@civicos/config": "workspace:*",

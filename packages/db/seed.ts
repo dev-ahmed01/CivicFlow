@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole } from "@prisma/client";
+import { Prisma, PrismaClient, UserRole } from "@prisma/client";
 import bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
@@ -100,6 +100,18 @@ const adminConfigs = [
   { key: "conflict.radius_meters", value: 200, description: "Default generic project conflict radius" },
 ] as const;
 
+// Part III §9.3 — deterministic, progressively farther Koramangala citizens
+// power the nearest-15 and stale-batch demo/acceptance flow.
+const communityValidators = Array.from({ length: 30 }, (_unused, index) => ({
+  id: `41000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  role: UserRole.CITIZEN,
+  phone: `+91987651${String(index + 1).padStart(4, "0")}`,
+  wardId: ids.wards.koramangala,
+  phoneVerifiedAt: new Date(),
+  latitude: 12.935 + (index + 1) * 0.0001,
+  longitude: 77.62,
+}));
+
 async function seedWards(): Promise<void> {
   for (const ward of wards) {
     await prisma.$executeRaw`
@@ -148,10 +160,11 @@ async function main(): Promise<void> {
   }
 
   const passwordHash = await bcrypt.hash("CivicOS@123", 12);
-  const users = [
-    { id: "40000000-0000-4000-8000-000000000001", role: UserRole.CITIZEN, phone: "+919876500001", wardId: ids.wards.koramangala, phoneVerifiedAt: new Date() },
-    { id: "40000000-0000-4000-8000-000000000002", role: UserRole.CITIZEN, phone: "+919876500002", wardId: ids.wards.indiranagar, phoneVerifiedAt: new Date() },
-    { id: "40000000-0000-4000-8000-000000000003", role: UserRole.CITIZEN, phone: "+919876500003", wardId: ids.wards.hsrLayout, phoneVerifiedAt: new Date() },
+  const users: Array<Prisma.UserUncheckedCreateInput & { latitude?: number; longitude?: number }> = [
+    { id: "40000000-0000-4000-8000-000000000001", role: UserRole.CITIZEN, phone: "+919876500001", wardId: ids.wards.koramangala, phoneVerifiedAt: new Date(), latitude: 12.935, longitude: 77.62 },
+    { id: "40000000-0000-4000-8000-000000000002", role: UserRole.CITIZEN, phone: "+919876500002", wardId: ids.wards.indiranagar, phoneVerifiedAt: new Date(), latitude: 12.9784, longitude: 77.6408 },
+    { id: "40000000-0000-4000-8000-000000000003", role: UserRole.CITIZEN, phone: "+919876500003", wardId: ids.wards.hsrLayout, phoneVerifiedAt: new Date(), latitude: 12.9116, longitude: 77.6389 },
+    ...communityValidators,
     { id: "40000000-0000-4000-8000-000000000101", role: UserRole.PROJECT_HEAD, email: "head.pwd@civicos.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000102", role: UserRole.PROJECT_HEAD, email: "head.bwssb@civicos.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: true },
     { id: "40000000-0000-4000-8000-000000000103", role: UserRole.PROJECT_HEAD, email: "head.bescom@civicos.local", agencyId: ids.agencies.bescom, passwordHash, mustResetPassword: true },
@@ -163,11 +176,19 @@ async function main(): Promise<void> {
   ];
 
   for (const user of users) {
+    const { latitude, longitude, ...userData } = user;
     await prisma.user.upsert({
       where: { id: user.id },
-      update: user,
-      create: user,
+      update: userData,
+      create: userData,
     });
+    if (latitude !== undefined && longitude !== undefined) {
+      await prisma.$executeRaw`
+        UPDATE "User"
+        SET "lastKnownCoordinates" = ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326)
+        WHERE "id" = ${user.id}::uuid
+      `;
+    }
   }
 
   console.log(`Seeded ${wards.length} wards, ${agencies.length} agencies, ${categories.length} categories, and ${users.length} users.`);

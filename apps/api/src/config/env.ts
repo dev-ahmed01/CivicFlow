@@ -19,6 +19,8 @@ const envSchema = z.object({
   S3_PUBLIC_BASE_URL: z.string().url().default("http://localhost:9000/civicos-images"),
   CLIP_INFERENCE_URL: z.string().url().optional(),
   CLIP_INFERENCE_TOKEN: z.string().min(1).optional(),
+  CRON_SECRET: z.string().min(32).optional(),
+  VALIDATION_REBATCH_POLL_MINUTES: z.coerce.number().int().positive().default(15),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

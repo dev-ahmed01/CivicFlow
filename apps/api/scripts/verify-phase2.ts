@@ -53,8 +53,21 @@ async function createDraft(app: ReturnType<typeof createApp>, auth: string, suff
   }).expect(201);
 }
 
-async function main(): Promise<void> {
+async function cleanup(): Promise<void> {
+  const tickets = await prisma.ticket.findMany({ where: { title: { startsWith: titlePrefix } }, select: { id: true } });
+  for (const ticket of tickets) {
+    await prisma.$executeRaw`DELETE FROM "Notification" WHERE "payload"->>'ticketId' = ${ticket.id}`;
+  }
   await prisma.ticket.deleteMany({ where: { title: { startsWith: titlePrefix } } });
+  await prisma.$executeRaw`
+    DELETE FROM "Notification" n
+    WHERE n."type" = 'VALIDATION_REQUEST'
+      AND NOT EXISTS (SELECT 1 FROM "Ticket" t WHERE t."id"::text = n."payload"->>'ticketId')
+  `;
+}
+
+async function main(): Promise<void> {
+  await cleanup();
   const app = createApp({ imageRelevance: new AcceptanceRelevance(), imageStorage: storage, otpProvider: { async sendOtp() {} } });
   try {
     const first = await createDraft(app, token(citizenOne), "first", 12.935, 77.62);
@@ -88,7 +101,7 @@ async function main(): Promise<void> {
     assert.equal(observationCount, 2);
     console.log("Phase 2 acceptance verified: retake cap, manual-review continuation, shared ticket ID, observation count, and simplified citizen states.");
   } finally {
-    await prisma.ticket.deleteMany({ where: { title: { startsWith: titlePrefix } } });
+    await cleanup();
     await prisma.$disconnect();
   }
 }

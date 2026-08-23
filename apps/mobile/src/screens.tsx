@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { CategorySummary, CitizenTicketSummary } from "@civicos/shared";
+import type { CategorySummary, CitizenTicketSummary, PendingValidation, ValidationVote } from "@civicos/shared";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
@@ -10,10 +10,11 @@ import { colors } from "./theme";
 
 export function Shell({ children }: { children: ReactNode }) { return <SafeAreaView style={styles.safe}><View style={styles.shell}>{children}</View></SafeAreaView>; }
 
-export function HomeScreen({ onReport, onTickets }: { onReport: () => void; onTickets: (filter: "ongoing" | "past") => void }) {
+export function HomeScreen({ onReport, onTickets, onValidations }: { onReport: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void }) {
   return <Shell><ScrollView contentContainerStyle={styles.content}>
     <View style={styles.brand}><Text style={styles.brandMark}>C</Text><Text style={styles.brandName}>CivicOS</Text></View>
     <View style={styles.hero}><Text style={styles.kicker}>Your city, heard</Text><Text style={styles.heroTitle}>Spot a civic issue?</Text><Text style={styles.body}>Share a photo and location. We’ll keep you updated in plain language.</Text><PrimaryButton onPress={onReport}>Report an Issue</PrimaryButton></View>
+    <Pressable accessibilityRole="button" style={styles.validationBanner} onPress={onValidations}><View><Text style={styles.kicker}>Community check</Text><Text style={styles.cardTitle}>Nearby verification requests</Text><Text style={styles.cardHint}>Help confirm an issue close to you</Text></View><Text style={styles.bannerArrow}>›</Text></Pressable>
     <Text style={styles.sectionTitle}>My tickets</Text><View style={styles.row}>
       <Pressable style={styles.statCard} onPress={() => onTickets("ongoing")}><Text style={styles.statIcon}>◷</Text><Text style={styles.cardTitle}>Ongoing</Text><Text style={styles.cardHint}>Track current reports</Text></Pressable>
       <Pressable style={styles.statCard} onPress={() => onTickets("past")}><Text style={styles.statIcon}>✓</Text><Text style={styles.cardTitle}>Past</Text><Text style={styles.cardHint}>See closed reports</Text></Pressable>
@@ -64,6 +65,78 @@ export function ConfirmationScreen({ ticket, onView, onDone }: { ticket: Citizen
 export function TicketDetailScreen({ ticket, onDone }: { ticket: CitizenTicketSummary; onDone: () => void }) { return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader title={ticket.title} onBack={onDone} /><Text style={styles.status}>{ticket.statusLabel}</Text><View style={styles.ticketCard}><Text style={styles.kicker}>{ticket.category.name}</Text><Text style={styles.body}>{ticket.address}</Text><Text style={styles.hint}>Ticket ID</Text><Text selectable style={styles.ticketId}>{ticket.id}</Text><Text style={styles.cardHint}>{ticket.observationCount} community {ticket.observationCount === 1 ? "report" : "reports"}</Text></View><PrimaryButton onPress={onDone}>Done</PrimaryButton></ScrollView></Shell>; }
 export function TicketsScreen({ filter, tickets, loading, error, onBack }: { filter: "ongoing" | "past"; tickets: CitizenTicketSummary[]; loading: boolean; error?: string; onBack: () => void }) { return <Shell><View style={styles.content}><ScreenHeader title={filter === "ongoing" ? "Ongoing tickets" : "Past tickets"} onBack={onBack} />{loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}<FlatList data={tickets} keyExtractor={(item) => item.id} ListEmptyComponent={!loading ? <Text style={styles.body}>No {filter} tickets yet.</Text> : null} renderItem={({ item }) => <View style={styles.ticketCard}><View style={styles.ticketTop}><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.status}>{item.statusLabel}</Text></View><Text style={styles.cardHint}>{item.category.name} · {item.address}</Text><Text style={styles.hint}>{item.observationCount} community {item.observationCount === 1 ? "report" : "reports"}</Text></View>} /></View></Shell>; }
 
+export function VerificationListScreen({ validations, loading, error, onBack, onOpen }: { validations: PendingValidation[]; loading: boolean; error?: string; onBack: () => void; onOpen: (validation: PendingValidation) => void }) {
+  return <Shell><View style={styles.content}><ScreenHeader eyebrow="Community verification" title="Issues near you" onBack={onBack} />{loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}<FlatList data={validations} keyExtractor={(item) => item.ticketId} ListEmptyComponent={!loading ? <Text style={styles.body}>No nearby requests need your help right now.</Text> : null} renderItem={({ item }) => <Pressable accessibilityRole="button" onPress={() => onOpen(item)} style={styles.ticketCard}><Text style={styles.kicker}>{item.category.name}</Text><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.cardHint}>{Math.round(item.distanceMeters)} m away</Text></Pressable>} /></View></Shell>;
+}
+
+const validationActions: Array<{ vote: ValidationVote; label: string; style: "confirm" | "neutral" | "reject" }> = [
+  { vote: "CONFIRM", label: "Confirm this exists", style: "confirm" },
+  { vote: "NOT_SURE", label: "Not sure", style: "neutral" },
+  { vote: "REJECT", label: "Doesn’t look right", style: "reject" },
+];
+
+export function VerificationRequestScreen({ validation, submitting, onBack, onSubmit }: { validation: PendingValidation; submitting: boolean; onBack: () => void; onSubmit: (vote: ValidationVote) => void }) {
+  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Nearby verification request" title="Can you confirm this?" onBack={onBack} /><View style={styles.validationPhoto}><Image source={{ uri: validation.imageUrl }} resizeMode="cover" style={styles.photo} /></View><View style={styles.ticketCard}><Text style={styles.kicker}>{validation.category.name}</Text><Text style={styles.cardTitle}>{validation.title}</Text><Text style={styles.cardHint}>{Math.round(validation.distanceMeters)} m from your last known location</Text></View><Text style={styles.body}>Choose the response that best matches what you can verify. Other people’s responses stay private until after you answer.</Text><View style={styles.validationActions}>{validationActions.map((action) => <Pressable accessibilityRole="button" disabled={submitting} key={action.vote} onPress={() => onSubmit(action.vote)} style={[styles.voteButton, action.style === "confirm" ? styles.voteConfirm : action.style === "reject" ? styles.voteReject : styles.voteNeutral, submitting && styles.disabled]}><Text style={[styles.voteLabel, action.style === "confirm" ? styles.voteConfirmLabel : action.style === "reject" ? styles.voteRejectLabel : undefined]}>{action.label}</Text></Pressable>)}</View></ScrollView></Shell>;
+}
+
 const styles = StyleSheet.create({
-  safe: { backgroundColor: colors.canvas, flex: 1 }, shell: { flex: 1 }, content: { flexGrow: 1, gap: 18, padding: 22, paddingTop: 30 }, brand: { alignItems: "center", flexDirection: "row", gap: 10 }, brandMark: { backgroundColor: colors.primary, borderRadius: 12, color: "white", fontSize: 22, fontWeight: "900", overflow: "hidden", paddingHorizontal: 12, paddingVertical: 7 }, brandName: { color: colors.ink, fontSize: 21, fontWeight: "900" }, hero: { backgroundColor: colors.surface, borderRadius: 26, gap: 16, marginTop: 28, padding: 24 }, kicker: { color: colors.primary, fontSize: 14, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" }, heroTitle: { color: colors.ink, fontSize: 36, fontWeight: "900", letterSpacing: -1 }, body: { color: colors.muted, fontSize: 17, lineHeight: 25 }, sectionTitle: { color: colors.ink, fontSize: 21, fontWeight: "900", marginTop: 12 }, row: { flexDirection: "row", gap: 12 }, statCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderWidth: 1, flex: 1, gap: 6, padding: 18 }, statIcon: { color: colors.primary, fontSize: 28, fontWeight: "800" }, cardTitle: { color: colors.ink, flexShrink: 1, fontSize: 17, fontWeight: "800" }, cardHint: { color: colors.muted, fontSize: 14, lineHeight: 20 }, input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 15, borderWidth: 1, color: colors.ink, fontSize: 16, paddingHorizontal: 16, paddingVertical: 14 }, grid: { gap: 12, paddingBottom: 120 }, gridRow: { gap: 12 }, categoryCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, flex: 1, gap: 12, marginBottom: 12, minHeight: 130, padding: 17 }, categorySelected: { backgroundColor: colors.primarySoft, borderColor: colors.primary, borderWidth: 2 }, categoryIcon: { alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 22, height: 44, justifyContent: "center", width: 44 }, categoryIconText: { color: colors.primary, fontSize: 20, fontWeight: "900" }, categoryName: { color: colors.ink, fontSize: 16, fontWeight: "800" }, photoTile: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderStyle: "dashed", borderWidth: 2, justifyContent: "center", overflow: "hidden" }, primaryPhoto: { height: 260 }, photo: { height: "100%", width: "100%" }, photoPlus: { color: colors.primary, fontSize: 44 }, supportingRow: { flexDirection: "row", gap: 10 }, supportingTile: { borderRadius: 14, height: 90, overflow: "hidden", width: 90 }, loadingBox: { alignItems: "center", gap: 12, padding: 30 }, map: { borderRadius: 22, height: 300, overflow: "hidden" }, addressInput: { minHeight: 74, textAlignVertical: "top" }, notice: { backgroundColor: "#FFF4D8", borderRadius: 12, color: "#71520D", fontSize: 14, lineHeight: 20, padding: 13 }, centered: { justifyContent: "center" }, centerText: { textAlign: "center" }, feedbackIcon: { alignItems: "center", alignSelf: "center", backgroundColor: "#FFF4D8", borderRadius: 40, height: 80, justifyContent: "center", width: 80 }, feedbackIconText: { color: "#8C6200", fontSize: 38, fontWeight: "800" }, hint: { color: colors.muted, fontSize: 13, lineHeight: 19, textAlign: "center" }, error: { color: colors.danger, fontSize: 15, lineHeight: 21 }, success: { alignItems: "center", alignSelf: "center", backgroundColor: colors.primarySoft, borderRadius: 44, height: 88, justifyContent: "center", width: 88 }, successText: { color: colors.primary, fontSize: 42, fontWeight: "900" }, idCard: { alignItems: "center", backgroundColor: colors.surface, borderRadius: 18, gap: 8, padding: 18 }, ticketId: { color: colors.ink, fontSize: 15, fontWeight: "800" }, ticketCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, gap: 10, marginBottom: 12, padding: 18 }, ticketTop: { alignItems: "flex-start", flexDirection: "row", gap: 10, justifyContent: "space-between" }, status: { backgroundColor: colors.primarySoft, borderRadius: 20, color: colors.primary, fontSize: 12, fontWeight: "800", overflow: "hidden", paddingHorizontal: 10, paddingVertical: 6 },
+  safe: { backgroundColor: colors.canvas, flex: 1 },
+  shell: { flex: 1 },
+  content: { flexGrow: 1, gap: 18, padding: 22, paddingTop: 30 },
+  brand: { alignItems: "center", flexDirection: "row", gap: 10 },
+  brandMark: { backgroundColor: colors.primary, borderRadius: 12, color: "white", fontSize: 22, fontWeight: "900", overflow: "hidden", paddingHorizontal: 12, paddingVertical: 7 },
+  brandName: { color: colors.ink, fontSize: 21, fontWeight: "900" },
+  hero: { backgroundColor: colors.surface, borderRadius: 26, gap: 16, marginTop: 28, padding: 24 },
+  kicker: { color: colors.primary, fontSize: 14, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" },
+  heroTitle: { color: colors.ink, fontSize: 36, fontWeight: "900", letterSpacing: -1 },
+  body: { color: colors.muted, fontSize: 17, lineHeight: 25 },
+  sectionTitle: { color: colors.ink, fontSize: 21, fontWeight: "900", marginTop: 12 },
+  row: { flexDirection: "row", gap: 12 },
+  statCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderWidth: 1, flex: 1, gap: 6, padding: 18 },
+  statIcon: { color: colors.primary, fontSize: 28, fontWeight: "800" },
+  cardTitle: { color: colors.ink, flexShrink: 1, fontSize: 17, fontWeight: "800" },
+  cardHint: { color: colors.muted, fontSize: 14, lineHeight: 20 },
+  input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 15, borderWidth: 1, color: colors.ink, fontSize: 16, paddingHorizontal: 16, paddingVertical: 14 },
+  grid: { gap: 12, paddingBottom: 120 },
+  gridRow: { gap: 12 },
+  categoryCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, flex: 1, gap: 12, marginBottom: 12, minHeight: 130, padding: 17 },
+  categorySelected: { backgroundColor: colors.primarySoft, borderColor: colors.primary, borderWidth: 2 },
+  categoryIcon: { alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 22, height: 44, justifyContent: "center", width: 44 },
+  categoryIconText: { color: colors.primary, fontSize: 20, fontWeight: "900" },
+  categoryName: { color: colors.ink, fontSize: 16, fontWeight: "800" },
+  photoTile: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderStyle: "dashed", borderWidth: 2, justifyContent: "center", overflow: "hidden" },
+  primaryPhoto: { height: 260 },
+  photo: { height: "100%", width: "100%" },
+  photoPlus: { color: colors.primary, fontSize: 44 },
+  supportingRow: { flexDirection: "row", gap: 10 },
+  supportingTile: { borderRadius: 14, height: 90, overflow: "hidden", width: 90 },
+  loadingBox: { alignItems: "center", gap: 12, padding: 30 },
+  map: { borderRadius: 22, height: 300, overflow: "hidden" },
+  addressInput: { minHeight: 74, textAlignVertical: "top" },
+  notice: { backgroundColor: "#FFF4D8", borderRadius: 12, color: "#71520D", fontSize: 14, lineHeight: 20, padding: 13 },
+  centered: { justifyContent: "center" },
+  centerText: { textAlign: "center" },
+  feedbackIcon: { alignItems: "center", alignSelf: "center", backgroundColor: "#FFF4D8", borderRadius: 40, height: 80, justifyContent: "center", width: 80 },
+  feedbackIconText: { color: "#8C6200", fontSize: 38, fontWeight: "800" },
+  hint: { color: colors.muted, fontSize: 13, lineHeight: 19, textAlign: "center" },
+  error: { color: colors.danger, fontSize: 15, lineHeight: 21 },
+  success: { alignItems: "center", alignSelf: "center", backgroundColor: colors.primarySoft, borderRadius: 44, height: 88, justifyContent: "center", width: 88 },
+  successText: { color: colors.primary, fontSize: 42, fontWeight: "900" },
+  idCard: { alignItems: "center", backgroundColor: colors.surface, borderRadius: 18, gap: 8, padding: 18 },
+  ticketId: { color: colors.ink, fontSize: 15, fontWeight: "800" },
+  ticketCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, gap: 10, marginBottom: 12, padding: 18 },
+  ticketTop: { alignItems: "flex-start", flexDirection: "row", gap: 10, justifyContent: "space-between" },
+  status: { backgroundColor: colors.primarySoft, borderRadius: 20, color: colors.primary, fontSize: 12, fontWeight: "800", overflow: "hidden", paddingHorizontal: 10, paddingVertical: 6 },
+  validationBanner: { alignItems: "center", backgroundColor: colors.primarySoft, borderColor: colors.primary, borderRadius: 22, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", padding: 18 },
+  bannerArrow: { color: colors.primary, fontSize: 34, fontWeight: "500" },
+  validationPhoto: { backgroundColor: colors.surface, borderRadius: 22, height: 320, overflow: "hidden" },
+  validationActions: { gap: 12 },
+  voteButton: { alignItems: "center", borderRadius: 16, borderWidth: 1.5, padding: 16 },
+  voteConfirm: { backgroundColor: colors.primary, borderColor: colors.primary },
+  voteNeutral: { backgroundColor: colors.surface, borderColor: colors.border },
+  voteReject: { backgroundColor: "#FFF1F1", borderColor: colors.danger },
+  voteLabel: { color: colors.ink, fontSize: 16, fontWeight: "800" },
+  voteConfirmLabel: { color: colors.surface },
+  voteRejectLabel: { color: colors.danger },
+  disabled: { opacity: 0.45 },
 });

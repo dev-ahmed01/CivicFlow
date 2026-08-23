@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CategorySummary, CitizenTicketSummary } from "@civicos/shared";
+import type { CategorySummary, CitizenTicketSummary, PendingValidation, ValidationVote } from "@civicos/shared";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { loadCategories, loadMyTickets, submitReport, type DraftReport, type LocalImage } from "./src/api";
-import { CategoryScreen, ConfirmationScreen, EvidenceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, type ConfirmedLocation } from "./src/screens";
+import { loadCategories, loadMyTickets, loadPendingValidations, submitReport, validateTicket, type DraftReport, type LocalImage } from "./src/api";
+import { CategoryScreen, ConfirmationScreen, EvidenceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type ConfirmedLocation } from "./src/screens";
 import { colors } from "./src/theme";
 
-type Screen = "home" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "tickets";
+type Screen = "home" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "tickets" | "validations" | "verification";
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("home");
@@ -23,6 +23,11 @@ export default function App() {
   const [tickets, setTickets] = useState<CitizenTicketSummary[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(false);
   const [ticketsError, setTicketsError] = useState<string>();
+  const [validations, setValidations] = useState<PendingValidation[]>([]);
+  const [selectedValidation, setSelectedValidation] = useState<PendingValidation>();
+  const [validationsLoading, setValidationsLoading] = useState(false);
+  const [validationsError, setValidationsError] = useState<string>();
+  const [validationSubmitting, setValidationSubmitting] = useState(false);
 
   useEffect(() => {
     void loadCategories().then(setCategories).catch((error: unknown) => setCategoryError(error instanceof Error ? error.message : "Could not load issue types"));
@@ -35,6 +40,21 @@ export default function App() {
   const openTickets = (filter: "ongoing" | "past") => {
     setTicketFilter(filter); setScreen("tickets"); setTicketsLoading(true); setTicketsError(undefined);
     void loadMyTickets(filter).then(setTickets).catch((error: unknown) => setTicketsError(error instanceof Error ? error.message : "Could not load tickets")).finally(() => setTicketsLoading(false));
+  };
+  const openValidations = () => {
+    setScreen("validations"); setValidationsLoading(true); setValidationsError(undefined);
+    void loadPendingValidations().then(setValidations).catch((error: unknown) => setValidationsError(error instanceof Error ? error.message : "Could not load nearby requests")).finally(() => setValidationsLoading(false));
+  };
+  const submitValidationVote = async (vote: ValidationVote) => {
+    if (!selectedValidation) return;
+    setValidationSubmitting(true);
+    try {
+      const result = await validateTicket(selectedValidation.ticketId, vote);
+      Alert.alert(result.alreadyResolved ? "Already reviewed" : "Thanks for checking", result.alreadyResolved ? "This request was already resolved. Your response was still recorded." : "Your response has been recorded.");
+      setValidations((current) => current.filter((item) => item.ticketId !== selectedValidation.ticketId));
+      setSelectedValidation(undefined); setScreen("validations");
+    } catch (error) { Alert.alert("Couldn’t record response", error instanceof Error ? error.message : "Please try again."); }
+    finally { setValidationSubmitting(false); }
   };
   const completeSubmission = async () => {
     if (!selectedCategory || !images[0] || !location) return;
@@ -57,7 +77,9 @@ export default function App() {
   else if (screen === "confirmation" && submitted) content = <ConfirmationScreen ticket={submitted} onView={() => setScreen("detail")} onDone={reset} />;
   else if (screen === "detail" && submitted) content = <TicketDetailScreen ticket={submitted} onDone={reset} />;
   else if (screen === "tickets") content = <TicketsScreen filter={ticketFilter} tickets={tickets} loading={ticketsLoading} error={ticketsError} onBack={() => setScreen("home")} />;
-  else content = <HomeScreen onReport={() => setScreen("category")} onTickets={openTickets} />;
+  else if (screen === "validations") content = <VerificationListScreen validations={validations} loading={validationsLoading} error={validationsError} onBack={() => setScreen("home")} onOpen={(validation) => { setSelectedValidation(validation); setScreen("verification"); }} />;
+  else if (screen === "verification" && selectedValidation) content = <VerificationRequestScreen validation={selectedValidation} submitting={validationSubmitting} onBack={() => setScreen("validations")} onSubmit={(vote) => void submitValidationVote(vote)} />;
+  else content = <HomeScreen onReport={() => setScreen("category")} onTickets={openTickets} onValidations={openValidations} />;
   return <><StatusBar style="dark" />{content}</>;
 }
 

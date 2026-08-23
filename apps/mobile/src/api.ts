@@ -1,4 +1,4 @@
-import type { CategorySummary, CitizenTicketSummary } from "@civicos/shared";
+import type { CategorySummary, CitizenTicketSummary, PendingValidation, SubmitValidationResult, ValidationVote } from "@civicos/shared";
 
 const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://10.0.2.2:4000";
 const accessToken = process.env.EXPO_PUBLIC_ACCESS_TOKEN ?? "";
@@ -34,6 +34,18 @@ export async function loadCategories(): Promise<CategorySummary[]> {
 export async function loadMyTickets(filter: "ongoing" | "past"): Promise<CitizenTicketSummary[]> {
   const result = await apiFetch<{ tickets: CitizenTicketSummary[] }>(`/citizens/me/tickets?filter=${filter}`);
   return result.tickets;
+}
+
+export async function loadPendingValidations(): Promise<PendingValidation[]> {
+  const result = await apiFetch<{ validations: PendingValidation[] }>("/citizens/me/pending-validations");
+  return result.validations;
+}
+
+export async function validateTicket(ticketId: string, vote: ValidationVote): Promise<SubmitValidationResult> {
+  return apiFetch<SubmitValidationResult>(`/tickets/${ticketId}/validate`, {
+    method: "POST",
+    body: JSON.stringify({ vote }),
+  });
 }
 
 export type DraftReport = {
