@@ -2,8 +2,19 @@ import { randomInt } from "node:crypto";
 import bcrypt from "bcrypt";
 import { prisma, UserRole } from "db";
 import { getEnv } from "../config/env";
+import type { AppEnv } from "../config/env";
 import type { OtpProvider } from "./otp-provider";
 import { issueTokens } from "./tokens";
+
+type OtpCodeEnvironment = Pick<AppEnv, "DEMO_AUTH_MODE" | "DEMO_AUTH_CODE" | "OTP_MOCK_CODE">;
+
+export function resolveOtpCode(env: OtpCodeEnvironment, generate = () => randomInt(100000, 1000000).toString()): string {
+  if (env.DEMO_AUTH_MODE === "fixed_otp") {
+    if (!env.DEMO_AUTH_CODE) throw new Error("DEMO_AUTH_CODE is required for fixed-code demo authentication");
+    return env.DEMO_AUTH_CODE;
+  }
+  return env.OTP_MOCK_CODE ?? generate();
+}
 
 async function configuredMaxAttempts(): Promise<number> {
   const config = await prisma.adminConfig.findUnique({
@@ -30,7 +41,7 @@ export async function requestCitizenOtp(
     throw new Error("Phone identity is not a citizen account");
   }
 
-  const code = env.OTP_MOCK_CODE ?? randomInt(100000, 1000000).toString();
+  const code = resolveOtpCode(env);
   const codeHash = await bcrypt.hash(code, 10);
   const expiresAt = new Date(Date.now() + env.OTP_TTL_MINUTES * 60_000);
 

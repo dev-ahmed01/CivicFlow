@@ -18,6 +18,11 @@ export class ConsoleOtpProvider implements OtpProvider {
   }
 }
 
+// SIH free-demo profile only. The code is configured explicitly and is never logged or returned by the API.
+export class DemoOtpProvider implements OtpProvider {
+  async sendOtp(): Promise<void> {}
+}
+
 export class TwilioOtpProvider implements OtpProvider {
   constructor(
     private readonly accountSid: string,
@@ -47,6 +52,11 @@ export function createOtpProvider(env: AppEnv): OtpProvider {
   switch (env.OTP_PROVIDER) {
     case "console":
       return new ConsoleOtpProvider();
+    case "demo":
+      if (env.DEPLOYMENT_PROFILE !== "free_demo" || env.DEMO_AUTH_MODE !== "fixed_otp" || !env.DEMO_AUTH_CODE) {
+        throw new Error("Demo OTP delivery is only available in the explicit free-demo profile");
+      }
+      return new DemoOtpProvider();
     case "twilio":
       if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_FROM_NUMBER) {
         throw new Error("Twilio OTP credentials are incomplete");

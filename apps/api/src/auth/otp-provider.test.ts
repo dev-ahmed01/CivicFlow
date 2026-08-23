@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TwilioOtpProvider } from "./otp-provider";
+import { DemoOtpProvider, TwilioOtpProvider } from "./otp-provider";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -29,5 +29,19 @@ describe("TwilioOtpProvider", () => {
       code: "654321",
       expiresInMinutes: 10,
     })).rejects.toThrow("status 401");
+  });
+});
+
+describe("DemoOtpProvider", () => {
+  it("does not contact a paid service or print the configured code", async () => {
+    const fetchMock = vi.fn();
+    const infoMock = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new DemoOtpProvider().sendOtp();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(infoMock).not.toHaveBeenCalled();
+    infoMock.mockRestore();
   });
 });

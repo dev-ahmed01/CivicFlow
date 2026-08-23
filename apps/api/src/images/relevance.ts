@@ -56,7 +56,14 @@ export class DevelopmentRelevanceService implements ImageRelevanceService {
 }
 
 export function createImageRelevanceService(env: AppEnv): ImageRelevanceService {
-  if (env.CLIP_INFERENCE_URL) return new HostedClipRelevanceService(env.CLIP_INFERENCE_URL, env.CLIP_INFERENCE_TOKEN);
+  if (env.CLIP_MODE === "hosted" || env.CLIP_MODE === "auto" && env.CLIP_INFERENCE_URL) {
+    if (!env.CLIP_INFERENCE_URL) throw new Error("CLIP_INFERENCE_URL is required for hosted CLIP mode");
+    return new HostedClipRelevanceService(env.CLIP_INFERENCE_URL, env.CLIP_INFERENCE_TOKEN);
+  }
+  if (env.CLIP_MODE === "demo_deterministic") {
+    if (env.DEPLOYMENT_PROFILE !== "free_demo") throw new Error("Deterministic relevance is restricted to the free-demo profile");
+    return new DevelopmentRelevanceService();
+  }
   if (env.NODE_ENV === "production") throw new Error("CLIP_INFERENCE_URL is required in production");
   return new DevelopmentRelevanceService();
 }

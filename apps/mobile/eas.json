@@ -16,6 +16,13 @@
         "buildType": "apk"
       }
     },
+    "free-demo": {
+      "distribution": "internal",
+      "environment": "preview",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "environment": "production",
       "autoIncrement": true

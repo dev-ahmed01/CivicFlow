@@ -99,6 +99,8 @@ Two rehearsed end-to-end walkthroughs (built out fully in Phase 12):
 
 Phase 12’s deployment order, stable fixture IDs, reset command, two click-by-click rehearsal scripts, and acceptance evidence ledger live in [`docs/Phase_12_runbook.md`](docs/Phase_12_runbook.md). Run `pnpm verify:phase12` against a seeded database to validate the complete non-road audit trail and exact Segment X intervention dates/order.
 
+Deployment profiles are intentionally separate: `render.yaml` is the fail-closed production architecture, while `render.demo.yaml` is the $0 SIH profile using Render Free with a Supabase PostgreSQL/PostGIS URL, Cloudflare R2, explicit fixed-code demo authentication, and an explicitly simulated relevance adapter or compatible free/local CLIP endpoint. The runbook records the free-tier limits and never treats free-demo evidence as production evidence.
+
 ## Status
 
 Track live build progress in the checklist at the bottom of `AGENTS.md`.

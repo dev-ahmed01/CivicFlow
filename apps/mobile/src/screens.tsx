@@ -14,17 +14,18 @@ export function CitizenLoginScreen({ onAuthenticated, onBack }: { onAuthenticate
   const [phone, setPhone] = useState("+919876543210");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"phone" | "code">("phone");
+  const [demoMode, setDemoMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const submit = async () => {
     setBusy(true); setError(undefined);
     try {
-      if (step === "phone") { await requestCitizenOtp(phone); setStep("code"); }
+      if (step === "phone") { const result = await requestCitizenOtp(phone); setDemoMode(result.demoMode); setStep("code"); }
       else onAuthenticated(await verifyCitizenOtp(phone, code));
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not sign in"); }
     finally { setBusy(false); }
   };
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow={step === "phone" ? "Citizen sign in" : "Verify phone"} title={step === "phone" ? "Your city, one tap away" : "Enter the 6-digit code"} onBack={step === "code" ? () => setStep("phone") : onBack} /><Text style={styles.body}>{step === "phone" ? "Use your verified mobile number to report issues and follow their progress." : `We sent a one-time code to ${phone}.`}</Text>{step === "phone" ? <TextInput accessibilityLabel="Mobile number" keyboardType="phone-pad" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" placeholderTextColor={colors.muted} style={styles.input} /> : <TextInput accessibilityLabel="One-time code" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} placeholder="6-digit code" placeholderTextColor={colors.muted} style={styles.input} />}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (step === "phone" ? phone.length < 10 : code.length !== 6)} onPress={() => void submit()}>{busy ? "Please wait…" : step === "phone" ? "Send verification code" : "Verify and continue"}</PrimaryButton>{step === "code" ? <SecondaryButton disabled={busy} onPress={() => void requestCitizenOtp(phone)}>Send a new code</SecondaryButton> : null}</ScrollView></Shell>;
+  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow={step === "phone" ? "Citizen sign in" : "Verify phone"} title={step === "phone" ? "Your city, one tap away" : "Enter the 6-digit code"} onBack={step === "code" ? () => setStep("phone") : onBack} /><Text style={styles.body}>{step === "phone" ? "Use your verified mobile number to report issues and follow their progress." : demoMode ? "Demo authentication is active. Enter the rehearsal code supplied by the presenter." : `We sent a one-time code to ${phone}.`}</Text>{step === "phone" ? <TextInput accessibilityLabel="Mobile number" keyboardType="phone-pad" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" placeholderTextColor={colors.muted} style={styles.input} /> : <TextInput accessibilityLabel="One-time code" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} placeholder="6-digit code" placeholderTextColor={colors.muted} style={styles.input} />}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (step === "phone" ? phone.length < 10 : code.length !== 6)} onPress={() => void submit()}>{busy ? "Please wait…" : step === "phone" ? "Send verification code" : "Verify and continue"}</PrimaryButton>{step === "code" ? <SecondaryButton disabled={busy} onPress={() => void requestCitizenOtp(phone)}>Send a new code</SecondaryButton> : null}</ScrollView></Shell>;
 }
 
 export function HomeScreen({ signedIn, onSignIn, onReport, onTickets, onValidations, onCompletionValidations, onEngineerLogin }: { signedIn: boolean; onSignIn: () => void; onReport: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void; onCompletionValidations: () => void; onEngineerLogin: () => void }) {

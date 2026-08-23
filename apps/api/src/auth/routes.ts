@@ -16,6 +16,7 @@ import { requestCitizenOtp, verifyCitizenOtp } from "./otp-service";
 import { requireAuth, requireRole } from "./middleware";
 import { requirePasswordResetComplete } from "./middleware";
 import { createTotpSecret, totpUri, verifyTotp } from "./totp";
+import { getEnv } from "../config/env";
 import {
   issueTokens,
   revokeRefreshToken,
@@ -34,7 +35,11 @@ export function createAuthRouter(otpProvider: OtpProvider): Router {
 
     try {
       await requestCitizenOtp(parsed.data.phone, otpProvider);
-      response.status(202).json({ message: "If the number is eligible, an OTP was sent" });
+      const demoMode = getEnv().DEMO_AUTH_MODE === "fixed_otp";
+      response.status(202).json({
+        message: demoMode ? "Demo authentication is active; enter the rehearsal code supplied by the presenter" : "If the number is eligible, an OTP was sent",
+        demoMode,
+      });
     } catch (error) {
       console.error(error);
       response.status(500).json({ error: "Unable to send OTP" });

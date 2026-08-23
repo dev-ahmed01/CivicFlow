@@ -71,8 +71,8 @@ export async function internalLogin(email: string, password: string): Promise<Cu
   return { userId: result.user.id, role: result.user.role, agencyId: result.user.agencyId, wardId: null, mustResetPassword: false };
 }
 
-export async function requestCitizenOtp(phone: string): Promise<void> {
-  await apiFetch("/auth/citizen/request-otp", { method: "POST", body: JSON.stringify({ phone }) });
+export async function requestCitizenOtp(phone: string): Promise<{ demoMode: boolean }> {
+  return apiFetch<{ demoMode: boolean }>("/auth/citizen/request-otp", { method: "POST", body: JSON.stringify({ phone }) });
 }
 
 export async function verifyCitizenOtp(phone: string, code: string): Promise<CurrentAuth> {

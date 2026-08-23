@@ -1,16 +1,19 @@
 import { z } from "zod";
 
-const envSchema = z.object({
+const baseEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  DEPLOYMENT_PROFILE: z.enum(["local", "free_demo", "production"]).optional(),
   DATABASE_URL: z.string().min(1),
   PORT: z.coerce.number().int().positive().default(4000),
   JWT_ACCESS_SECRET: z.string().min(32),
   JWT_REFRESH_SECRET: z.string().min(32),
   JWT_ACCESS_TTL: z.string().min(2).default("15m"),
   JWT_REFRESH_TTL: z.string().min(2).default("30d"),
-  OTP_PROVIDER: z.enum(["console", "twilio"]).default("console"),
+  OTP_PROVIDER: z.enum(["console", "demo", "twilio"]).default("console"),
   OTP_TTL_MINUTES: z.coerce.number().int().positive().default(10),
   OTP_MOCK_CODE: z.string().regex(/^\d{6}$/).optional(),
+  DEMO_AUTH_MODE: z.enum(["disabled", "fixed_otp"]).default("disabled"),
+  DEMO_AUTH_CODE: z.string().regex(/^\d{6}$/).optional(),
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
   TWILIO_FROM_NUMBER: z.string().regex(/^\+[1-9]\d{7,14}$/).optional(),
@@ -22,23 +25,69 @@ const envSchema = z.object({
   S3_PUBLIC_BASE_URL: z.string().url().default("http://localhost:9000/civicos-images"),
   CLIP_INFERENCE_URL: z.string().url().optional(),
   CLIP_INFERENCE_TOKEN: z.string().min(1).optional(),
+  CLIP_MODE: z.enum(["auto", "hosted", "demo_deterministic"]).default("auto"),
   CRON_SECRET: z.string().min(32).optional(),
   VALIDATION_REBATCH_POLL_MINUTES: z.coerce.number().int().positive().default(15),
   DEPENDENCY_ESCALATION_POLL_MINUTES: z.coerce.number().int().positive().default(15),
   PUSH_DELIVERY_POLL_SECONDS: z.coerce.number().int().positive().default(15),
   EXPO_ACCESS_TOKEN: z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional()),
   CORS_ORIGINS: z.string().min(1).optional(),
-}).superRefine((env, context) => {
+});
+
+const envSchema = baseEnvSchema.transform((env) => ({
+  ...env,
+  DEPLOYMENT_PROFILE: env.DEPLOYMENT_PROFILE ?? (env.NODE_ENV === "production" ? "production" : "local"),
+})).superRefine((env, context) => {
+  const demoAuthenticationSelected = env.OTP_PROVIDER === "demo" || env.DEMO_AUTH_MODE !== "disabled" || Boolean(env.DEMO_AUTH_CODE);
+  if (demoAuthenticationSelected && (
+    env.DEPLOYMENT_PROFILE !== "free_demo" ||
+    env.OTP_PROVIDER !== "demo" ||
+    env.DEMO_AUTH_MODE !== "fixed_otp" ||
+    !env.DEMO_AUTH_CODE
+  )) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["DEMO_AUTH_MODE"], message: "Demo authentication requires the explicit free-demo profile, provider, mode, and code" });
+  }
+  if (env.DEPLOYMENT_PROFILE === "free_demo" && env.NODE_ENV !== "production") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["DEPLOYMENT_PROFILE"], message: "The free-demo deployment profile must run with NODE_ENV=production" });
+  }
   if (env.NODE_ENV !== "production") return;
 
-  if (env.OTP_PROVIDER !== "twilio") {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["OTP_PROVIDER"], message: "Production must use the Twilio OTP provider" });
+  if (env.DEPLOYMENT_PROFILE === "local") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["DEPLOYMENT_PROFILE"], message: "A production Node environment cannot use the local deployment profile" });
   }
   if (env.OTP_MOCK_CODE) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["OTP_MOCK_CODE"], message: "OTP_MOCK_CODE is forbidden in production" });
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["OTP_MOCK_CODE"], message: "OTP_MOCK_CODE is forbidden in deployed environments" });
   }
-  for (const key of ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "CLIP_INFERENCE_URL", "CORS_ORIGINS"] as const) {
+
+  if (env.DEPLOYMENT_PROFILE === "production") {
+    if (env.OTP_PROVIDER !== "twilio") {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["OTP_PROVIDER"], message: "The production profile must use the Twilio OTP provider" });
+    }
+    if (env.DEMO_AUTH_MODE !== "disabled" || env.DEMO_AUTH_CODE || env.OTP_PROVIDER === "demo") {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["DEMO_AUTH_MODE"], message: "Demo authentication is forbidden in the production profile" });
+    }
+    if (env.CLIP_MODE !== "hosted") {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["CLIP_MODE"], message: "The production profile must use hosted CLIP inference" });
+    }
+  }
+
+  if (env.DEPLOYMENT_PROFILE === "free_demo") {
+    if (env.OTP_PROVIDER !== "demo" || env.DEMO_AUTH_MODE !== "fixed_otp" || !env.DEMO_AUTH_CODE) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["DEMO_AUTH_MODE"], message: "The free-demo profile requires explicit fixed-code demo authentication" });
+    }
+    if (env.CLIP_MODE === "auto") {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["CLIP_MODE"], message: "The free-demo profile requires an explicit CLIP mode" });
+    }
+  }
+
+  const requiredServiceKeys = env.DEPLOYMENT_PROFILE === "production"
+    ? ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "CORS_ORIGINS"] as const
+    : ["CORS_ORIGINS"] as const;
+  for (const key of requiredServiceKeys) {
     if (!env[key]) context.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is required in production` });
+  }
+  if (env.CLIP_MODE === "hosted" && !env.CLIP_INFERENCE_URL) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["CLIP_INFERENCE_URL"], message: "Hosted CLIP mode requires CLIP_INFERENCE_URL" });
   }
   for (const [key, value] of [["S3_ENDPOINT", env.S3_ENDPOINT], ["S3_PUBLIC_BASE_URL", env.S3_PUBLIC_BASE_URL]] as const) {
     const hostname = new URL(value).hostname;
