@@ -39,6 +39,7 @@ pnpm-debug.log*
 # Build artifacts
 build/
 dist/
+.seed-dist/
 coverage/
 
 # Prisma local artifacts

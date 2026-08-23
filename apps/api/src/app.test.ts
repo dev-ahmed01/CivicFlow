@@ -1,16 +1,13 @@
 import request from "supertest";
 import jwt from "jsonwebtoken";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
 import type { OtpProvider } from "./auth/otp-provider";
 
 const accessSecret = "test-access-secret-that-is-at-least-32-characters";
-
-beforeAll(() => {
-  process.env.DATABASE_URL = "postgresql://unused:unused@localhost:5432/unused";
-  process.env.JWT_ACCESS_SECRET = accessSecret;
-  process.env.JWT_REFRESH_SECRET = "test-refresh-secret-that-is-at-least-32-characters";
-});
+process.env.DATABASE_URL = "postgresql://unused:unused@localhost:5432/unused";
+process.env.JWT_ACCESS_SECRET = accessSecret;
+process.env.JWT_REFRESH_SECRET = "test-refresh-secret-that-is-at-least-32-characters";
 
 const noopOtpProvider: OtpProvider = {
   async sendOtp() {},

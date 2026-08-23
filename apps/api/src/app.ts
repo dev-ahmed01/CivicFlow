@@ -10,8 +10,19 @@ import {
 } from "./auth/middleware";
 import { createOtpProvider, type OtpProvider } from "./auth/otp-provider";
 import { getEnv } from "./config/env";
+import { createImageRelevanceService, type ImageRelevanceService } from "./images/relevance";
+import { S3CompatibleStorage, type ImageStorage } from "./images/storage";
+import { createTicketsRouter } from "./tickets/router";
 
-export function createApp(otpProvider?: OtpProvider): Express {
+export interface AppDependencies {
+  otpProvider?: OtpProvider;
+  imageRelevance?: ImageRelevanceService;
+  imageStorage?: ImageStorage;
+}
+
+export function createApp(dependencies: AppDependencies | OtpProvider = {}): Express {
+  const resolvedDependencies: AppDependencies = "sendOtp" in dependencies ? { otpProvider: dependencies } : dependencies;
+  const env = getEnv();
   const app = express();
   app.disable("x-powered-by");
   app.use(helmet());
@@ -22,7 +33,11 @@ export function createApp(otpProvider?: OtpProvider): Express {
     response.json({ status: "ok" });
   });
 
-  app.use("/auth", createAuthRouter(otpProvider ?? createOtpProvider(getEnv())));
+  app.use("/auth", createAuthRouter(resolvedDependencies.otpProvider ?? createOtpProvider(env)));
+  app.use(createTicketsRouter(
+    resolvedDependencies.imageRelevance ?? createImageRelevanceService(env),
+    resolvedDependencies.imageStorage ?? new S3CompatibleStorage(env),
+  ));
 
   // Part III §17.2 — protected routes always authenticate, enforce role, then scope.
   app.get(
@@ -50,6 +65,12 @@ export function createApp(otpProvider?: OtpProvider): Express {
 
   app.use((_request, response) => {
     response.status(404).json({ error: "Not found" });
+  });
+
+  app.use((error: unknown, _request: express.Request, response: express.Response, next: express.NextFunction) => {
+    void next;
+    console.error(error);
+    response.status(500).json({ error: "Unexpected server error" });
   });
 
   return app;

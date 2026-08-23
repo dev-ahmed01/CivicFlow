@@ -96,6 +96,7 @@ const adminConfigs = [
   { key: "duplicate.open_window_days", value: 60, description: "Age window used by shared-ticket detection" },
   { key: "duplicate.visual_similarity_threshold", value: 0.75, description: "Advisory CLIP embedding similarity threshold" },
   { key: "ai_relevance.max_retries", value: 3, description: "Maximum relevance-check retries before manual-review recommendation" },
+  { key: "ai_relevance.pass_threshold", value: 0.6, description: "Minimum hosted image/category relevance confidence" },
   { key: "conflict.radius_meters", value: 200, description: "Default generic project conflict radius" },
 ] as const;
 

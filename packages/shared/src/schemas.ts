@@ -28,6 +28,42 @@ export const ticketStateSchema = z.enum([
   "CANCELLED",
 ]);
 
+export const citizenTicketStateSchema = z.enum([
+  "REPORT_RECEIVED",
+  "COMMUNITY_REVIEW",
+  "VERIFIED",
+  "ASSIGNED",
+  "INSPECTION_AND_PLANNING",
+  "WORK_IN_PROGRESS",
+  "AWAITING_CONFIRMATION",
+  "CLOSED",
+]);
+
+export const citizenTicketStateLabels = {
+  REPORT_RECEIVED: "Report received",
+  COMMUNITY_REVIEW: "Community review",
+  VERIFIED: "Verified",
+  ASSIGNED: "Assigned to agency",
+  INSPECTION_AND_PLANNING: "Inspection and planning",
+  WORK_IN_PROGRESS: "Work in progress",
+  AWAITING_CONFIRMATION: "Awaiting confirmation",
+  CLOSED: "Closed",
+} as const;
+
+// Part III §10.3 — internal workflow names never cross the citizen UI boundary.
+export function toCitizenTicketState(state: TicketState): CitizenTicketState {
+  if (["DRAFT", "AI_CHECK_PENDING", "AI_FLAGGED"].includes(state)) return "REPORT_RECEIVED";
+  if (state === "PENDING_VALIDATION") return "COMMUNITY_REVIEW";
+  if (state === "VALIDATED") return "VERIFIED";
+  if (state === "ROUTED_TO_AGENCY") return "ASSIGNED";
+  if (["INSPECTION_DUE", "INSPECTION_COMPLETE", "PROJECT_CREATED", "ENGINEER_ASSIGNED"].includes(state)) {
+    return "INSPECTION_AND_PLANNING";
+  }
+  if (["WORK_IN_PROGRESS", "WORK_COMPLETED"].includes(state)) return "WORK_IN_PROGRESS";
+  if (state === "PENDING_CITIZEN_VERIFICATION") return "AWAITING_CONFIRMATION";
+  return "CLOSED";
+}
+
 export const projectStateSchema = z.enum([
   "CREATED",
   "ENGINEER_ASSIGNED",
@@ -106,6 +142,19 @@ export const categorySchema = z.object({
   adminEditable: z.boolean(),
 });
 
+export const categorySummarySchema = categorySchema.pick({ id: true, name: true });
+
+export const citizenTicketSummarySchema = z.object({
+  id: idSchema,
+  title: z.string(),
+  address: z.string(),
+  category: categorySummarySchema,
+  observationCount: z.number().int().positive(),
+  createdAt: dateSchema,
+  status: citizenTicketStateSchema,
+  statusLabel: z.string(),
+});
+
 export const routingRuleSchema = z.object({
   categoryId: idSchema,
   dependencyAgencyId: idSchema,
@@ -119,6 +168,14 @@ export const ticketSchema = z.object({
   coordinates: pointSchema,
   wardId: idSchema,
   state: ticketStateSchema,
+  title: z.string().min(1).max(160),
+  address: z.string().min(1),
+  aiRetryCount: z.number().int().nonnegative(),
+  manualReviewRecommended: z.boolean(),
+  duplicateReviewRecommended: z.boolean(),
+  duplicateCandidateId: idSchema.nullable(),
+  duplicateVisualSimilarity: z.number().min(-1).max(1).nullable(),
+  duplicateVisualMatch: z.boolean().nullable(),
   createdAt: dateSchema,
 });
 
@@ -128,8 +185,36 @@ export const observationSchema = z.object({
   submitterId: idSchema,
   imageUrl: z.string().url(),
   note: z.string().nullable(),
+  latitude: z.number().nullable(),
+  longitude: z.number().nullable(),
+  address: z.string().nullable(),
   createdAt: dateSchema,
 });
+
+export const createTicketSchema = z.object({
+  categoryId: idSchema,
+  title: z.string().trim().min(3).max(160),
+  address: z.string().trim().min(3).max(500),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  note: z.string().trim().max(1000).optional(),
+  primaryImage: z.object({
+    fileName: z.string().trim().min(1).max(200),
+    contentType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic"]),
+  }),
+});
+
+export const imageUploadRequestSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("presign"),
+    fileName: z.string().trim().min(1).max(200),
+    contentType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic"]),
+    isPrimary: z.boolean().default(false),
+  }),
+  z.object({ action: z.literal("complete"), imageId: idSchema }),
+]);
+
+export const citizenTicketFilterSchema = z.enum(["ongoing", "past"]);
 
 export const validationSchema = z.object({
   id: idSchema,
@@ -226,6 +311,7 @@ export const authTokensSchema = z.object({
 
 export type UserRole = z.infer<typeof userRoleSchema>;
 export type TicketState = z.infer<typeof ticketStateSchema>;
+export type CitizenTicketState = z.infer<typeof citizenTicketStateSchema>;
 export type ProjectState = z.infer<typeof projectStateSchema>;
 export type DependencyState = z.infer<typeof dependencyStateSchema>;
 export type ValidationVote = z.infer<typeof validationVoteSchema>;
@@ -233,6 +319,8 @@ export type User = z.infer<typeof userSchema>;
 export type Ward = z.infer<typeof wardSchema>;
 export type Agency = z.infer<typeof agencySchema>;
 export type Category = z.infer<typeof categorySchema>;
+export type CategorySummary = z.infer<typeof categorySummarySchema>;
+export type CitizenTicketSummary = z.infer<typeof citizenTicketSummarySchema>;
 export type RoutingRule = z.infer<typeof routingRuleSchema>;
 export type Ticket = z.infer<typeof ticketSchema>;
 export type Observation = z.infer<typeof observationSchema>;

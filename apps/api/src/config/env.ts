@@ -11,6 +11,14 @@ const envSchema = z.object({
   OTP_PROVIDER: z.enum(["console"]).default("console"),
   OTP_TTL_MINUTES: z.coerce.number().int().positive().default(10),
   OTP_MOCK_CODE: z.string().regex(/^\d{6}$/).optional(),
+  S3_ENDPOINT: z.string().url().default("http://localhost:9000"),
+  S3_REGION: z.string().min(1).default("us-east-1"),
+  S3_BUCKET: z.string().min(1).default("civicos-images"),
+  S3_ACCESS_KEY_ID: z.string().min(1).default("civicos-local"),
+  S3_SECRET_ACCESS_KEY: z.string().min(8).default("civicos-local-secret"),
+  S3_PUBLIC_BASE_URL: z.string().url().default("http://localhost:9000/civicos-images"),
+  CLIP_INFERENCE_URL: z.string().url().optional(),
+  CLIP_INFERENCE_TOKEN: z.string().min(1).optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

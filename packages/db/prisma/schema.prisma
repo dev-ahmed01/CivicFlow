@@ -153,6 +153,14 @@ model Ticket {
   coordinates      Unsupported("geometry(Point,4326)")
   wardId           String                              @db.Uuid
   state            TicketState                         @default(DRAFT)
+  title            String                              @default("Civic issue") @db.VarChar(160)
+  address          String                              @default("Location pending")
+  aiRetryCount     Int                                 @default(0)
+  manualReviewRecommended Boolean                     @default(false)
+  duplicateReviewRecommended Boolean                  @default(false)
+  duplicateCandidateId String?                        @db.Uuid
+  duplicateVisualSimilarity Float?
+  duplicateVisualMatch Boolean?
   createdAt        DateTime                            @default(now())
 
   category       Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
@@ -162,6 +170,7 @@ model Ticket {
   observations   Observation[]
   validations    Validation[]
   project        Project?
+  stateTransitions TicketStateTransition[]
 
   @@index([categoryId])
   @@index([reporterId])
@@ -177,13 +186,47 @@ model Observation {
   submitterId String   @db.Uuid
   imageUrl    String
   note        String?
+  latitude    Float?
+  longitude   Float?
+  address     String?
   createdAt   DateTime @default(now())
 
   ticket    Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   submitter User   @relation(fields: [submitterId], references: [id], onDelete: Restrict)
+  images    Image[]
 
   @@index([ticketId])
   @@index([submitterId])
+}
+
+model Image {
+  id               String   @id @default(uuid()) @db.Uuid
+  observationId    String   @db.Uuid
+  url              String
+  objectKey        String   @unique
+  isPrimary        Boolean  @default(false)
+  aiRelevanceScore Float?
+  embedding        Json?
+  uploadedAt       DateTime?
+  createdAt        DateTime @default(now())
+
+  observation Observation @relation(fields: [observationId], references: [id], onDelete: Cascade)
+
+  @@index([observationId])
+  @@index([observationId, isPrimary])
+}
+
+model TicketStateTransition {
+  id        String       @id @default(uuid()) @db.Uuid
+  ticketId  String       @db.Uuid
+  fromState TicketState?
+  toState   TicketState
+  reason    String
+  createdAt DateTime     @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
 }
 
 model Validation {

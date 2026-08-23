@@ -5,6 +5,14 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "platforms": ["ios", "android"],
-    "newArchEnabled": true
+    "newArchEnabled": true,
+    "android": {
+      "package": "org.civicos.mobile",
+      "permissions": ["ACCESS_FINE_LOCATION", "CAMERA", "READ_MEDIA_IMAGES"]
+    },
+    "plugins": [
+      ["expo-image-picker", { "photosPermission": "CivicOS uses your photos as evidence for civic reports.", "cameraPermission": "CivicOS uses your camera to photograph civic issues." }],
+      ["expo-location", { "locationWhenInUsePermission": "CivicOS uses your location to route civic reports to the right ward." }]
+    ]
   }
 }
