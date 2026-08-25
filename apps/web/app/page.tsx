@@ -1,5 +1,5 @@
-import { CitizenHome } from "./_components/citizen-home";
+import { CitizenEntry } from "./_components/citizen-entry";
 
 export default function HomePage() {
-  return <CitizenHome />;
+  return <CitizenEntry />;
 }

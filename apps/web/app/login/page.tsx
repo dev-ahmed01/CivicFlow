@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { CitizenHeader } from "../_components/citizen-header";
 import { CitizenHeroBackdrop, CitizenIcon } from "../_components/ui";
 import { saveCitizenAccessToken } from "../_lib/citizen-auth";
+import { saveSession as saveProjectHeadSession } from "../project-head/_lib/api";
+import { saveSession as saveEngineerSession } from "../engineer/_lib/api";
+import { saveAdminSession } from "../admin/_lib/api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -13,6 +16,34 @@ const stats = [
   { icon: "file" as const, value: "24+", label: "Departments Connected" },
   { icon: "refresh" as const, value: "Real-Time", label: "Civic Tracking" },
 ];
+
+type LoginBody = {
+  accessToken?: string;
+  refreshToken?: string;
+  error?: string;
+  code?: string;
+  user?: {
+    id: string;
+    role: "CITIZEN" | "PROJECT_HEAD" | "ENGINEER" | "ADMIN";
+    email?: string | null;
+    phone?: string | null;
+    agencyId?: string | null;
+  };
+};
+
+async function postLogin(path: string, credentials: Record<string, string>): Promise<{ response: Response; body: LoginBody }> {
+  try {
+    const response = await fetch(`${apiUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credentials),
+    });
+    const body = await response.json().catch(() => ({})) as LoginBody;
+    return { response, body };
+  } catch {
+    throw new Error("Login service is unavailable. Make sure the CivicFlow API is running, then try again.");
+  }
+}
 
 export default function CitizenLoginPage() {
   const router = useRouter();
@@ -27,11 +58,35 @@ export default function CitizenLoginPage() {
     event.preventDefault();
     setBusy(true); setError(undefined);
     try {
-      const response = await fetch(`${apiUrl}/auth/citizen/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, password }) });
-      const body = await response.json() as { accessToken?: string; error?: string };
-      if (!response.ok || !body.accessToken) throw new Error(body.error ?? "Could not sign in");
-      saveCitizenAccessToken(body.accessToken);
-      router.replace("/tickets");
+      const citizen = await postLogin("/auth/citizen/login", { userId: userId.trim(), password });
+      if (citizen.response.ok && citizen.body.accessToken) {
+        saveCitizenAccessToken(citizen.body.accessToken);
+        router.replace("/tickets");
+        return;
+      }
+      if (!userId.includes("@")) throw new Error(citizen.body.error ?? "Invalid User ID or password");
+
+      // Internal users share this branded entry point, while the API remains authoritative for role/RBAC.
+      const internal = await postLogin("/auth/internal/login", { email: userId.trim(), password });
+      const { body } = internal;
+      if (!internal.response.ok || !body.accessToken || !body.refreshToken || !body.user) {
+        if (body.code === "TOTP_REQUIRED") throw new Error("Use Administrator sign in to enter your authenticator code.");
+        throw new Error(body.error ?? citizen.body.error ?? "Invalid User ID or password");
+      }
+
+      const email = body.user.email ?? userId.trim();
+      if (body.user.role === "PROJECT_HEAD" && body.user.agencyId) {
+        saveProjectHeadSession({ accessToken: body.accessToken, refreshToken: body.refreshToken, user: { id: body.user.id, email, agencyId: body.user.agencyId } });
+        router.replace("/project-head");
+      } else if (body.user.role === "ENGINEER" && body.user.agencyId) {
+        saveEngineerSession({ accessToken: body.accessToken, refreshToken: body.refreshToken, user: { id: body.user.id, email, agencyId: body.user.agencyId } });
+        router.replace("/engineer");
+      } else if (body.user.role === "ADMIN") {
+        saveAdminSession({ accessToken: body.accessToken, refreshToken: body.refreshToken, user: { id: body.user.id, email } });
+        router.replace("/admin");
+      } else {
+        throw new Error("This account is not configured for a web workspace.");
+      }
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not sign in"); }
     finally { setBusy(false); }
   };
@@ -45,6 +100,6 @@ export default function CitizenLoginPage() {
       <div className="cf-login-options"><label><input checked={remember} onChange={(event) => setRemember(event.target.checked)} type="checkbox" />Remember me</label><a href="mailto:support@cityconnect.local?subject=Citizen%20password%20help">Forgot Password?</a></div>
       {error ? <p className="error" role="alert">{error}</p> : null}
       <button className="cf-login-submit" disabled={busy || userId.trim().length < 3 || password.length < 8} type="submit">{busy ? "Logging in…" : "Log In"}<CitizenIcon name="arrow" /></button>
-    </form><p className="cf-secure-line"><CitizenIcon name="shield" />Secure <span>•</span> Reliable <span>•</span> Accountable</p></section>
+    </form><p className="cf-secure-line"><CitizenIcon name="shield" />Secure <span>•</span> Reliable <span>•</span> Accountable</p><nav className="cf-role-login-links" aria-label="Role-specific sign in"><a href="/project-head/login">Project Head</a><a href="/engineer/login">Engineer</a><a href="/admin/login">Administrator</a></nav></section>
   </main>;
 }

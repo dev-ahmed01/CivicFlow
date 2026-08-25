@@ -71,3 +71,45 @@
   --cv-text-secondary: var(--cf-text-muted);
   --cv-radius-card: var(--cf-radius-card);
 }
+
+/* CityConnect work-tool palette: scoped away from the Administrator portal. */
+.portal-shell:not(.admin-shell) {
+  --cf-hero-bg-start: #0a2415;
+  --cf-hero-bg-end: #123a22;
+  --cf-accent-lime: #7ed321;
+  --cf-accent-green: #1f7a3c;
+  --cf-surface: #ffffff;
+  --cf-surface-muted: #f5f7f5;
+  --cf-text-on-dark: #ffffff;
+  --cf-text-on-dark-muted: #cfe8d8;
+  --cf-text: #141614;
+  --cf-text-muted: #5b5f58;
+  --cf-border: #e8e3d3;
+  --cf-status-ongoing-bg: #e7f0f7;
+  --cf-status-ongoing-text: #2c5c82;
+  --cf-status-delayed-bg: #fbf1de;
+  --cf-status-delayed-text: #8a6416;
+  --cf-status-stalled-bg: #fbeaea;
+  --cf-status-stalled-text: #9c3b3b;
+  --cf-status-stopped-bg: #f1e9fb;
+  --cf-status-stopped-text: #6b3fa0;
+  --cf-status-resolved-bg: #e4f1e7;
+  --cf-status-resolved-text: #1f5a34;
+  --cv-bg: var(--cf-surface-muted);
+  --cv-surface: var(--cf-surface);
+  --cv-surface-alt: #f8faf8;
+  --cv-accent: var(--cf-accent-green);
+  --cv-accent-strong: var(--cf-accent-green);
+  --cv-border: var(--cf-border);
+  --cv-text: var(--cf-text);
+  --cv-text-secondary: var(--cf-text-muted);
+  --cv-success-bg: var(--cf-status-resolved-bg);
+  --cv-success-text: var(--cf-status-resolved-text);
+  --cv-warning-bg: var(--cf-status-delayed-bg);
+  --cv-warning-text: var(--cf-status-delayed-text);
+  --cv-danger-bg: var(--cf-status-stalled-bg);
+  --cv-danger-text: var(--cf-status-stalled-text);
+  --cv-info-bg: var(--cf-status-ongoing-bg);
+  --cv-info-text: var(--cf-status-ongoing-text);
+  --cv-radius-card: 16px;
+}

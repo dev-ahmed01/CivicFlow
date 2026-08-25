@@ -51,7 +51,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
   apiFetch: ApiFetch;
   role: UserRole;
   showFilters: boolean;
-  variant?: "portal" | "citizen";
+  variant?: "portal" | "citizen" | "portal-inline";
 }) {
   const [notifications, setNotifications] = useState<ClientNotification[]>([]);
   const [filter, setFilter] = useState<NotificationFilter>("all");
@@ -86,7 +86,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
     })).filter((group) => group.items.length > 0);
   }, [filter, notifications]);
 
-  return <section className={`notification-page ${variant === "citizen" ? "cf-notification-page" : ""}`}>
+  return <section className={`notification-page ${variant === "citizen" ? "cf-notification-page" : ""} ${variant === "portal-inline" ? "portal-notification-page" : ""}`}>
     <div className="portal-heading"><div><p className="eyebrow">Updates</p><h1>Notifications</h1><p>Everything that needs your attention, newest first.</p></div></div>
     {showFilters ? <div aria-label="Notification filters" className="notification-filters" role="tablist">
       {filters.map((item) => <button aria-selected={filter === item.id} className={filter === item.id ? "active" : ""} key={item.id} onClick={() => setFilter(item.id)} role="tab" type="button">{item.label}</button>)}
@@ -99,9 +99,13 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
         {group.items.map((item) => {
           const display = notificationPresentation(item.type);
           const href = notificationDestination(item, role);
-          if (variant !== "citizen") return <NotificationRow href={href ?? undefined} icon={display.icon} key={item.id} message={display.message} time={relativeNotificationTime(item.createdAt)} tone={display.tone} />;
+          if (variant === "portal") return <NotificationRow href={href ?? undefined} icon={display.icon} key={item.id} message={display.message} time={relativeNotificationTime(item.createdAt)} tone={display.tone} />;
           const expanded = expandedId === item.id;
-          const contextHref = href?.startsWith("/tickets/") ? `/tickets?ticket=${href.slice("/tickets/".length)}` : href;
+          let contextHref = href;
+          if (href?.startsWith("/tickets/")) contextHref = `/tickets?ticket=${href.slice("/tickets/".length)}`;
+          if (href?.startsWith("/project-head/tickets/")) contextHref = `/project-head/tickets?ticket=${href.slice("/project-head/tickets/".length)}`;
+          if (href?.startsWith("/project-head/projects/")) contextHref = `/project-head/projects?project=${href.slice("/project-head/projects/".length)}`;
+          if (href?.startsWith("/engineer/projects/")) contextHref = `/engineer/projects?project=${href.slice("/engineer/projects/".length)}`;
           return <div className="cf-notification-row" key={item.id}>
             <span aria-hidden="true" className={`cv-notification-icon ${display.tone}`}>{display.icon}</span>
             <span className="cv-notification-copy"><strong>{display.message}</strong><small>{relativeNotificationTime(item.createdAt)}</small></span>

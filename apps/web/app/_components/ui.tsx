@@ -7,9 +7,9 @@ export type SemanticTone = "success" | "warning" | "danger" | "info";
 
 function statusTone(value: string): SemanticTone {
   const normalized = value.toUpperCase();
-  if (normalized.includes("ESCALAT") || normalized.includes("REWORK")) return "danger";
+  if (normalized.includes("ESCALAT") || normalized.includes("REWORK") || normalized.includes("OVERDUE") || normalized.includes("STALL") || normalized.includes("DECLINED") || normalized.includes("REJECT") || normalized.includes("CANCEL")) return "danger";
   if (normalized.includes("DUE") || normalized.includes("PENDING") || normalized.includes("CONFLICT")) return "warning";
-  if (normalized.includes("CLOSED") || normalized.includes("COMPLETE") || normalized.includes("VALIDATED") || normalized.includes("FULFILLED")) return "success";
+  if (normalized.includes("CLOSED") || normalized.includes("COMPLETE") || normalized.includes("VALIDATED") || normalized.includes("FULFILLED") || normalized.includes("RESOLV")) return "success";
   return "info";
 }
 
@@ -83,6 +83,10 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
 
 export function StatusChip({ label, tone = statusTone(label) }: { label: string; tone?: SemanticTone }) {
   return <span className={`cv-status-chip ${tone}`}>{sentenceCase(label)}</span>;
+}
+
+export function PortalStatePill({ state }: { state: string }) {
+  return <span className={`state-chip ${statusTone(state)}`}>{sentenceCase(state)}</span>;
 }
 
 export function TicketCard({ id, category, status, date, title, meta, href, action }: {

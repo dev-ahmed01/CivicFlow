@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { CategorySummary, PaginationMeta, ProjectHeadTicketSummary, TicketState, WardSummary } from "@civicos/shared";
+import { ActionButton, PaginationControls, PortalStatePill, relativeDate } from "../../_components/ui";
 import { apiFetch } from "../_lib/api";
-import { PaginationControls, TicketCard } from "../../_components/ui";
+import { TicketDetailClient } from "./[id]/ticket-detail-client";
+import AgencyTicketPage from "./new/page";
 
 export default function TicketQueuePage() {
   const [tickets, setTickets] = useState<ProjectHeadTicketSummary[]>([]);
@@ -14,34 +15,42 @@ export default function TicketQueuePage() {
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<PaginationMeta>({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [error, setError] = useState<string>();
+  const [expandedId, setExpandedId] = useState<string>();
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
-    void Promise.all([
-      apiFetch<{ categories: CategorySummary[] }>("/categories"),
-      apiFetch<{ wards: WardSummary[] }>("/wards"),
-    ]).then(([categoryResult, wardResult]) => { setCategories(categoryResult.categories); setWards(wardResult.wards); }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load filters"));
+    void Promise.all([apiFetch<{ categories: CategorySummary[] }>("/categories"), apiFetch<{ wards: WardSummary[] }>("/wards")])
+      .then(([categoryResult, wardResult]) => { setCategories(categoryResult.categories); setWards(wardResult.wards); })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load filters"));
   }, []);
+
   useEffect(() => {
     const query = new URLSearchParams([...Object.entries(filters).filter(([, value]) => value), ["page", String(page)], ["limit", "20"]]);
-    void apiFetch<{ tickets: ProjectHeadTicketSummary[]; pagination: PaginationMeta }>(`/tickets?${query.toString()}`).then((result) => { setTickets(result.tickets); setPagination(result.pagination); }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load tickets"));
+    void apiFetch<{ tickets: ProjectHeadTicketSummary[]; pagination: PaginationMeta }>(`/tickets?${query.toString()}`).then((result) => { setTickets(result.tickets); setPagination(result.pagination); })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load tickets"));
   }, [filters, page]);
+
+  useEffect(() => {
+    const requestedTicket = new URLSearchParams(window.location.search).get("ticket");
+    if (requestedTicket) setExpandedId(requestedTicket);
+  }, []);
 
   const changeFilters = (next: typeof filters) => { setFilters(next); setPage(1); };
 
-  return (
-    <>
-      <header className="portal-heading"><div><p className="eyebrow">W-P3 · Validated tickets</p><h1>Agency ticket queue</h1><p>Only tickets assigned to your agency are returned by the API.</p></div><Link className="primary-link" href="/project-head/tickets/new">New agency ticket</Link></header>
-      <section className="filter-bar" aria-label="Ticket filters">
-        <label>Status<select value={filters.status} onChange={(event) => changeFilters({ ...filters, status: event.target.value })}><option value="">All open states</option>{(["ROUTED_TO_AGENCY", "INSPECTION_DUE", "INSPECTION_COMPLETE", "ENGINEER_ASSIGNED"] satisfies TicketState[]).map((state) => <option key={state} value={state}>{state.replaceAll("_", " ")}</option>)}</select></label>
-        <label>Category<select value={filters.category} onChange={(event) => changeFilters({ ...filters, category: event.target.value })}><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-        <label>Ward<select value={filters.ward} onChange={(event) => changeFilters({ ...filters, ward: event.target.value })}><option value="">All wards</option>{wards.map((ward) => <option key={ward.id} value={ward.id}>{ward.name}</option>)}</select></label>
-      </section>
-      {error ? <p className="error" role="alert">{error}</p> : null}
-      <section className="cv-ticket-grid">
-        {tickets.map((ticket) => <TicketCard category={ticket.category.name} date={ticket.validatedAt ?? ticket.createdAt} href={`/project-head/tickets/${ticket.id}`} id={ticket.id} key={ticket.id} meta={ticket.ward.name} status={ticket.inspectionDue ? "Inspection due" : ticket.state} title={ticket.title} />)}
-        {tickets.length === 0 ? <div className="empty-state"><strong>No tickets match these filters.</strong><span>New validated work will appear here automatically.</span></div> : null}
-      </section>
-      <PaginationControls page={pagination.page} totalPages={pagination.totalPages} onPageChange={setPage} />
-    </>
-  );
+  return <>
+    <header className="portal-heading"><div><p className="eyebrow">Validated tickets</p><h1>Agency ticket queue</h1><p>Review, inspect, and progress tickets assigned to your agency.</p></div><button aria-expanded={createOpen} className="portal-primary-button" onClick={() => setCreateOpen((open) => !open)} type="button">{createOpen ? "Close ticket form" : "New agency ticket"}</button></header>
+    {createOpen ? <section aria-label="Create agency ticket" className="portal-inline-drawer"><AgencyTicketPage /></section> : null}
+    <section aria-label="Ticket filters" className="filter-bar">
+      <label>Status<select value={filters.status} onChange={(event) => changeFilters({ ...filters, status: event.target.value })}><option value="">All open states</option>{(["ROUTED_TO_AGENCY", "INSPECTION_DUE", "INSPECTION_COMPLETE", "ENGINEER_ASSIGNED"] satisfies TicketState[]).map((state) => <option key={state} value={state}>{state.replaceAll("_", " ")}</option>)}</select></label>
+      <label>Category<select value={filters.category} onChange={(event) => changeFilters({ ...filters, category: event.target.value })}><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+      <label>Ward<select value={filters.ward} onChange={(event) => changeFilters({ ...filters, ward: event.target.value })}><option value="">All wards</option>{wards.map((ward) => <option key={ward.id} value={ward.id}>{ward.name}</option>)}</select></label>
+    </section>
+    {error ? <p className="error" role="alert">{error}</p> : null}
+    <section className="table-card portal-work-table"><div className="table-scroll"><table><thead><tr><th>Ticket</th><th>Issue</th><th>Category</th><th>Ward</th><th>Status</th><th>Updated</th><th>Action</th></tr></thead><tbody>{tickets.map((ticket) => {
+      const expanded = expandedId === ticket.id;
+      return <Fragment key={ticket.id}><tr className={expanded ? "expanded" : ""}><td><code>{ticket.id.slice(0, 8)}</code></td><td><strong>{ticket.title}</strong></td><td>{ticket.category.name}</td><td>{ticket.ward.name}</td><td><PortalStatePill state={ticket.inspectionDue ? "INSPECTION_DUE" : ticket.state} /></td><td>{relativeDate(ticket.validatedAt ?? ticket.createdAt)}</td><td><ActionButton expanded={expanded} onClick={() => setExpandedId(expanded ? undefined : ticket.id)}>{expanded ? "Close" : "View"}</ActionButton></td></tr>{expanded ? <tr className="portal-inline-row"><td colSpan={7}><div className="portal-reveal"><TicketDetailClient ticketId={ticket.id} /><div className="portal-deep-link"><ActionButton href={`/project-head/tickets/${ticket.id}`}>Open full page</ActionButton></div></div></td></tr> : null}</Fragment>;
+    })}</tbody></table></div>{tickets.length === 0 ? <div className="empty-state"><strong>No tickets match these filters.</strong><span>New validated work will appear here automatically.</span></div> : null}</section>
+    {expandedId && !tickets.some((ticket) => ticket.id === expandedId) ? <section className="portal-detached-reveal"><TicketDetailClient ticketId={expandedId} /><ActionButton onClick={() => setExpandedId(undefined)}>Close</ActionButton></section> : null}
+    <PaginationControls page={pagination.page} totalPages={pagination.totalPages} onPageChange={setPage} />
+  </>;
 }
