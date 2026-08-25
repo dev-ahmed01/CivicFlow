@@ -6,5 +6,5 @@ import Link from "next/link";
 export const metadata: Metadata = { title: "Nearby verification | CivicOS" };
 
 export default function VerificationPage() {
-  return <main><CitizenHeader /><div className="verification-switch"><span>Review nearby issue reports here.</span><Link className="secondary-link" href="/completion-verification">Verify completed work</Link></div><VerificationPanel /></main>;
+  return <main className="citizen-shell"><CitizenHeader /><div className="verification-switch"><span>Review nearby issue reports here.</span><Link className="secondary-link" href="/completion-verification">Verify completed work</Link></div><VerificationPanel /></main>;
 }

@@ -3,14 +3,21 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.hoisted(() => vi.fn());
+const findFirst = vi.hoisted(() => vi.fn());
 
 vi.mock("db", () => ({
-  prisma: { user: { findUnique } },
+  prisma: { user: { findFirst, findUnique } },
   UserRole: { CITIZEN: "CITIZEN", PROJECT_HEAD: "PROJECT_HEAD", ENGINEER: "ENGINEER", ADMIN: "ADMIN" },
 }));
 
 vi.mock("bcrypt", () => ({
   default: { compare: vi.fn(async () => true) },
+}));
+
+vi.mock("./tokens", () => ({
+  issueTokens: vi.fn(async () => ({ accessToken: "access", refreshToken: "refresh", expiresIn: "15m" })),
+  revokeRefreshToken: vi.fn(),
+  rotateRefreshToken: vi.fn(),
 }));
 
 import { createAuthRouter } from "./routes";
@@ -20,7 +27,26 @@ describe("internal role login", () => {
   app.use(express.json());
   app.use("/auth", createAuthRouter({ async sendOtp() {} }));
 
-  beforeEach(() => findUnique.mockReset());
+  beforeEach(() => { findFirst.mockReset(); findUnique.mockReset(); });
+
+  it("authenticates a citizen by a non-email User ID", async () => {
+    findFirst.mockResolvedValue({
+      id: "citizen-1",
+      role: "CITIZEN",
+      phone: "+919876500001",
+      email: "citizen.koramangala@cityconnect.local",
+      passwordHash: "hash",
+    });
+
+    const response = await request(app).post("/auth/citizen/login").send({
+      userId: "+919876500001",
+      password: "CityConnect@123",
+    }).expect(200);
+
+    expect(findFirst).toHaveBeenCalledWith({ where: { role: "CITIZEN", OR: [{ email: "+919876500001" }, { phone: "+919876500001" }] } });
+    expect(response.body.user.role).toBe("CITIZEN");
+    expect(response.body.accessToken).toBe("access");
+  });
 
   it("rejects a valid internal account when it does not match the selected workspace", async () => {
     findUnique.mockResolvedValue({

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import Image from "next/image";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { CategorySummary, CitizenTicketSummary } from "@civicos/shared";
-import { CategoryGrid, PrimaryButton, StatusChip } from "./_components/ui";
+import { CitizenIcon, PrimaryButton, StatusChip } from "./_components/ui";
 import { getCitizenAccessToken } from "./_lib/citizen-auth";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -25,21 +26,57 @@ function contentType(file: File): "image/jpeg" | "image/png" | "image/webp" | "i
 export function ReportForm() {
   const [categories, setCategories] = useState<CategorySummary[]>([]);
   const [categoryId, setCategoryId] = useState("");
-  const [query, setQuery] = useState("");
   const [primary, setPrimary] = useState<File>();
   const [supporting, setSupporting] = useState<File[]>([]);
-  const [location, setLocation] = useState({ latitude: 12.9352, longitude: 77.6245, address: "" });
+  const [location, setLocation] = useState({ latitude: 12.9352, longitude: 77.6245, address: "Koramangala, Bengaluru" });
+  const [locating, setLocating] = useState(false);
   const [draftTicketId, setDraftTicketId] = useState<string>();
   const [feedback, setFeedback] = useState<string>();
   const [result, setResult] = useState<CitizenTicketSummary>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
-  useEffect(() => { void apiFetch<{ categories: CategorySummary[] }>("/categories").then((body) => setCategories(body.categories)).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load categories")); }, []);
-  const locate = () => navigator.geolocation.getCurrentPosition((position) => setLocation((current) => ({ ...current, latitude: position.coords.latitude, longitude: position.coords.longitude })), () => setError("We couldn’t detect your location. You can enter coordinates below."), { enableHighAccuracy: true });
+  useEffect(() => {
+    void apiFetch<{ categories: CategorySummary[] }>("/categories").then((body) => setCategories(body.categories)).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load categories"));
+  }, []);
+
+  const locate = () => {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation((current) => ({ ...current, latitude: position.coords.latitude, longitude: position.coords.longitude }));
+        setLocating(false);
+      },
+      () => {
+        setError("We couldn’t detect your location, so the demo pin remains selected. Confirm the address before submitting.");
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 8_000 },
+    );
+  };
+
+  useEffect(() => { locate(); }, []);
+
+  const files = useMemo(() => primary ? [primary, ...supporting] : supporting, [primary, supporting]);
+  const previews = useMemo(() => files.map((file) => ({ file, url: URL.createObjectURL(file) })), [files]);
+  useEffect(() => () => previews.forEach(({ url }) => URL.revokeObjectURL(url)), [previews]);
+
+  const chooseFiles = (selected: File[]) => {
+    const next = selected.slice(0, 3);
+    setPrimary(next[0]);
+    setSupporting(next.slice(1));
+  };
+
+  const removeFile = (index: number) => {
+    const next = files.filter((_file, fileIndex) => fileIndex !== index);
+    setPrimary(next[0]);
+    setSupporting(next.slice(1));
+  };
 
   const submit = async (event: FormEvent) => {
-    event.preventDefault(); if (!primary || !categoryId || !location.address.trim()) return;
+    event.preventDefault();
+    if (!primary || !categoryId || !location.address.trim()) return;
     setBusy(true); setError(undefined); setFeedback(undefined);
     try {
       let ticketId = draftTicketId; let imageId: string; let upload: { uploadUrl: string; headers: Record<string, string> };
@@ -60,18 +97,25 @@ export function ReportForm() {
         await apiFetch(`/tickets/${ticketId}/images`, { method: "POST", body: JSON.stringify({ action: "complete", imageId: target.imageId }) });
       }
       const completed = await apiFetch<{ needsRetake: true; ticketId: string; message: string } | { needsRetake: false; ticket: CitizenTicketSummary }>(`/tickets/${ticketId}/images`, { method: "POST", body: JSON.stringify({ action: "complete", imageId }) });
-      if (completed.needsRetake) { setDraftTicketId(completed.ticketId); setFeedback(completed.message); setPrimary(undefined); }
+      if (completed.needsRetake) { setDraftTicketId(completed.ticketId); setFeedback(completed.message); setPrimary(undefined); setSupporting([]); }
       else { setResult(completed.ticket); setDraftTicketId(undefined); }
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not submit report"); }
     finally { setBusy(false); }
   };
 
-  if (result) return <section className="confirmation" aria-live="polite"><span className="success-mark">✓</span><p className="eyebrow">Report submitted</p><h2>{result.title}</h2><p className="ticket-id">Ticket ID: {result.id}</p><StatusChip label={result.statusLabel} /><PrimaryButton type="button" onClick={() => setResult(undefined)}>Done</PrimaryButton></section>;
-  const filtered = categories.filter((category) => category.name.toLowerCase().includes(query.toLowerCase()));
-  return <form className="report-form" onSubmit={(event) => void submit(event)}>
-    <section className="form-section" id="report-category"><div className="step">1</div><div className="section-content"><p className="eyebrow">Issue category</p><h2>What needs attention?</h2><input aria-label="Search categories" placeholder="Search issue types" value={query} onChange={(event) => setQuery(event.target.value)} /><CategoryGrid categories={filtered} selectedId={categoryId} onSelect={(category) => setCategoryId(category.id)} /></div></section>
-    <section className="form-section"><div className="step">2</div><div className="section-content"><p className="eyebrow">Photo evidence</p><h2>Show us the issue</h2><label className="upload"><strong>{primary ? primary.name : "Add a clear main photo"}</strong><span>Camera or gallery · required</span><input required type="file" accept="image/*" capture="environment" onChange={(event) => setPrimary(event.target.files?.[0])} /></label><label>Supporting photos (up to 3)<input type="file" accept="image/*" multiple onChange={(event) => setSupporting(Array.from(event.target.files ?? []).slice(0, 3))} /></label></div></section>
-    <section className="form-section"><div className="step">3</div><div className="section-content"><p className="eyebrow">Location</p><h2>Confirm the pin</h2><button className="secondary" type="button" onClick={locate}>Use my current location</button><div className="coordinate-row"><label>Latitude<input required type="number" step="any" value={location.latitude} onChange={(event) => setLocation({ ...location, latitude: Number(event.target.value) })} /></label><label>Longitude<input required type="number" step="any" value={location.longitude} onChange={(event) => setLocation({ ...location, longitude: Number(event.target.value) })} /></label></div><label>Address<textarea required value={location.address} onChange={(event) => setLocation({ ...location, address: event.target.value })} placeholder="Street, landmark, ward" /></label><p className="help">Adjust the coordinates if the detected pin is approximate.</p></div></section>
-    <section className="form-section"><div className="step">4</div><div className="section-content"><p className="eyebrow">Review</p><h2>Ready to send?</h2><p className="help">Your report will be checked and shared with the community for validation.</p>{feedback ? <div className="feedback" role="alert"><strong>Let’s try a clearer photo</strong><p>{feedback}</p></div> : null}{error ? <p className="error" role="alert">{error}</p> : null}<button disabled={busy || !categoryId || !primary} type="submit">{busy ? "Sending…" : draftTicketId ? "Submit New Photo" : "Submit Report"}</button></div></section>
+  if (result) return <section className="confirmation cf-report-confirmation" aria-live="polite"><span className="success-mark"><CitizenIcon name="check" /></span><p className="eyebrow">Report submitted</p><h2>{result.title}</h2><p className="ticket-id">Ticket ID: {result.id}</p><StatusChip label={result.statusLabel} /><PrimaryButton type="button" onClick={() => setResult(undefined)}>Report another issue</PrimaryButton></section>;
+
+  return <form className="cf-report-form" id="report-form" onSubmit={(event) => void submit(event)}>
+    <header className="cf-form-heading"><span><CitizenIcon name="file" size={28} /></span><div><h2>Report an Issue</h2><p>Help us understand what’s happening.</p></div></header>
+    <section className="cf-form-step"><span className="cf-step-number">1</span><div><h3>What’s the issue?</h3><small>Select an issue</small><label className="sr-only" htmlFor="issue-category">Choose an issue category</label><select id="issue-category" required value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Choose an issue category</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div></section>
+    <section className="cf-form-step"><span className="cf-step-number">2</span><div><h3>Show us the issue</h3><small>Add up to 3 photos to help city teams verify and understand the issue.</small>
+      <label className="cf-upload-zone"><input accept="image/jpeg,image/png" multiple onChange={(event) => chooseFiles(Array.from(event.target.files ?? []))} type="file" /><span><CitizenIcon name="camera" />Add Photos</span><small>Up to 3 photos&nbsp; • &nbsp;JPG, PNG</small></label>
+      {previews.length ? <div className="cf-photo-previews">{previews.map(({ file, url }, index) => <div key={`${file.name}-${file.lastModified}`}><Image alt={`Selected evidence ${index + 1}`} height={72} src={url} unoptimized width={108} /><button aria-label={`Remove ${file.name}`} onClick={() => removeFile(index)} type="button">×</button></div>)}</div> : null}
+      <div className="cf-location-row"><CitizenIcon name="location" /><label><span>Report location</span><input required value={location.address} onChange={(event) => setLocation({ ...location, address: event.target.value })} /></label><button onClick={locate} type="button">{locating ? "Locating…" : "Refresh pin"}</button></div>
+    </div></section>
+    {feedback ? <div className="feedback" role="alert"><strong>Let’s try a clearer photo</strong><p>{feedback}</p></div> : null}
+    {error ? <p className="error" role="alert">{error}</p> : null}
+    <button className="cf-submit-report" disabled={busy || !categoryId || !primary || !location.address.trim()} type="submit">{busy ? "Sending…" : draftTicketId ? "Submit New Photo" : "Submit Report"}<CitizenIcon name="arrow" /></button>
+    <p className="cf-form-disclaimer"><CitizenIcon name="lock" size={15} />Your report will be reviewed before being sent to the appropriate city team.</p>
   </form>;
 }

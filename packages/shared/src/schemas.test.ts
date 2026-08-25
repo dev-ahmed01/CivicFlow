@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { internalLoginSchema, requestOtpSchema, submitValidationSchema, ticketStateSchema, toCitizenTicketState } from "./schemas";
+import { citizenLoginSchema, internalLoginSchema, requestOtpSchema, submitValidationSchema, ticketStateSchema, toCitizenTicketState } from "./schemas";
 
 describe("shared schemas", () => {
   it("accepts a citizen phone in E.164 format", () => {
@@ -31,5 +31,10 @@ describe("shared schemas", () => {
   it("accepts an explicit internal workspace role and rejects citizen as an internal role", () => {
     expect(internalLoginSchema.parse({ email: "head@example.com", password: "password", expectedRole: "PROJECT_HEAD" }).expectedRole).toBe("PROJECT_HEAD");
     expect(internalLoginSchema.safeParse({ email: "citizen@example.com", password: "password", expectedRole: "CITIZEN" }).success).toBe(false);
+  });
+
+  it("accepts a citizen user ID without requiring email syntax", () => {
+    expect(citizenLoginSchema.parse({ userId: "+919876500001", password: "CityConnect@123" }).userId).toBe("+919876500001");
+    expect(citizenLoginSchema.parse({ userId: "citizen.koramangala", password: "CityConnect@123" }).userId).toBe("citizen.koramangala");
   });
 });

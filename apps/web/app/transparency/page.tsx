@@ -10,7 +10,7 @@ export default function TransparencyPage() {
   const [data, setData] = useState<PublicDashboard>();
   const [error, setError] = useState<string>();
   useEffect(() => { void fetch(`${apiUrl}/analytics/public-dashboard`, { cache: "no-store" }).then(async (response) => { if (!response.ok) throw new Error("Public statistics are temporarily unavailable"); return response.json() as Promise<PublicDashboard>; }).then(setData).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load public statistics")); }, []);
-  return <main className="transparency-page">
+  return <main className="citizen-shell transparency-page">
     <header className="transparency-hero"><nav><Link className="portal-brand" href="/"><span>C</span>CivicOS</Link><Link href="/">Report an issue</Link></nav><div><p className="eyebrow">Open civic performance</p><h1>Bengaluru, in the clear.</h1><p>Aggregated city outcomes from report to resolution. No login, no personal data, no individual ticket details.</p></div></header>
     <div className="transparency-content">{error ? <p className="error" role="alert">{error}</p> : null}{!data && !error ? <p>Loading city-wide statistics…</p> : null}{data ? <>
       <section className="privacy-banner"><strong>Privacy by design</strong><span>{data.privacyNotice}</span></section>

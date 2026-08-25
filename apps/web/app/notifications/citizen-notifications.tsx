@@ -22,5 +22,5 @@ export function CitizenNotificationBell() {
 }
 
 export function CitizenNotificationCenter() {
-  return <NotificationCenter apiFetch={citizenApiFetch} role="CITIZEN" showFilters={false} />;
+  return <NotificationCenter apiFetch={citizenApiFetch} role="CITIZEN" showFilters={false} variant="citizen" />;
 }

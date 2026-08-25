@@ -722,6 +722,11 @@ export const verifyOtpSchema = requestOtpSchema.extend({
   code: z.string().regex(/^\d{6}$/),
 });
 
+export const citizenLoginSchema = z.object({
+  userId: z.string().min(3),
+  password: z.string().min(8),
+});
+
 export const internalLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
@@ -804,3 +809,8 @@ export type ProjectHeadTicketDetail = z.infer<typeof projectHeadTicketDetailSche
 export type ProjectHeadDashboardCounts = z.infer<typeof projectHeadDashboardCountsSchema>;
 export type ProjectListItem = z.infer<typeof projectListItemSchema>;
 export type PaginationMeta = { page: number; limit: number; total: number; totalPages: number };
+export type CitizenTicketTimelineItem = {
+  status: CitizenTicketState;
+  label: string;
+  at: string | Date;
+};

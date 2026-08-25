@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import {
+  citizenLoginSchema,
   internalLoginSchema,
   refreshTokenRequestSchema,
   requestOtpSchema,
@@ -66,6 +67,33 @@ export function createAuthRouter(otpProvider: OtpProvider): Router {
     } catch {
       response.status(401).json({ error: "Invalid or expired OTP" });
     }
+  });
+
+  router.post("/citizen/login", async (request: Request, response: Response) => {
+    const parsed = citizenLoginSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "Invalid request", issues: parsed.error.issues });
+      return;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        role: UserRole.CITIZEN,
+        OR: [
+          { email: parsed.data.userId.toLowerCase() },
+          { phone: parsed.data.userId },
+        ],
+      },
+    });
+    if (!user?.passwordHash || !(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
+      response.status(401).json({ error: "Invalid User ID or password" });
+      return;
+    }
+
+    response.json({
+      user: { id: user.id, role: user.role, phone: user.phone, email: user.email },
+      ...(await issueTokens(user)),
+    });
   });
 
   router.post("/internal/login", async (request: Request, response: Response) => {
