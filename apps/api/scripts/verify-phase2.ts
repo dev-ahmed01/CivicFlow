@@ -46,7 +46,7 @@ async function createDraft(app: ReturnType<typeof createApp>, auth: string, suff
   return request(app).post("/tickets").set("Authorization", `Bearer ${auth}`).send({
     categoryId: streetlightId,
     title: `${titlePrefix} ${suffix}`,
-    address: "80 Feet Road, Koramangala, Bengaluru",
+    address: "11th Main Road, Jayanagar, Bengaluru",
     latitude,
     longitude,
     primaryImage: { fileName: "pothole.jpg", contentType: "image/jpeg" },
@@ -70,7 +70,7 @@ async function main(): Promise<void> {
   await cleanup();
   const app = createApp({ imageRelevance: new AcceptanceRelevance(), imageStorage: storage, otpProvider: { async sendOtp() {} } });
   try {
-    const first = await createDraft(app, token(citizenOne), "first", 12.935, 77.62);
+    const first = await createDraft(app, token(citizenOne), "first", 12.9299, 77.5844);
     let imageId = first.body.imageId as string;
     const ticketId = first.body.ticketId as string;
 
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
       }
     }
 
-    const second = await createDraft(app, token(citizenTwo), "second", 12.9351, 77.6201);
+    const second = await createDraft(app, token(citizenTwo), "second", 12.9300, 77.5845);
     const shared = await request(app).post(`/tickets/${second.body.ticketId}/images`).set("Authorization", `Bearer ${token(citizenTwo)}`).send({ action: "complete", imageId: second.body.imageId }).expect(200);
     assert.equal(shared.body.ticket.id, ticketId);
     assert.equal(shared.body.ticket.observationCount, 2);

@@ -28,7 +28,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <p className="portal-role">City Administrator</p>
       <nav aria-label="Admin navigation">{links.map(([label, href]) => <Link className={pathname === href ? "active" : ""} href={href} key={href}>{label}</Link>)}</nav>
       <Link className="public-link" href="/transparency">Public dashboard ↗</Link>
-      <button className="portal-logout" type="button" onClick={() => { clearAdminSession(); router.replace("/admin/login"); }}>Sign out</button>
+      <button className="portal-logout" type="button" onClick={() => { clearAdminSession(); router.replace("/login"); }}>Sign out</button>
     </aside>
     <main className="portal-content">{children}</main>
   </div>;

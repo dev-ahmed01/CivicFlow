@@ -11,7 +11,7 @@ process.env.JWT_ACCESS_SECRET ??= "test-access-secret-that-is-at-least-32-charac
 process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret-that-is-at-least-32-characters";
 
 const titlePrefix = "[Phase 7 acceptance]";
-const wardId = "10000000-0000-4000-8000-000000000001";
+const wardId = "10000000-0000-4000-8000-000000000004";
 const categoryId = "30000000-0000-4000-8000-000000000001";
 
 const actors = {
@@ -32,7 +32,7 @@ async function createPlannedProject(input: { title: string; longitude: number; l
     INSERT INTO "Ticket" ("id", "categoryId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
     VALUES (${ticketId}::uuid, ${categoryId}::uuid, ${input.agencyId}::uuid,
       ST_SetSRID(ST_MakePoint(${input.longitude}, ${input.latitude}), 4326), ${wardId}::uuid,
-      ${TicketState.ENGINEER_ASSIGNED}::"TicketState", ${`${titlePrefix} ${input.title}`}, ${`${input.title}, Koramangala, Bengaluru`}, NOW())
+      ${TicketState.ENGINEER_ASSIGNED}::"TicketState", ${`${titlePrefix} ${input.title}`}, ${`${input.title}, Jayanagar, Bengaluru`}, NOW())
   `;
   await prisma.project.create({ data: {
     id: projectId,
@@ -71,9 +71,9 @@ async function main(): Promise<void> {
   ]);
 
   try {
-    const projectA = await createPlannedProject({ title: "PWD carriageway renewal", longitude: 77.6200, latitude: 12.9350, ...actors.pwd });
-    const projectB = await createPlannedProject({ title: "BWSSB water-main repair", longitude: 77.6200, latitude: 12.93545, ...actors.bwssb });
-    const projectC = await createPlannedProject({ title: "BESCOM cable maintenance", longitude: 77.6200, latitude: 12.93365, ...actors.bescom });
+    const projectA = await createPlannedProject({ title: "PWD carriageway renewal", longitude: 77.5844, latitude: 12.9299, ...actors.pwd });
+    const projectB = await createPlannedProject({ title: "BWSSB water-main repair", longitude: 77.5844, latitude: 12.93035, ...actors.bwssb });
+    const projectC = await createPlannedProject({ title: "BESCOM cable maintenance", longitude: 77.5844, latitude: 12.92855, ...actors.bescom });
 
     assert.deepEqual((await saveTimeline(app, pwdToken, projectA)).body.conflicts, []);
     const prominent = projectConflictSchema.array().parse((await saveTimeline(app, bwssbToken, projectB)).body.conflicts);

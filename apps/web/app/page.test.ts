@@ -7,6 +7,6 @@ describe("web foundation", () => {
   });
 
   it("supports the citizen User ID login contract used by the web experience", () => {
-    expect(citizenLoginSchema.safeParse({ userId: "citizen.koramangala", password: "CityConnect@123" }).success).toBe(true);
+    expect(citizenLoginSchema.safeParse({ userId: "citizen.jayanagar", password: "CityConnect@123" }).success).toBe(true);
   });
 });

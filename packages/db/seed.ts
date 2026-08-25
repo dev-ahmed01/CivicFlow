@@ -137,23 +137,23 @@ const adminConfigs = [
   { key: "road.repeated_excavation_days", value: 90, description: "Days after restoration during which a new excavation receives an advisory warning" },
 ] as const;
 
-// Part III §9.3 — deterministic, progressively farther Koramangala citizens
+// Part III §9.3 — deterministic, progressively farther Jayanagar citizens
 // power the nearest-15 and stale-batch demo/acceptance flow.
 const communityValidators = Array.from({ length: 30 }, (_unused, index) => ({
   id: `41000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
   role: UserRole.CITIZEN,
   phone: `+91987651${String(index + 1).padStart(4, "0")}`,
-  wardId: ids.wards.koramangala,
+  wardId: ids.wards.jayanagar,
   phoneVerifiedAt: new Date(),
-  latitude: 12.935 + (index + 1) * 0.0001,
-  longitude: 77.62,
+  latitude: 12.929 + (index + 1) * 0.0001,
+  longitude: 77.5844,
 }));
 
 const engineerDemoProjects = [
-  { suffix: "01", title: "Repair failed carriageway near Koramangala 5th Block", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.ENGINEER_ASSIGNED, projectState: ProjectState.PENDING_UPTAKE, wardId: ids.wards.koramangala, categoryId: categories[0].id, longitude: 77.6212, latitude: 12.9348, start: null, end: null },
-  { suffix: "02", title: "Restore damaged road shoulder on 80 Feet Road", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.WORK_IN_PROGRESS, projectState: ProjectState.ACTIVE, wardId: ids.wards.koramangala, categoryId: categories[0].id, longitude: 77.6241, latitude: 12.9361, start: new Date("2026-08-20T00:00:00.000Z"), end: new Date("2026-09-03T23:59:59.999Z") },
-  { suffix: "03", title: "Replace leaking distribution valve in HSR Layout", agencyId: ids.agencies.bwssb, engineerId: "40000000-0000-4000-8000-000000000202", ticketState: TicketState.WORK_IN_PROGRESS, projectState: ProjectState.ACTIVE, wardId: ids.wards.hsrLayout, categoryId: categories[2].id, longitude: 77.6389, latitude: 12.9116, start: new Date("2026-08-22T00:00:00.000Z"), end: new Date("2026-09-08T23:59:59.999Z") },
-  { suffix: "04", title: "Complete pothole patching near Forum junction", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.WORK_COMPLETED, projectState: ProjectState.COMPLETED, wardId: ids.wards.koramangala, categoryId: categories[0].id, longitude: 77.6118, latitude: 12.9342, start: new Date("2026-08-15T00:00:00.000Z"), end: new Date("2026-08-22T23:59:59.999Z") },
+  { suffix: "01", title: "Repair failed carriageway near Jayanagar 4th Block", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.ENGINEER_ASSIGNED, projectState: ProjectState.PENDING_UPTAKE, wardId: ids.wards.jayanagar, categoryId: categories[0].id, longitude: 77.5844, latitude: 12.9299, start: null, end: null },
+  { suffix: "02", title: "Restore damaged road shoulder on 11th Main Road", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.WORK_IN_PROGRESS, projectState: ProjectState.ACTIVE, wardId: ids.wards.jayanagar, categoryId: categories[0].id, longitude: 77.5861, latitude: 12.9268, start: new Date("2026-08-20T00:00:00.000Z"), end: new Date("2026-09-03T23:59:59.999Z") },
+  { suffix: "03", title: "Replace leaking distribution valve near Jayanagar 4th T Block", agencyId: ids.agencies.bwssb, engineerId: "40000000-0000-4000-8000-000000000202", ticketState: TicketState.WORK_IN_PROGRESS, projectState: ProjectState.ACTIVE, wardId: ids.wards.jayanagar, categoryId: categories[2].id, longitude: 77.5896, latitude: 12.9208, start: new Date("2026-08-22T00:00:00.000Z"), end: new Date("2026-09-08T23:59:59.999Z") },
+  { suffix: "04", title: "Complete pothole patching near South End Circle", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.WORK_COMPLETED, projectState: ProjectState.COMPLETED, wardId: ids.wards.jayanagar, categoryId: categories[0].id, longitude: 77.5802, latitude: 12.9367, start: new Date("2026-08-15T00:00:00.000Z"), end: new Date("2026-08-22T23:59:59.999Z") },
 ] as const;
 
 async function seedWards(): Promise<void> {
@@ -180,7 +180,7 @@ async function seedEngineerWorkflowDemo(): Promise<void> {
         ${item.ticketState}::"TicketState", ${item.title}, ${`${item.title}, Bengaluru`}, NOW())
       ON CONFLICT ("id") DO UPDATE SET
         "assignedAgencyId" = EXCLUDED."assignedAgencyId", "coordinates" = EXCLUDED."coordinates", "state" = EXCLUDED."state",
-        "title" = EXCLUDED."title", "address" = EXCLUDED."address"
+        "wardId" = EXCLUDED."wardId", "title" = EXCLUDED."title", "address" = EXCLUDED."address"
     `;
     await prisma.observation.upsert({
       where: { id: observationId },
@@ -234,9 +234,9 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
   await prisma.$executeRaw`
     INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "aiRetryCount", "createdAt")
     VALUES (${demo.ticket}::uuid, ${categories[1].id}::uuid, ${reporterId}::uuid, ${ids.agencies.bescom}::uuid,
-      ST_SetSRID(ST_MakePoint(77.6408, 12.9784), 4326), ${ids.wards.indiranagar}::uuid,
-      ${TicketState.CLOSED}::"TicketState", 'Streetlight outage outside Indiranagar Metro',
-      'CMH Road, near Indiranagar Metro Station, Bengaluru', 1, ${at(1)})
+      ST_SetSRID(ST_MakePoint(77.5844, 12.9299), 4326), ${ids.wards.jayanagar}::uuid,
+      ${TicketState.CLOSED}::"TicketState", 'Streetlight outage near Jayanagar 4th Block',
+      '11th Main Road, Jayanagar 4th Block, Bengaluru', 1, ${at(1)})
     ON CONFLICT ("id") DO UPDATE SET
       "categoryId" = EXCLUDED."categoryId", "reporterId" = EXCLUDED."reporterId",
       "assignedAgencyId" = EXCLUDED."assignedAgencyId", "coordinates" = EXCLUDED."coordinates",
@@ -250,22 +250,22 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
     update: {
       ticketId: demo.ticket,
       submitterId: reporterId,
-      imageUrl: `${evidenceBaseUrl}?text=Streetlight+outage+CMH+Road`,
+      imageUrl: `${evidenceBaseUrl}?text=Streetlight+outage+Jayanagar`,
       note: "Two consecutive streetlights are dark beside the metro exit, making the footpath unsafe after dusk.",
-      latitude: 12.9784,
-      longitude: 77.6408,
-      address: "CMH Road, near Indiranagar Metro Station, Bengaluru",
+      latitude: 12.9299,
+      longitude: 77.5844,
+      address: "11th Main Road, Jayanagar 4th Block, Bengaluru",
       createdAt: at(1),
     },
     create: {
       id: demo.observation,
       ticketId: demo.ticket,
       submitterId: reporterId,
-      imageUrl: `${evidenceBaseUrl}?text=Streetlight+outage+CMH+Road`,
+      imageUrl: `${evidenceBaseUrl}?text=Streetlight+outage+Jayanagar`,
       note: "Two consecutive streetlights are dark beside the metro exit, making the footpath unsafe after dusk.",
-      latitude: 12.9784,
-      longitude: 77.6408,
-      address: "CMH Road, near Indiranagar Metro Station, Bengaluru",
+      latitude: 12.9299,
+      longitude: 77.5844,
+      address: "11th Main Road, Jayanagar 4th Block, Bengaluru",
       createdAt: at(1),
     },
   });
@@ -273,7 +273,7 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
     where: { id: demo.image },
     update: {
       observationId: demo.observation,
-      url: `${evidenceBaseUrl}?text=Streetlight+outage+CMH+Road`,
+      url: `${evidenceBaseUrl}?text=Streetlight+outage+Jayanagar`,
       objectKey: "demo/general/streetlight-outage.jpg",
       isPrimary: true,
       aiRelevanceScore: 0.94,
@@ -283,7 +283,7 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
     create: {
       id: demo.image,
       observationId: demo.observation,
-      url: `${evidenceBaseUrl}?text=Streetlight+outage+CMH+Road`,
+      url: `${evidenceBaseUrl}?text=Streetlight+outage+Jayanagar`,
       objectKey: "demo/general/streetlight-outage.jpg",
       isPrimary: true,
       aiRelevanceScore: 0.94,
@@ -476,9 +476,9 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
 async function seedRoadCuttingDemo(): Promise<void> {
   await prisma.$executeRaw`
     INSERT INTO "RoadSegment" ("id", "roadName", "geometry", "wardId", "surfaceType", "lastRestorationDate")
-    VALUES (${ids.roadSegments.flagship}::uuid, 'Segment X · 80 Feet Road',
-      ST_GeomFromText('LINESTRING(77.6205 12.9340,77.6250 12.9360)', 4326),
-      ${ids.wards.koramangala}::uuid, 'Asphalt', ${new Date("2027-04-01T00:00:00.000Z")})
+    VALUES (${ids.roadSegments.flagship}::uuid, 'Segment X · 11th Main Road',
+      ST_GeomFromText('LINESTRING(77.5825 12.9280,77.5870 12.9300)', 4326),
+      ${ids.wards.jayanagar}::uuid, 'Asphalt', ${new Date("2027-04-01T00:00:00.000Z")})
     ON CONFLICT ("id") DO UPDATE SET "roadName" = EXCLUDED."roadName", "geometry" = EXCLUDED."geometry",
       "wardId" = EXCLUDED."wardId", "surfaceType" = EXCLUDED."surfaceType", "lastRestorationDate" = EXCLUDED."lastRestorationDate"
   `;
@@ -505,10 +505,11 @@ async function seedRoadCuttingDemo(): Promise<void> {
     await prisma.$executeRaw`
       INSERT INTO "Ticket" ("id", "categoryId", "assignedAgencyId", "coordinates", "wardId", "roadSegmentId", "state", "title", "address", "createdAt")
       VALUES (${ticketId}::uuid, ${categories[0].id}::uuid, ${item.agencyId}::uuid,
-        ST_SetSRID(ST_MakePoint(77.6225, 12.9350), 4326), ${ids.wards.koramangala}::uuid,
-        ${ids.roadSegments.flagship}::uuid, ${TicketState.WORK_IN_PROGRESS}::"TicketState", ${item.title}, '80 Feet Road, Koramangala, Bengaluru', NOW())
+        ST_SetSRID(ST_MakePoint(77.5845, 12.9290), 4326), ${ids.wards.jayanagar}::uuid,
+        ${ids.roadSegments.flagship}::uuid, ${TicketState.WORK_IN_PROGRESS}::"TicketState", ${item.title}, '11th Main Road, Jayanagar, Bengaluru', NOW())
       ON CONFLICT ("id") DO UPDATE SET "assignedAgencyId" = EXCLUDED."assignedAgencyId", "roadSegmentId" = EXCLUDED."roadSegmentId",
-        "state" = EXCLUDED."state", "title" = EXCLUDED."title"
+        "coordinates" = EXCLUDED."coordinates", "wardId" = EXCLUDED."wardId", "state" = EXCLUDED."state",
+        "title" = EXCLUDED."title", "address" = EXCLUDED."address"
     `;
     await prisma.project.upsert({
       where: { id: projectId },
@@ -570,9 +571,9 @@ async function main(): Promise<void> {
 
   const passwordHash = await bcrypt.hash(demoInternalPassword, 12);
   const users: Array<Prisma.UserUncheckedCreateInput & { latitude?: number; longitude?: number }> = [
-    { id: "40000000-0000-4000-8000-000000000001", role: UserRole.CITIZEN, phone: "+919876500001", email: "citizen.koramangala@cityconnect.local", passwordHash, mustResetPassword: false, wardId: ids.wards.koramangala, phoneVerifiedAt: new Date(), latitude: 12.935, longitude: 77.62 },
-    { id: "40000000-0000-4000-8000-000000000002", role: UserRole.CITIZEN, phone: "+919876500002", email: "citizen.indiranagar@cityconnect.local", passwordHash, mustResetPassword: false, wardId: ids.wards.indiranagar, phoneVerifiedAt: new Date(), latitude: 12.9784, longitude: 77.6408 },
-    { id: "40000000-0000-4000-8000-000000000003", role: UserRole.CITIZEN, phone: "+919876500003", email: "citizen.hsr@cityconnect.local", passwordHash, mustResetPassword: false, wardId: ids.wards.hsrLayout, phoneVerifiedAt: new Date(), latitude: 12.9116, longitude: 77.6389 },
+    { id: "40000000-0000-4000-8000-000000000001", role: UserRole.CITIZEN, phone: "+919876500001", email: "citizen.jayanagar@cityconnect.local", passwordHash, mustResetPassword: false, wardId: ids.wards.jayanagar, phoneVerifiedAt: new Date(), latitude: 12.9299, longitude: 77.5844 },
+    { id: "40000000-0000-4000-8000-000000000002", role: UserRole.CITIZEN, phone: "+919876500002", email: "citizen.jayanagar.2@cityconnect.local", passwordHash, mustResetPassword: false, wardId: ids.wards.jayanagar, phoneVerifiedAt: new Date(), latitude: 12.9288, longitude: 77.5861 },
+    { id: "40000000-0000-4000-8000-000000000003", role: UserRole.CITIZEN, phone: "+919876500003", email: "citizen.jayanagar.3@cityconnect.local", passwordHash, mustResetPassword: false, wardId: ids.wards.jayanagar, phoneVerifiedAt: new Date(), latitude: 12.9268, longitude: 77.5896 },
     ...communityValidators.map((citizen, index) => ({
       ...citizen,
       email: `validator${String(index + 1).padStart(2, "0")}@cityconnect.local`,

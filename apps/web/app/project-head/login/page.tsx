@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { apiFetch, saveSession, type ProjectHeadSession } from "../_lib/api";
@@ -60,6 +61,7 @@ export default function ProjectHeadLoginPage() {
           <button disabled={busy} type="submit">{busy ? "Signing in…" : "Sign in"}</button>
         </form>
         <p className="demo-note">Demo: head.pwd@civicos.local / CivicOS@123</p>
+        <Link className="all-roles-link" href="/login">Sign in with a different role</Link>
       </section>
       <section className="login-context" aria-label="Product context">
         <p className="eyebrow">One civic workflow</p>

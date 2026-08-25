@@ -37,7 +37,7 @@ export function ProjectHeadShell({ children }: { children: ReactNode }) {
 
   const logout = () => {
     clearSession();
-    router.replace("/project-head/login");
+    router.replace("/login");
   };
   return (
     <div className="portal-shell">

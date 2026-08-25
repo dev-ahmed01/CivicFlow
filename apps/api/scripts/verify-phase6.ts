@@ -16,7 +16,7 @@ const reporterId = "40000000-0000-4000-8000-000000000001";
 const validatorId = (number: number) => `41000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
 const pwdAgencyId = "20000000-0000-4000-8000-000000000003";
 const roadCategoryId = "30000000-0000-4000-8000-000000000001";
-const koramangalaWardId = "10000000-0000-4000-8000-000000000001";
+const jayanagarWardId = "10000000-0000-4000-8000-000000000004";
 const pwdEngineerId = "40000000-0000-4000-8000-000000000201";
 
 const storage: ImageStorage = {
@@ -31,7 +31,7 @@ async function login(app: ReturnType<typeof createApp>, email: string): Promise<
 }
 
 function citizenToken(userId: string): string {
-  return jwt.sign({ role: "CITIZEN", agencyId: null, wardId: koramangalaWardId, mustResetPassword: false, tokenType: "access" }, process.env.JWT_ACCESS_SECRET!, {
+  return jwt.sign({ role: "CITIZEN", agencyId: null, wardId: jayanagarWardId, mustResetPassword: false, tokenType: "access" }, process.env.JWT_ACCESS_SECRET!, {
     subject: userId, expiresIn: "15m", issuer: "civicos-api", audience: "civicos-clients",
   });
 }
@@ -43,8 +43,8 @@ async function createInspectedTicket(): Promise<string> {
     await transaction.$executeRaw`
       INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
       VALUES (${ticketId}::uuid, ${roadCategoryId}::uuid, ${reporterId}::uuid, ${pwdAgencyId}::uuid,
-        ST_SetSRID(ST_MakePoint(77.62, 12.935), 4326), ${koramangalaWardId}::uuid,
-        ${TicketState.INSPECTION_COMPLETE}::"TicketState", ${`${titlePrefix} road repair`}, 'Koramangala, Bengaluru', NOW())
+        ST_SetSRID(ST_MakePoint(77.5844, 12.9299), 4326), ${jayanagarWardId}::uuid,
+        ${TicketState.INSPECTION_COMPLETE}::"TicketState", ${`${titlePrefix} road repair`}, 'Jayanagar, Bengaluru', NOW())
     `;
     await transaction.observation.create({ data: { id: observationId, ticketId, submitterId: reporterId, imageUrl: `https://images.example.test/${ticketId}.jpg` } });
     await transaction.image.create({ data: { observationId, url: `https://images.example.test/${ticketId}.jpg`, objectKey: `phase6/${ticketId}.jpg`, isPrimary: true, uploadedAt: new Date() } });

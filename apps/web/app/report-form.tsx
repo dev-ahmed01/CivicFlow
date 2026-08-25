@@ -28,7 +28,7 @@ export function ReportForm() {
   const [categoryId, setCategoryId] = useState("");
   const [primary, setPrimary] = useState<File>();
   const [supporting, setSupporting] = useState<File[]>([]);
-  const [location, setLocation] = useState({ latitude: 12.9352, longitude: 77.6245, address: "Koramangala, Bengaluru" });
+  const [location, setLocation] = useState({ latitude: 12.9299, longitude: 77.5844, address: "Jayanagar, Bengaluru" });
   const [locating, setLocating] = useState(false);
   const [draftTicketId, setDraftTicketId] = useState<string>();
   const [feedback, setFeedback] = useState<string>();

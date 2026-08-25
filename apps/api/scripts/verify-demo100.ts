@@ -8,7 +8,7 @@ import { checkProjectConflicts } from "../src/conflicts/service";
 const ids = {
   agency: "20000000-0000-4000-8000-000000000003",
   category: "30000000-0000-4000-8000-000000000002",
-  ward: "10000000-0000-4000-8000-000000000001",
+  ward: "10000000-0000-4000-8000-000000000004",
   reporter: "40000000-0000-4000-8000-000000000001",
   validator: "41000000-0000-4000-8000-000000000001",
   head: "40000000-0000-4000-8000-000000000101",
@@ -28,7 +28,7 @@ async function cleanupFixture() {
   await prisma.$executeRaw(Prisma.sql`DELETE FROM "Notification" WHERE "payload"->>'projectId' IN (${Prisma.join(notificationProjectIds)})`);
   await prisma.project.deleteMany({ where: { id: { in: notificationProjectIds } } });
   await prisma.ticket.deleteMany({ where: { id: { in: ticketIds } } });
-  await prisma.ticket.deleteMany({ where: { title: "Demo acceptance report", address: "Koramangala 5th Block, Bengaluru" } });
+  await prisma.ticket.deleteMany({ where: { title: "Demo acceptance report" } });
   await prisma.notification.deleteMany({ where: { id: { in: ticketIds.map((_id, index) => uuid("a6000000", index)) } } });
 }
 
@@ -38,13 +38,13 @@ async function prepareFixture() {
   await prisma.$transaction(async (transaction) => {
     for (const [index, id] of ticketIds.entries()) {
       const state = index < 30 ? TicketState.WORK_IN_PROGRESS : index === 30 ? TicketState.INSPECTION_COMPLETE : index % 2 ? TicketState.ROUTED_TO_AGENCY : TicketState.INSPECTION_DUE;
-      const latitude = 12.935 + (index % 10) * 0.00005;
-      const longitude = 77.62 + Math.floor(index / 10) * 0.00005;
+      const latitude = 12.929 + (index % 10) * 0.00005;
+      const longitude = 77.5844 + Math.floor(index / 10) * 0.00005;
       await transaction.$executeRaw(Prisma.sql`
         INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
         VALUES (${id}::uuid, ${ids.category}::uuid, ${ids.reporter}::uuid, ${ids.agency}::uuid,
           ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326), ${ids.ward}::uuid,
-          ${state}::"TicketState", ${`Demo load event ${index + 1}`}, 'Koramangala demo load grid, Bengaluru', NOW() - (${index} * INTERVAL '1 minute'))
+          ${state}::"TicketState", ${`Demo load event ${index + 1}`}, 'Jayanagar demo load grid, Bengaluru', NOW() - (${index} * INTERVAL '1 minute'))
       `);
     }
   });
@@ -52,8 +52,8 @@ async function prepareFixture() {
   await prisma.observation.createMany({ data: ticketIds.map((ticketId, index) => ({
     id: uuid("a2000000", index), ticketId, submitterId: ids.reporter,
     imageUrl: `https://images.example.com/demo-load-${index + 1}.jpg`, note: `Realistic demo observation ${index + 1}`,
-    latitude: 12.935 + (index % 10) * 0.00005, longitude: 77.62 + Math.floor(index / 10) * 0.00005,
-    address: "Koramangala demo load grid, Bengaluru",
+    latitude: 12.929 + (index % 10) * 0.00005, longitude: 77.5844 + Math.floor(index / 10) * 0.00005,
+    address: "Jayanagar demo load grid, Bengaluru",
   })) });
   await prisma.validation.createMany({ data: ticketIds.map((ticketId, index) => ({ id: uuid("a3000000", index), ticketId, validatorId: ids.validator, vote: "CONFIRM", counted: true })) });
   await prisma.ticketStateTransition.createMany({ data: ticketIds.map((ticketId, index) => ({ id: uuid("a7000000", index), ticketId, fromState: TicketState.VALIDATED, toState: index === 30 ? TicketState.INSPECTION_COMPLETE : index < 30 ? TicketState.WORK_IN_PROGRESS : index % 2 ? TicketState.ROUTED_TO_AGENCY : TicketState.INSPECTION_DUE, reason: "DEMO_100_LOAD_FIXTURE" })) });
@@ -113,8 +113,8 @@ async function main() {
   assert.equal(notifications.value.body.notifications.length, 20);
 
   const citizenCreate = await timed(() => agent.post("/tickets").set("Authorization", `Bearer ${citizenToken}`).send({
-    categoryId: ids.category, title: "Demo acceptance report", address: "Koramangala 5th Block, Bengaluru",
-    latitude: 12.9355, longitude: 77.621, note: "Streetlight remains dark after sunset during the demo check.",
+    categoryId: ids.category, title: "Demo acceptance report", address: "Jayanagar 4th Block, Bengaluru",
+    latitude: 12.9295, longitude: 77.5854, note: "Streetlight remains dark after sunset during the demo check.",
     primaryImage: { fileName: "demo-streetlight.jpg", contentType: "image/jpeg" },
   }));
   assert.equal(citizenCreate.value.status, 201);

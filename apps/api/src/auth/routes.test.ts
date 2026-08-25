@@ -34,7 +34,7 @@ describe("internal role login", () => {
       id: "citizen-1",
       role: "CITIZEN",
       phone: "+919876500001",
-      email: "citizen.koramangala@cityconnect.local",
+      email: "citizen.jayanagar@cityconnect.local",
       passwordHash: "hash",
     });
 

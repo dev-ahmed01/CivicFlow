@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { adminApiFetch, ApiError, saveAdminSession, type AdminSession } from "../_lib/api";
@@ -34,7 +35,7 @@ export default function AdminLoginPage() {
         <label>Password<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         {requiresTotp ? <label>Authenticator code<input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ""))} /></label> : null}
         {error ? <p className="error" role="alert">{error}</p> : null}<button disabled={busy} type="submit">{busy ? "Verifying…" : "Sign in"}</button>
-      </form><p className="demo-note">Demo: admin@civicos.local / CivicOS@123</p>
+      </form><p className="demo-note">Demo: admin@civicos.local / CivicOS@123</p><Link className="all-roles-link" href="/login">Sign in with a different role</Link>
     </section>
     <section className="login-context"><p className="eyebrow">Configuration without deployment</p><h2>Measure outcomes. Tune the system.</h2><div><strong>Live routing</strong><span>Category changes apply to the next validated ticket.</span></div><div><strong>Privacy first</strong><span>The public view contains aggregates only.</span></div></section>
   </main>;

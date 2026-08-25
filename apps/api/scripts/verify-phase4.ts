@@ -17,7 +17,7 @@ const titlePrefix = "[Phase 4 acceptance]";
 const reporterId = "40000000-0000-4000-8000-000000000001";
 const validatorId = (number: number) => `41000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
 const roadCategoryId = "30000000-0000-4000-8000-000000000001";
-const koramangalaWardId = "10000000-0000-4000-8000-000000000001";
+const jayanagarWardId = "10000000-0000-4000-8000-000000000004";
 const pwdAgencyId = "20000000-0000-4000-8000-000000000003";
 const bwssbAgencyId = "20000000-0000-4000-8000-000000000001";
 const pwdEngineerId = "40000000-0000-4000-8000-000000000201";
@@ -38,7 +38,7 @@ const relevance: ImageRelevanceService = {
 };
 
 function citizenToken(userId: string): string {
-  return jwt.sign({ role: "CITIZEN", agencyId: null, wardId: koramangalaWardId, mustResetPassword: false, tokenType: "access" }, process.env.JWT_ACCESS_SECRET!, {
+  return jwt.sign({ role: "CITIZEN", agencyId: null, wardId: jayanagarWardId, mustResetPassword: false, tokenType: "access" }, process.env.JWT_ACCESS_SECRET!, {
     subject: userId, expiresIn: "15m", issuer: "civicos-api", audience: "civicos-clients",
   });
 }
@@ -55,8 +55,8 @@ async function createPendingTicket(suffix: string): Promise<string> {
     await transaction.$executeRaw`
       INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "title", "address", "createdAt")
       VALUES (${ticketId}::uuid, ${roadCategoryId}::uuid, ${reporterId}::uuid,
-        ST_SetSRID(ST_MakePoint(77.62, 12.935), 4326), ${koramangalaWardId}::uuid,
-        ${TicketState.AI_CHECK_PENDING}::"TicketState", ${`${titlePrefix} ${suffix}`}, 'Koramangala, Bengaluru', NOW())
+        ST_SetSRID(ST_MakePoint(77.5844, 12.9299), 4326), ${jayanagarWardId}::uuid,
+        ${TicketState.AI_CHECK_PENDING}::"TicketState", ${`${titlePrefix} ${suffix}`}, 'Jayanagar, Bengaluru', NOW())
     `;
     await transaction.observation.create({
       data: { id: observationId, ticketId, submitterId: reporterId, imageUrl: `https://images.example.test/${ticketId}.jpg` },
@@ -116,7 +116,7 @@ async function main(): Promise<void> {
     const agencyTicket = await request(app).post("/tickets/agency-originated").set("Authorization", `Bearer ${pwdToken}`).send({
       action: "create",
       categoryId: roadCategoryId,
-      wardId: koramangalaWardId,
+      wardId: jayanagarWardId,
       description: `${titlePrefix} planned resurfacing inspection`,
       evidence: { fileName: "field-evidence.jpg", contentType: "image/jpeg" },
     }).expect(201);

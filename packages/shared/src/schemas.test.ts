@@ -35,6 +35,6 @@ describe("shared schemas", () => {
 
   it("accepts a citizen user ID without requiring email syntax", () => {
     expect(citizenLoginSchema.parse({ userId: "+919876500001", password: "CityConnect@123" }).userId).toBe("+919876500001");
-    expect(citizenLoginSchema.parse({ userId: "citizen.koramangala", password: "CityConnect@123" }).userId).toBe("citizen.koramangala");
+    expect(citizenLoginSchema.parse({ userId: "citizen.jayanagar", password: "CityConnect@123" }).userId).toBe("citizen.jayanagar");
   });
 });
