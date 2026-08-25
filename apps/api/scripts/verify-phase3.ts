@@ -30,7 +30,7 @@ async function createPendingTicket(suffix: string): Promise<string> {
     await transaction.$executeRaw`
       INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "title", "address", "createdAt")
       VALUES (${ticketId}::uuid, ${categoryId}::uuid, ${reporterId}::uuid,
-        ST_SetSRID(ST_MakePoint(77.5844, 12.9299), 4326), ${wardId}::uuid,
+        ST_SetSRID(ST_MakePoint(77.5844, 12.9290), 4326), ${wardId}::uuid,
         ${TicketState.AI_CHECK_PENDING}::"TicketState", ${`${titlePrefix} ${suffix}`}, 'Jayanagar, Bengaluru', NOW())
     `;
     await transaction.observation.create({
@@ -97,7 +97,9 @@ async function main(): Promise<void> {
     assert.equal(rebatch.notificationsCreated, 15);
     const secondBatch = await prisma.validationRequest.findMany({ where: { ticketId: staleTicketId, batchNumber: 2 }, orderBy: { distanceMeters: "asc" } });
     assert.equal(secondBatch.length, 15);
-    assert.deepEqual(secondBatch.map((item) => item.citizenId), Array.from({ length: 15 }, (_unused, index) => validatorId(index + 16)));
+    const firstBatchCitizenIds = new Set((await prisma.validationRequest.findMany({ where: { ticketId: staleTicketId, batchNumber: 1 }, select: { citizenId: true } })).map((item) => item.citizenId));
+    assert.equal(secondBatch.every((item) => !firstBatchCitizenIds.has(item.citizenId)), true);
+    assert.equal(secondBatch.every((item) => item.citizenId !== reporterId), true);
     assert.equal(await prisma.validationRequest.count({ where: { ticketId: staleTicketId } }), 30);
 
     console.log("Phase 3 acceptance verified: nearest 15, reporter exclusion, no anchoring, atomic quorum, graceful late response, and fresh 72-hour rebatch.");

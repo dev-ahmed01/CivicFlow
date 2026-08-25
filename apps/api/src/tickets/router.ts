@@ -18,6 +18,7 @@ import { enterPendingValidation } from "../validations/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
 
 const terminalStates: TicketState[] = [TicketState.RESOLVED, TicketState.CLOSED, TicketState.REJECTED, TicketState.CANCELLED];
+const preValidationStates: TicketState[] = [TicketState.DRAFT, TicketState.AI_CHECK_PENDING, TicketState.AI_FLAGGED];
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -31,6 +32,7 @@ function routeId(request: Request): string {
 
 type TicketRow = {
   id: string;
+  referenceNumber: string;
   title: string;
   address: string;
   state: TicketState;
@@ -90,7 +92,7 @@ function vectorFromJson(value: Prisma.JsonValue | null): number[] | null {
 
 async function getTicketRow(ticketId: string): Promise<TicketRow | null> {
   const rows = await prisma.$queryRaw<TicketRow[]>`
-    SELECT t."id", t."title", t."address", t."state", t."categoryId",
+    SELECT t."id", t."referenceNumber", t."title", t."address", t."state", t."categoryId",
       c."name" AS "categoryName", t."assignedAgencyId", t."createdAt",
       ST_Y(t."coordinates") AS "latitude", ST_X(t."coordinates") AS "longitude",
       COUNT(o."id") AS "observationCount", t."manualReviewRecommended"
@@ -106,6 +108,7 @@ async function getTicketRow(ticketId: string): Promise<TicketRow | null> {
 function serializeTicket(row: TicketRow) {
   return {
     id: row.id,
+    referenceNumber: row.referenceNumber,
     title: row.title,
     address: row.address,
     category: { id: row.categoryId, name: row.categoryName },
@@ -157,6 +160,11 @@ async function finalizeNewTicket(ticketId: string, visualEmbedding: number[] | n
       await prisma.$transaction(async (transaction) => {
         await transaction.observation.update({ where: { id: observation.id }, data: { ticketId: candidate.id } });
         await transaction.ticket.delete({ where: { id: ticketId } });
+        const existing = await transaction.ticket.findUniqueOrThrow({ where: { id: candidate.id }, select: { state: true } });
+        if (preValidationStates.includes(existing.state)) {
+          // Part III §§8.2–9 — a valid new observation must recover a stalled shared report.
+          await enterPendingValidation(transaction, candidate.id, existing.state);
+        }
       });
       return { ticketId: candidate.id, shared: true };
     }
@@ -182,6 +190,37 @@ async function finalizeNewTicket(ticketId: string, visualEmbedding: number[] | n
 export function createTicketsRouter(relevance: ImageRelevanceService, storage: ImageStorage): Router {
   const router = Router();
   router.use(requireAuth);
+
+  router.get("/reporting-areas", requireRole(UserRole.CITIZEN), asyncRoute(async (_request, response) => {
+    const areas = await prisma.$queryRaw<Array<{ id: string; name: string; latitude: number; longitude: number }>>`
+      SELECT "id", "name",
+        ST_Y(ST_PointOnSurface("boundary"))::double precision AS "latitude",
+        ST_X(ST_PointOnSurface("boundary"))::double precision AS "longitude"
+      FROM "Ward"
+      ORDER BY "name" ASC
+    `;
+    response.json({ areas });
+  }));
+
+  router.post("/reporting-areas/resolve", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {
+    const latitude = typeof request.body?.latitude === "number" ? request.body.latitude : Number.NaN;
+    const longitude = typeof request.body?.longitude === "number" ? request.body.longitude : Number.NaN;
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      response.status(400).json({ error: "Invalid location coordinates" });
+      return;
+    }
+    const areas = await prisma.$queryRaw<Array<{ id: string; name: string; latitude: number; longitude: number }>>`
+      SELECT "id", "name", ${latitude}::double precision AS "latitude", ${longitude}::double precision AS "longitude"
+      FROM "Ward"
+      WHERE ST_Covers("boundary", ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326))
+      LIMIT 1
+    `;
+    if (!areas[0]) {
+      response.status(422).json({ error: "Your current location is outside the supported areas. Choose an area from the list." });
+      return;
+    }
+    response.json({ area: areas[0] });
+  }));
 
   router.get("/categories", requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN), asyncRoute(async (_request, response) => {
     const [categories, roadConfig] = await Promise.all([prisma.category.findMany({
@@ -211,7 +250,7 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
     `;
     const ward = wards[0];
     if (!ward) {
-      response.status(422).json({ error: "This location is outside the currently supported wards" });
+      response.status(422).json({ error: "Choose a supported reporting area or use a current location within one." });
       return;
     }
 
@@ -496,7 +535,7 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
     const [tickets, total] = await Promise.all([
       prisma.ticket.findMany({
         where,
-        select: { id: true, title: true, address: true, state: true, createdAt: true, category: { select: { id: true, name: true } }, _count: { select: { observations: true } } },
+        select: { id: true, referenceNumber: true, title: true, address: true, state: true, createdAt: true, category: { select: { id: true, name: true } }, _count: { select: { observations: true } } },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: pagination.data.skip,
         take: pagination.data.limit,
@@ -505,6 +544,7 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
     ]);
     response.json({ tickets: tickets.map((ticket) => ({
       id: ticket.id,
+      referenceNumber: ticket.referenceNumber,
       title: ticket.title,
       address: ticket.address,
       category: ticket.category,

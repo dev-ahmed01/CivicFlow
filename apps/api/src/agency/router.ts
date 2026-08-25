@@ -137,6 +137,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         take: pagination.data.limit,
         select: {
           id: true,
+          referenceNumber: true,
           title: true,
           state: true,
           createdAt: true,

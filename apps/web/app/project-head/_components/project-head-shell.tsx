@@ -8,13 +8,14 @@ import { apiFetch } from "../_lib/api";
 import { NotificationBell } from "../../_components/notification-center";
 import { CitizenIcon, type CitizenIconName } from "../../_components/ui";
 
-const links: Array<{ href: string; label: string; icon: CitizenIconName; active: (path: string) => boolean }> = [
+const workLinks: Array<{ href: string; label: string; icon: CitizenIconName; active: (path: string) => boolean }> = [
   { href: "/project-head", label: "Overview", icon: "file", active: (path) => path === "/project-head" },
   { href: "/project-head/tickets", label: "Ticket queue", icon: "clipboard", active: (path) => path.startsWith("/project-head/tickets") },
   { href: "/project-head/projects", label: "Projects", icon: "location", active: (path) => path.startsWith("/project-head/projects") },
-  { href: "/project-head/dependencies/inbox", label: "Dependency inbox", icon: "bell", active: (path) => path === "/project-head/dependencies/inbox" },
-  { href: "/project-head/dependencies/outbox", label: "Dependency outbox", icon: "send", active: (path) => path === "/project-head/dependencies/outbox" },
-  { href: "/project-head/notifications", label: "Notifications", icon: "bell", active: (path) => path === "/project-head/notifications" },
+  { href: "/project-head/dependencies", label: "Dependencies", icon: "refresh", active: (path) => path.startsWith("/project-head/dependencies") },
+];
+
+const accountLinks: Array<{ href: string; label: string; icon: CitizenIconName; active: (path: string) => boolean }> = [
   { href: "/project-head/profile", label: "Profile", icon: "person", active: (path) => path === "/project-head/profile" },
 ];
 
@@ -45,9 +46,9 @@ export function ProjectHeadShell({ children }: { children: ReactNode }) {
         <Link className="portal-brand portal-product-mark" href="/project-head"><span className="portal-logo-mark">C</span><span><strong>CITY</strong><b>CONNECT</b></span></Link>
         <p className="portal-role">Project Head</p>
         <nav aria-label="Project Head navigation">
-          {links.map((item) => <Link className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}
+          <div className="portal-nav-group"><p>Work</p>{workLinks.map((item) => <Link className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
+          <div className="portal-nav-group"><p>Account</p><NotificationBell active={pathname === "/project-head/notifications"} apiFetch={apiFetch} href="/project-head/notifications" label="Notifications" />{accountLinks.map((item) => <Link className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
         </nav>
-        <NotificationBell apiFetch={apiFetch} href="/project-head/notifications" />
         <button className="portal-logout" type="button" onClick={logout}><CitizenIcon name="logout" size={19} />Sign out</button>
       </aside>
       <main className="portal-content">{children}</main>

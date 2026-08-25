@@ -119,7 +119,11 @@ export async function enterPendingValidation(
   fromState: TicketState,
   now = new Date(),
 ): Promise<number> {
-  await client.ticket.update({ where: { id: ticketId }, data: { state: TicketState.PENDING_VALIDATION } });
+  const transitioned = await client.ticket.updateMany({
+    where: { id: ticketId, state: fromState },
+    data: { state: TicketState.PENDING_VALIDATION },
+  });
+  if (transitioned.count === 0) return 0;
   await client.ticketStateTransition.create({
     data: {
       ticketId,

@@ -18,6 +18,8 @@ import { ActionButton, CitizenIcon, NotificationRow, PaginationControls } from "
 
 type ClientNotification = Omit<Notification, "createdAt"> & { createdAt: string };
 type ApiFetch = <T>(path: string, init?: RequestInit) => Promise<T>;
+type NotificationVariant = "portal" | "citizen" | "portal-inline";
+type NotificationRun = { id: string; type: string; items: ClientNotification[] };
 
 const filters: Array<{ id: NotificationFilter; label: string }> = [
   { id: "all", label: "All" },
@@ -27,22 +29,58 @@ const filters: Array<{ id: NotificationFilter; label: string }> = [
   { id: "completion", label: "Completion" },
 ];
 
-export function NotificationBell({ apiFetch, href }: { apiFetch: ApiFetch; href: string }) {
+function consecutiveRuns(items: ClientNotification[]): NotificationRun[] {
+  const runs: NotificationRun[] = [];
+  for (const item of items) {
+    const previous = runs.at(-1);
+    if (previous?.type === item.type) previous.items.push(item);
+    else runs.push({ id: item.id, type: item.type, items: [item] });
+  }
+  return runs;
+}
+
+function payloadContext(payload: Record<string, unknown>): string {
+  const identifiers = [
+    ["Ticket", payload.ticketId],
+    ["Project", payload.projectId],
+    ["Dependency", payload.dependencyId],
+  ].flatMap(([label, identifier]) => typeof identifier === "string" ? [`${label} ${identifier}`] : []);
+  return identifiers.join(" · ") || "Civic work update";
+}
+
+function groupMessage(type: string, count: number, fallback: string): string {
+  if (type === "ROAD_CONFLICT_DETECTED") return `${count} non-blocking road conflicts need review`;
+  if (type === "CONFLICT_DETECTED") return `${count} non-blocking project conflicts need review`;
+  return `${count} updates · ${fallback}`;
+}
+
+function contextDestination(href: string | undefined, variant: NotificationVariant): string | undefined {
+  if (!href || variant === "portal") return href;
+  if (href.startsWith("/tickets/")) return `/tickets?ticket=${href.slice("/tickets/".length)}`;
+  if (href.startsWith("/project-head/tickets/")) return `/project-head/tickets?ticket=${href.slice("/project-head/tickets/".length)}`;
+  if (href.startsWith("/project-head/projects/")) return `/project-head/projects?project=${href.slice("/project-head/projects/".length)}`;
+  if (href.startsWith("/engineer/projects/")) return `/engineer/projects?project=${href.slice("/engineer/projects/".length)}`;
+  if (href === "/engineer/assigned") return "/engineer/dependencies";
+  return href;
+}
+
+export function NotificationBell({ apiFetch, href, label, active = false }: { apiFetch: ApiFetch; href: string; label?: string; active?: boolean }) {
   const [unreadCount, setUnreadCount] = useState(0);
   useEffect(() => {
-    let active = true;
+    let activeRequest = true;
     const poll = async () => {
       try {
         const result = await apiFetch<NotificationListResponse>("/notifications?unread=true");
-        if (active) setUnreadCount(result.unreadCount);
+        if (activeRequest) setUnreadCount(result.unreadCount);
       } catch { /* The shell's auth guard handles expired sessions. */ }
     };
     void poll();
     const timer = window.setInterval(() => void poll(), 30_000);
-    return () => { active = false; window.clearInterval(timer); };
+    return () => { activeRequest = false; window.clearInterval(timer); };
   }, [apiFetch]);
-  return <Link aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} className="notification-bell" href={href}>
-    <CitizenIcon name="bell" size={24} />
+  return <Link aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} className={`notification-bell ${label ? "nav-notification-bell" : ""} ${active ? "active" : ""}`.trim()} href={href}>
+    <CitizenIcon name="bell" size={label ? 18 : 24} />
+    {label ? <span>{label}</span> : null}
     {unreadCount > 0 ? <strong>{unreadCount > 99 ? "99+" : unreadCount}</strong> : null}
   </Link>;
 }
@@ -51,7 +89,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
   apiFetch: ApiFetch;
   role: UserRole;
   showFilters: boolean;
-  variant?: "portal" | "citizen" | "portal-inline";
+  variant?: NotificationVariant;
 }) {
   const [notifications, setNotifications] = useState<ClientNotification[]>([]);
   const [filter, setFilter] = useState<NotificationFilter>("all");
@@ -60,6 +98,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<PaginationMeta>({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [expandedId, setExpandedId] = useState<string>();
+  const [expandedRunId, setExpandedRunId] = useState<string>();
 
   const load = useCallback(async () => {
     setError(undefined);
@@ -82,8 +121,8 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
     const visible = notifications.filter((item) => notificationMatchesFilter(item.type, filter));
     return (["Today", "Yesterday", "Earlier"] as const).map((label) => ({
       label,
-      items: visible.filter((item) => notificationDayGroup(item.createdAt) === label),
-    })).filter((group) => group.items.length > 0);
+      runs: consecutiveRuns(visible.filter((item) => notificationDayGroup(item.createdAt) === label)),
+    })).filter((group) => group.runs.length > 0);
   }, [filter, notifications]);
 
   return <section className={`notification-page ${variant === "citizen" ? "cf-notification-page" : ""} ${variant === "portal-inline" ? "portal-notification-page" : ""}`}>
@@ -96,21 +135,31 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
     {!loading && grouped.length === 0 ? <div className="notification-empty"><CitizenIcon name="bell" /><p>You’re all caught up — no notifications here yet.</p></div> : null}
     <div className="notification-groups">
       {grouped.map((group) => <section key={group.label}><h2>{group.label}</h2><div className="notification-list">
-        {group.items.map((item) => {
-          const display = notificationPresentation(item.type);
+        {group.runs.map((run) => {
+          const display = notificationPresentation(run.type);
+          if (run.items.length > 1) {
+            const expanded = expandedRunId === run.id;
+            return <div className="cf-notification-row notification-cluster" key={run.id}>
+              <span aria-hidden="true" className={`cv-notification-icon ${display.tone}`}>{display.icon}</span>
+              <span className="cv-notification-copy"><strong>{groupMessage(run.type, run.items.length, display.message)}</strong><small>{relativeNotificationTime(run.items[0]!.createdAt)} · {run.items.length} individual updates</small></span>
+              <ActionButton expanded={expanded} onClick={() => setExpandedRunId(expanded ? undefined : run.id)}>{expanded ? "Collapse" : "Expand"}</ActionButton>
+              {expanded ? <div className="notification-cluster-details">{run.items.map((item) => {
+                const href = contextDestination(notificationDestination(item, role), variant);
+                return <article key={item.id}><div><strong>{payloadContext(item.payload)}</strong><small>{new Date(item.createdAt).toLocaleString("en-IN")}</small></div>{href ? <ActionButton href={href}>View</ActionButton> : null}</article>;
+              })}</div> : null}
+            </div>;
+          }
+
+          const item = run.items[0]!;
           const href = notificationDestination(item, role);
           if (variant === "portal") return <NotificationRow href={href ?? undefined} icon={display.icon} key={item.id} message={display.message} time={relativeNotificationTime(item.createdAt)} tone={display.tone} />;
           const expanded = expandedId === item.id;
-          let contextHref = href;
-          if (href?.startsWith("/tickets/")) contextHref = `/tickets?ticket=${href.slice("/tickets/".length)}`;
-          if (href?.startsWith("/project-head/tickets/")) contextHref = `/project-head/tickets?ticket=${href.slice("/project-head/tickets/".length)}`;
-          if (href?.startsWith("/project-head/projects/")) contextHref = `/project-head/projects?project=${href.slice("/project-head/projects/".length)}`;
-          if (href?.startsWith("/engineer/projects/")) contextHref = `/engineer/projects?project=${href.slice("/engineer/projects/".length)}`;
+          const contextHref = contextDestination(href, variant);
           return <div className="cf-notification-row" key={item.id}>
             <span aria-hidden="true" className={`cv-notification-icon ${display.tone}`}>{display.icon}</span>
             <span className="cv-notification-copy"><strong>{display.message}</strong><small>{relativeNotificationTime(item.createdAt)}</small></span>
             <ActionButton expanded={expanded} onClick={() => setExpandedId(expanded ? undefined : item.id)}>{expanded ? "Close" : "View"}</ActionButton>
-            {expanded ? <div className="cf-notification-detail"><p>{display.message}</p><small>This update was recorded {new Date(item.createdAt).toLocaleString("en-IN")}.</small>{contextHref ? <ActionButton href={contextHref}>Open context</ActionButton> : null}</div> : null}
+            {expanded ? <div className="cf-notification-detail"><p>{payloadContext(item.payload)}</p><small>This update was recorded {new Date(item.createdAt).toLocaleString("en-IN")}.</small>{contextHref ? <ActionButton href={contextHref}>Open context</ActionButton> : null}</div> : null}
           </div>;
         })}
       </div></section>)}

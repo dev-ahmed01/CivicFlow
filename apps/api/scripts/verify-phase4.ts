@@ -17,6 +17,7 @@ const titlePrefix = "[Phase 4 acceptance]";
 const reporterId = "40000000-0000-4000-8000-000000000001";
 const validatorId = (number: number) => `41000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
 const roadCategoryId = "30000000-0000-4000-8000-000000000001";
+const streetlightCategoryId = "30000000-0000-4000-8000-000000000002";
 const jayanagarWardId = "10000000-0000-4000-8000-000000000004";
 const pwdAgencyId = "20000000-0000-4000-8000-000000000003";
 const bwssbAgencyId = "20000000-0000-4000-8000-000000000001";
@@ -55,7 +56,7 @@ async function createPendingTicket(suffix: string): Promise<string> {
     await transaction.$executeRaw`
       INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "title", "address", "createdAt")
       VALUES (${ticketId}::uuid, ${roadCategoryId}::uuid, ${reporterId}::uuid,
-        ST_SetSRID(ST_MakePoint(77.5844, 12.9299), 4326), ${jayanagarWardId}::uuid,
+        ST_SetSRID(ST_MakePoint(77.5844, 12.9290), 4326), ${jayanagarWardId}::uuid,
         ${TicketState.AI_CHECK_PENDING}::"TicketState", ${`${titlePrefix} ${suffix}`}, 'Jayanagar, Bengaluru', NOW())
     `;
     await transaction.observation.create({
@@ -115,7 +116,7 @@ async function main(): Promise<void> {
 
     const agencyTicket = await request(app).post("/tickets/agency-originated").set("Authorization", `Bearer ${pwdToken}`).send({
       action: "create",
-      categoryId: roadCategoryId,
+      categoryId: streetlightCategoryId,
       wardId: jayanagarWardId,
       description: `${titlePrefix} planned resurfacing inspection`,
       evidence: { fileName: "field-evidence.jpg", contentType: "image/jpeg" },

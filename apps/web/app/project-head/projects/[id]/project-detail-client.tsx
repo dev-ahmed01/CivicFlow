@@ -19,22 +19,27 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
   const [roadData, setRoadData] = useState<RoadIntelligenceData>(emptyRoadData);
   const [error, setError] = useState<string>();
 
-  const load = useCallback(() => {
-    void Promise.all([
+  const load = useCallback(async () => {
+    try {
+      const [projectResult, conflictResult, roadResult] = await Promise.all([
       apiFetch<{ project: ProjectListItem }>(`/projects/${projectId}`),
       apiFetch<{ conflicts: ProjectConflict[] }>(`/projects/${projectId}/conflicts`),
       apiFetch<RoadIntelligenceData>(`/projects/${projectId}/road-intelligence`),
-    ]).then(([projectResult, conflictResult, roadResult]) => {
+      ]);
       setProject(projectResult.project);
       setConflicts(conflictResult.conflicts);
       setRoadData(roadResult);
-    }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load project"));
+      setError(undefined);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not load project");
+      throw reason;
+    }
   }, [projectId]);
-  useEffect(load, [load]);
+  useEffect(() => { void load().catch(() => undefined); }, [load]);
 
   const actOnRecommendation = async (recommendationId: string, outcome: SequencingRecommendationOutcome, revision?: { plannedStart: string; plannedEnd: string }) => {
     await apiFetch(`/sequencing-recommendations/${recommendationId}/actions`, { method: "POST", body: JSON.stringify({ outcome, ...(revision ? { timelineRevision: { projectId, ...revision } } : {}) }) });
-    load();
+    await load();
   };
 
   if (!project && !error) return <p className="portal-muted">Loading project…</p>;

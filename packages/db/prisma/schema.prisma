@@ -196,6 +196,7 @@ model RoutingRule {
 
 model Ticket {
   id               String                              @id @default(uuid()) @db.Uuid
+  referenceNumber  String                              @unique @default(dbgenerated("next_ticket_reference()")) @db.VarChar(20)
   categoryId       String                              @db.Uuid
   reporterId       String?                             @db.Uuid
   assignedAgencyId String?                             @db.Uuid
@@ -234,6 +235,11 @@ model Ticket {
   @@index([roadSegmentId])
   @@index([state])
   @@index([coordinates], type: Gist, map: "Ticket_coordinates_gist_idx")
+}
+
+model TicketReferenceCounter {
+  period    String @id @db.VarChar(6)
+  lastValue Int
 }
 
 model InspectionReport {

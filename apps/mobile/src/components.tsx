@@ -64,8 +64,9 @@ export function Card({ children, style }: { children: ReactNode; style?: ViewSty
   return <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }, style]}>{children}</View>;
 }
 
-export function TicketCard({ id, category, status, relativeDate, title, meta, onPress, action }: {
+export function TicketCard({ id, referenceNumber, category, status, relativeDate, title, meta, onPress, action }: {
   id: string;
+  referenceNumber?: string;
   category: string;
   status: string;
   relativeDate: string;
@@ -76,7 +77,7 @@ export function TicketCard({ id, category, status, relativeDate, title, meta, on
 }) {
   const palette = usePalette();
   const content = <>
-    <View style={styles.ticketTop}><Text style={[styles.ticketId, { color: palette.accentStrong }]}>Ticket {id.slice(0, 8)}</Text><StatusChip label={status} /></View>
+    <View style={styles.ticketTop}><Text style={[styles.ticketId, { color: palette.accentStrong }]}>Ticket {referenceNumber ?? id.slice(0, 8)}</Text><StatusChip label={status} /></View>
     {title ? <Text style={[styles.ticketTitle, { color: palette.text }]}>{title}</Text> : null}
     <Text style={[styles.ticketMeta, { color: palette.textSecondary }]}>{category} · {relativeDate}</Text>
     {meta ? <Text style={[styles.ticketMeta, { color: palette.textSecondary }]}>{meta}</Text> : null}

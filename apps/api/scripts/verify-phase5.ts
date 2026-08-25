@@ -81,6 +81,10 @@ async function main(): Promise<void> {
     });
     await request(app).post(`/dependencies/${assigned.id}/respond`).set("Authorization", `Bearer ${bwssbToken}`).send({ action: "ASSIGN_ENGINEER", engineerId: bwssbEngineerId }).expect(200);
     assert.equal((await prisma.dependency.findUniqueOrThrow({ where: { id: assigned.id } })).state, DependencyState.ASSIGNED);
+    const engineerPortal = await request(app).get("/dependencies?direction=received&status=ASSIGNED").set("Authorization", `Bearer ${bwssbEngineerToken}`).expect(200);
+    const assignedTask = engineerPortal.body.dependencies.find((item: { id: string }) => item.id === assigned.id) as { assignedEngineer?: { id: string } } | undefined;
+    assert.equal(assignedTask?.assignedEngineer?.id, bwssbEngineerId, "assigned dependency must appear with its owner in the Engineer portal");
+    assert.equal(await prisma.notification.count({ where: { userId: bwssbEngineerId, type: "DEPENDENCY_ASSIGNMENT", payload: { path: ["dependencyId"], equals: assigned.id } } }), 1);
     await request(app).post(`/dependencies/${assigned.id}/respond`).set("Authorization", `Bearer ${bwssbEngineerToken}`).send({ action: "FULFILL" }).expect(200);
     assert.equal((await prisma.dependency.findUniqueOrThrow({ where: { id: assigned.id } })).state, DependencyState.FULFILLED);
 
@@ -114,7 +118,7 @@ async function main(): Promise<void> {
     await request(app).post(`/dependencies/${overdue.id}/respond`).set("Authorization", `Bearer ${pwdToken}`).send({ action: "MARK_ASSIGNED_OUT_OF_BAND" }).expect(200);
     assert.equal((await prisma.dependency.findUniqueOrThrow({ where: { id: overdue.id } })).state, DependencyState.ASSIGNED);
 
-    console.log("Phase 5 acceptance verified: agency-scoped inbox/outbox, all three responses, re-send, Engineer fulfillment, 48-hour escalation with contact details, out-of-band resolution, and terminal not-concerned behavior.");
+    console.log("Phase 5 acceptance verified: agency-scoped inbox/outbox, roster assignment reflected in the Engineer portal, assignment notification, all three responses, re-send, Engineer fulfillment, 48-hour escalation with contact details, out-of-band resolution, and terminal not-concerned behavior.");
   } finally {
     await cleanup();
     await prisma.$disconnect();

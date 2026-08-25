@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "infra:up": "docker compose up -d postgres minio minio-init",
     "dev": "turbo run dev --parallel --filter=api --filter=web",
     "dev:all": "turbo run dev --parallel",
     "lint": "turbo run lint",

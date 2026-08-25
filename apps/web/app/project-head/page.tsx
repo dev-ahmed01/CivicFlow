@@ -26,11 +26,10 @@ export default function ProjectHeadDashboardPage() {
     void apiFetch<DashboardResponse>("/project-head/dashboard").then(setData).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load dashboard"));
   }, []);
 
-  const cards = data ? [
-    { label: "New validated tickets", value: data.counts.newValidatedTickets, href: "/project-head/tickets?status=ROUTED_TO_AGENCY", tone: "green" },
-    { label: "Inspections due", value: data.counts.inspectionsDue, href: "/project-head/tickets?status=INSPECTION_DUE", tone: "amber" },
-    { label: "Dependency requests pending", value: data.counts.dependencyRequestsPending, href: "/project-head/dependencies/inbox", tone: "blue" },
-    { label: "Active projects", value: data.counts.activeProjects, href: "/project-head/projects", tone: "ink" },
+  const attentionItems = data ? [
+    { label: "New validated tickets", value: data.counts.newValidatedTickets, href: "/project-head/tickets?status=ROUTED_TO_AGENCY" },
+    { label: "Inspections due", value: data.counts.inspectionsDue, href: "/project-head/tickets?status=INSPECTION_DUE" },
+    { label: "Dependency requests pending", value: data.counts.dependencyRequestsPending, href: "/project-head/dependencies" },
   ] : [];
 
   return (
@@ -38,11 +37,14 @@ export default function ProjectHeadDashboardPage() {
       <header className="portal-heading"><div><p className="eyebrow">Operations overview</p><h1>{data?.agency.name ?? "Your agency"}</h1><p>Live workload across validation, inspection, dependencies, and delivery.</p></div><Link className="primary-link" href="/project-head/tickets/new">Create agency ticket</Link></header>
       {error ? <p className="error" role="alert">{error}</p> : null}
       {!data && !error ? <p className="portal-muted">Loading live counts…</p> : null}
-      <section className="metric-grid" aria-label="Agency summary">
-        {cards.map((card) => <Link className={`metric-card ${card.tone}`} href={card.href} key={card.label}><span>{card.label}</span><strong>{card.value}</strong><small>View details →</small></Link>)}
+      <section className="attention-zone" aria-labelledby="attention-title">
+        <div className="zone-heading"><p className="eyebrow">Current workload</p><h2 id="attention-title">Needs your attention</h2></div>
+        <div className="attention-grid">
+          {attentionItems.map((item) => <Link className={`attention-card ${item.value > 0 ? "actionable" : "receded"}`} href={item.href} key={item.label}><span>{item.label}</span><strong>{item.value}</strong><small>{item.value > 0 ? "Review now →" : "Nothing waiting"}</small></Link>)}
+        </div>
       </section>
-      {data ? <section className="portal-panel analytics-summary" aria-labelledby="agency-performance-title">
-        <div><p className="eyebrow">Real-data performance</p><h2 id="agency-performance-title">Agency delivery indicators</h2></div>
+      {data ? <section className="portal-panel analytics-summary delivery-performance" aria-labelledby="agency-performance-title">
+        <div><p className="eyebrow">Delivery performance</p><h2 id="agency-performance-title">Agency delivery indicators</h2><p>Lagging indicators from completed and in-progress work.</p></div>
         <div className="analytics-mini-grid">
           <div><span>Resolved</span><strong>{data.performance.ticketsResolved}</strong><small>{data.performance.resolutionRatePercent}% of created tickets</small></div>
           <div><span>Avg. inspection time</span><strong>{data.performance.averageInspectionHours ?? "—"}</strong><small>hours from ticket creation</small></div>

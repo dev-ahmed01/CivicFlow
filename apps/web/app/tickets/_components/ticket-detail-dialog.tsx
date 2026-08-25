@@ -40,7 +40,7 @@ export function TicketDetailDialog({ ticket, timeline, notes, loading, error, on
       <article className="cf-ticket-dialog-card">
         <button aria-label="Close ticket details" className="cf-dialog-close" onClick={onClose} type="button">×</button>
         <header className="cf-dialog-header">
-          <div><p className="eyebrow">{ticket.category.name}</p><h2 id="ticket-dialog-title">{ticket.title}</h2><code>Ticket CC-{ticket.id.slice(0, 4).toUpperCase()}</code></div>
+          <div><p className="eyebrow">{ticket.category.name}</p><h2 id="ticket-dialog-title">{ticket.title}</h2><code>Ticket {ticket.referenceNumber}</code></div>
           <StatusChip label={ticket.statusLabel} />
         </header>
 

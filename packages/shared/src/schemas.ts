@@ -164,8 +164,16 @@ export const categorySchema = z.object({
 
 export const categorySummarySchema = categorySchema.pick({ id: true, name: true });
 
+export const reportingAreaSchema = z.object({
+  id: idSchema,
+  name: z.string().min(1),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
+
 export const citizenTicketSummarySchema = z.object({
   id: idSchema,
+  referenceNumber: z.string().regex(/^\d{9,}$/),
   title: z.string(),
   address: z.string(),
   category: categorySummarySchema,
@@ -182,6 +190,7 @@ export const routingRuleSchema = z.object({
 
 export const ticketSchema = z.object({
   id: idSchema,
+  referenceNumber: z.string().regex(/^\d{9,}$/),
   categoryId: idSchema,
   reporterId: idSchema.nullable(),
   assignedAgencyId: idSchema.nullable(),
@@ -398,6 +407,7 @@ export const inspectionReportSummarySchema = z.object({
 });
 export const projectHeadTicketSummarySchema = z.object({
   id: idSchema,
+  referenceNumber: z.string().regex(/^\d{9,}$/),
   title: z.string(),
   state: ticketStateSchema,
   createdAt: dateSchema,
@@ -768,6 +778,7 @@ export type Ward = z.infer<typeof wardSchema>;
 export type Agency = z.infer<typeof agencySchema>;
 export type Category = z.infer<typeof categorySchema>;
 export type CategorySummary = z.infer<typeof categorySummarySchema>;
+export type ReportingArea = z.infer<typeof reportingAreaSchema>;
 export type CitizenTicketSummary = z.infer<typeof citizenTicketSummarySchema>;
 export type RoutingRule = z.infer<typeof routingRuleSchema>;
 export type Ticket = z.infer<typeof ticketSchema>;
