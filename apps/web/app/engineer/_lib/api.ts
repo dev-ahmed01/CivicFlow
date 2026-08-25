@@ -1,6 +1,7 @@
 "use client";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { ApiRequestError, apiRequest, redirectToCurrentPortalLogin } from "../../_lib/api";
+
 const sessionKey = "civicos.engineer.session";
 
 export type EngineerSession = {
@@ -27,17 +28,18 @@ export function clearSession(): void {
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getSession()?.accessToken;
-  const response = await fetch(`${apiUrl}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers },
-    cache: "no-store",
-  });
-  const body = await response.json().catch(() => ({})) as T & { error?: string };
-  if (!response.ok) {
-    if (response.status === 401) clearSession();
-    throw new Error(body.error ?? "Request failed");
+  try {
+    return await apiRequest<T>(path, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers },
+    });
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      clearSession();
+      redirectToCurrentPortalLogin();
+    }
+    throw error;
   }
-  return body;
 }
 
 export async function uploadFile(upload: { uploadUrl: string; headers: Record<string, string> }, file: File): Promise<void> {

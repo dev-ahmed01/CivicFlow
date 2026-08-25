@@ -36,10 +36,17 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.disable("x-powered-by");
   app.use(helmet());
   app.use(compression());
-  const allowedOrigins = env.CORS_ORIGINS?.split(",").map((origin) => origin.trim()).filter(Boolean);
+  const configuredOrigins = env.CORS_ORIGINS?.split(",").map((origin) => origin.trim()).filter(Boolean) ?? [];
+  const allowedOrigins = new Set([
+    ...configuredOrigins,
+    ...(env.NODE_ENV === "production" ? [] : [3000, 3001, 3002].flatMap((port) => [
+      `http://localhost:${port}`,
+      `http://127.0.0.1:${port}`,
+    ])),
+  ]);
   app.use(cors({
     origin(origin, callback) {
-      if (!origin || !allowedOrigins || allowedOrigins.includes(origin)) callback(null, true);
+      if (!origin || allowedOrigins.has(origin)) callback(null, true);
       else callback(new Error("Origin is not allowed by CORS"));
     },
   }));

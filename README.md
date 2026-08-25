@@ -81,7 +81,9 @@ pnpm verify:auth             # OTP/JWT/RBAC smoke test against the seeded DB
 pnpm dev
 ```
 
-The compose service maps PostgreSQL to host port `5433` to avoid common conflicts with an existing local PostgreSQL installation. Local seeded internal accounts use `CivicOS@123`; accounts marked for first-login reset can only reach the password-reset flow until they change it.
+`pnpm dev` starts the web app at `http://localhost:3000` and the API at `http://localhost:4000` together; `GET http://localhost:4000/health` should return `{ "status": "ok" }`. The API loads the repository-root `.env` created above even though Turbo runs it from `apps/api`. The web defaults to `http://localhost:4000`; set `NEXT_PUBLIC_API_URL` in the root `.env` when using a different API origin. Use `pnpm dev:all` only when the Expo mobile dev server is also needed.
+
+The compose service maps PostgreSQL to host port `5433` to avoid common conflicts with an existing local PostgreSQL installation. Local seeded citizen and internal accounts use `CivicOS@123`; the citizen demo User ID is `citizen.koramangala@cityconnect.local`, the Project Head login is `head.pwd@civicos.local`, and the Engineer login is `engineer.pwd@civicos.local`. Accounts marked for first-login reset can only reach the password-reset flow until they change it.
 
 ## Notifications
 

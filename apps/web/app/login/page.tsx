@@ -4,12 +4,11 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { CitizenHeader } from "../_components/citizen-header";
 import { CitizenHeroBackdrop, CitizenIcon } from "../_components/ui";
+import { ApiRequestError, fetchApiJson } from "../_lib/api";
 import { saveCitizenAccessToken } from "../_lib/citizen-auth";
 import { saveSession as saveProjectHeadSession } from "../project-head/_lib/api";
 import { saveSession as saveEngineerSession } from "../engineer/_lib/api";
 import { saveAdminSession } from "../admin/_lib/api";
-
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 const stats = [
   { icon: "clipboard" as const, value: "100+", label: "Issues Resolved" },
@@ -32,17 +31,15 @@ type LoginBody = {
 };
 
 async function postLogin(path: string, credentials: Record<string, string>): Promise<{ response: Response; body: LoginBody }> {
-  try {
-    const response = await fetch(`${apiUrl}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(credentials),
-    });
-    const body = await response.json().catch(() => ({})) as LoginBody;
-    return { response, body };
-  } catch {
-    throw new Error("Login service is unavailable. Make sure the CivicFlow API is running, then try again.");
+  const result = await fetchApiJson<LoginBody>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(credentials),
+  });
+  if (result.response.status >= 500) {
+    throw new ApiRequestError("The login service returned a server error. Please try again.", result.response.status);
   }
+  return result;
 }
 
 export default function CitizenLoginPage() {
@@ -61,7 +58,7 @@ export default function CitizenLoginPage() {
       const citizen = await postLogin("/auth/citizen/login", { userId: userId.trim(), password });
       if (citizen.response.ok && citizen.body.accessToken) {
         saveCitizenAccessToken(citizen.body.accessToken);
-        router.replace("/tickets");
+        router.replace("/");
         return;
       }
       if (!userId.includes("@")) throw new Error(citizen.body.error ?? "Invalid User ID or password");

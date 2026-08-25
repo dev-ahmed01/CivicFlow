@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
+    "dev": "turbo run dev --parallel --filter=api --filter=web",
+    "dev:all": "turbo run dev --parallel",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "db:generate": "pnpm --filter db db:generate",

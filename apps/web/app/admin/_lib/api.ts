@@ -1,6 +1,7 @@
 "use client";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { apiUrl, fetchApiJson, redirectToCurrentPortalLogin } from "../../_lib/api";
+
 const sessionKey = "civicos.admin.session.v1";
 
 export type AdminSession = {
@@ -31,14 +32,15 @@ export function clearAdminSession(): void {
 
 export async function adminApiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAdminSession()?.accessToken;
-  const response = await fetch(`${apiUrl}${path}`, {
+  const { response, body } = await fetchApiJson<T & { code?: string }>(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers },
-    cache: "no-store",
   });
-  const body = await response.json().catch(() => ({})) as T & { error?: string; code?: string };
   if (!response.ok) {
-    if (response.status === 401 && body.code !== "TOTP_REQUIRED" && path !== "/auth/internal/login") clearAdminSession();
+    if (response.status === 401 && body.code !== "TOTP_REQUIRED" && path !== "/auth/internal/login") {
+      clearAdminSession();
+      redirectToCurrentPortalLogin();
+    }
     throw new ApiError(body.error ?? "Request failed", body.code);
   }
   return body;

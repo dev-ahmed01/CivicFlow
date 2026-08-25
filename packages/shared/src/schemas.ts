@@ -814,3 +814,14 @@ export type CitizenTicketTimelineItem = {
   label: string;
   at: string | Date;
 };
+export type CitizenTicketNote = {
+  id: string;
+  source: "INSPECTION" | "FIELD_UPDATE" | "COMPLETION";
+  label: string;
+  text: string;
+  at: string | Date;
+};
+export type CitizenTicketTimelineResponse = {
+  timeline: CitizenTicketTimelineItem[];
+  notes: CitizenTicketNote[];
+};

@@ -7,6 +7,8 @@ import {
   createTicketSchema,
   imageUploadRequestSchema,
   toCitizenTicketState,
+  type CitizenTicketNote,
+  type CitizenTicketTimelineItem,
   type TicketState as SharedTicketState,
 } from "@civicos/shared";
 import { requireAuth, requireRole } from "../auth/middleware";
@@ -421,17 +423,63 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
       response.status(404).json({ error: "Ticket not found" });
       return;
     }
-    const transitions = await prisma.ticketStateTransition.findMany({
-      where: { ticketId },
-      orderBy: { createdAt: "asc" },
-      select: { toState: true, createdAt: true },
-    });
-    const timeline = transitions.reduce<Array<{ status: string; label: string; at: Date }>>((events, transition) => {
+    const [transitions, ticketNotes] = await Promise.all([
+      prisma.ticketStateTransition.findMany({
+        where: { ticketId },
+        orderBy: { createdAt: "asc" },
+        select: { toState: true, createdAt: true },
+      }),
+      prisma.ticket.findUnique({
+        where: { id: ticketId },
+        select: {
+          createdAt: true,
+          inspectionReports: {
+            where: { uploadedAt: { not: null } },
+            orderBy: { createdAt: "asc" },
+            select: { id: true, notes: true, uploadedAt: true, createdAt: true },
+          },
+          project: {
+            select: {
+              workNotes: { orderBy: { createdAt: "asc" }, select: { id: true, note: true, createdAt: true } },
+              completionEvidence: {
+                where: { uploadedAt: { not: null } },
+                orderBy: { createdAt: "asc" },
+                select: { id: true, notes: true, uploadedAt: true, createdAt: true },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+    const timeline = transitions.reduce<CitizenTicketTimelineItem[]>((events, transition) => {
       const status = toCitizenTicketState(transition.toState as SharedTicketState);
       if (events.at(-1)?.status !== status) events.push({ status, label: citizenTicketStateLabels[status], at: transition.createdAt });
       return events;
-    }, []);
-    response.json({ timeline });
+    }, ticketNotes ? [{ status: "REPORT_RECEIVED", label: "Submitted", at: ticketNotes.createdAt }] : []);
+    const notes = [
+      ...(ticketNotes?.inspectionReports ?? []).map((report) => ({
+        id: report.id,
+        source: "INSPECTION" as const,
+        label: "Inspection update",
+        text: report.notes,
+        at: report.uploadedAt ?? report.createdAt,
+      })),
+      ...(ticketNotes?.project?.workNotes ?? []).map((note) => ({
+        id: note.id,
+        source: "FIELD_UPDATE" as const,
+        label: "Engineer update",
+        text: note.note,
+        at: note.createdAt,
+      })),
+      ...(ticketNotes?.project?.completionEvidence ?? []).map((evidence) => ({
+        id: evidence.id,
+        source: "COMPLETION" as const,
+        label: "Completion note",
+        text: evidence.notes,
+        at: evidence.uploadedAt ?? evidence.createdAt,
+      })),
+    ].sort((first, second) => first.at.getTime() - second.at.getTime()) satisfies CitizenTicketNote[];
+    response.json({ timeline, notes });
   }));
 
   router.get("/citizens/me/tickets", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {
