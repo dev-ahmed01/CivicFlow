@@ -25,7 +25,7 @@ export default function ProjectHeadLoginPage() {
     try {
       const result = await apiFetch<LoginResponse>("/auth/internal/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, expectedRole: "PROJECT_HEAD" }),
       });
       if (result.user.role !== "PROJECT_HEAD" || !result.user.agencyId) {
         throw new Error("This workspace is available to agency Project Heads only");

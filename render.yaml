@@ -59,6 +59,8 @@ services:
         sync: false
       - key: CLIP_MODE
         value: hosted
+      - key: CLIP_TIMEOUT_MS
+        value: 8000
       - key: CORS_ORIGINS
         sync: false
       - key: CRON_SECRET

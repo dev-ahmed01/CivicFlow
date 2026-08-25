@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { notificationDayGroup, notificationMatchesFilter, notificationPresentation, relativeNotificationTime } from "./notifications";
+import { notificationDayGroup, notificationDestination, notificationMatchesFilter, notificationPresentation, relativeNotificationTime } from "./notifications";
 
 describe("notification presentation", () => {
   it.each([
@@ -27,6 +27,11 @@ describe("notification presentation", () => {
     expect(notificationMatchesFilter("PROJECT_ASSIGNMENT", "assignments")).toBe(true);
     expect(notificationMatchesFilter("CONFLICT_DETECTED", "conflicts")).toBe(true);
     expect(notificationMatchesFilter("WORK_COMPLETED", "completion")).toBe(true);
+  });
+
+  it("keeps citizen notification navigation inside the citizen ticket workflow", () => {
+    expect(notificationDestination({ type: "TICKET_RESOLVED", payload: { ticketId: "ticket-1" } }, "CITIZEN")).toBe("/tickets/ticket-1");
+    expect(notificationDestination({ type: "GENERAL", payload: {} }, "CITIZEN")).toBe("/tickets");
   });
 });
 

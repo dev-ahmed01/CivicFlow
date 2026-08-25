@@ -88,6 +88,13 @@ export function createAuthRouter(otpProvider: OtpProvider): Router {
       return;
     }
 
+    // Part III §17.2 — role-specific portals must not mint a usable session for
+    // a different internal role. The client check remains defence in depth.
+    if (parsed.data.expectedRole && user.role !== parsed.data.expectedRole) {
+      response.status(403).json({ error: "This account does not have access to the selected workspace", code: "ROLE_MISMATCH" });
+      return;
+    }
+
     // Part III §17.1 — Admin accounts may require a second TOTP factor.
     if (user.role === UserRole.ADMIN && user.totpEnabled) {
       if (!parsed.data.totpCode) {

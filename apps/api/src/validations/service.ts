@@ -214,6 +214,7 @@ export async function runValidationRebatchJob(now = new Date()): Promise<{ ticke
       AND EXISTS (SELECT 1 FROM "ValidationRequest" vr WHERE vr."ticketId" = t."id")
       AND (SELECT MAX(vr."expiresAt") FROM "ValidationRequest" vr WHERE vr."ticketId" = t."id") <= ${now}
     ORDER BY t."createdAt" ASC
+    LIMIT 50
   `;
   let ticketsProcessed = 0;
   let notificationsCreated = 0;
@@ -246,8 +247,13 @@ export class ValidationDailyCapError extends Error {
 }
 
 export function startValidationRebatchScheduler(intervalMinutes: number): NodeJS.Timeout {
+  let running = false;
   const run = () => {
-    void runValidationRebatchJob().catch((error: unknown) => console.error("Validation rebatch job failed", error));
+    if (running) return;
+    running = true;
+    void runValidationRebatchJob()
+      .catch((error: unknown) => console.error("Validation rebatch job failed", error))
+      .finally(() => { running = false; });
   };
   run();
   const timer = setInterval(run, intervalMinutes * 60 * 1000);

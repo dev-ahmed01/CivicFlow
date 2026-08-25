@@ -26,6 +26,7 @@ const baseEnvSchema = z.object({
   CLIP_INFERENCE_URL: z.string().url().optional(),
   CLIP_INFERENCE_TOKEN: z.string().min(1).optional(),
   CLIP_MODE: z.enum(["auto", "hosted", "demo_deterministic"]).default("auto"),
+  CLIP_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(8000),
   CRON_SECRET: z.string().min(32).optional(),
   VALIDATION_REBATCH_POLL_MINUTES: z.coerce.number().int().positive().default(15),
   DEPENDENCY_ESCALATION_POLL_MINUTES: z.coerce.number().int().positive().default(15),

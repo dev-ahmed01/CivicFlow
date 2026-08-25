@@ -30,6 +30,7 @@ vi.mock("./analytics/service", () => ({
     privacyNotice: "Aggregated only",
   })),
   buildAnalyticsReport: vi.fn(),
+  buildProjectHeadPerformance: vi.fn(),
 }));
 
 const noopOtpProvider: OtpProvider = {

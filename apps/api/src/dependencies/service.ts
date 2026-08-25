@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { DependencyState, Prisma, UserRole, prisma } from "db";
 import type { CreateDependencyRequests, DependencyResponse, UserRole as SharedUserRole } from "@civicos/shared";
 import { createNotification, createNotifications } from "../notifications/service";
@@ -77,32 +78,27 @@ export async function createDependencyRequests(
   }
 
   const deadline = new Date(now.getTime() + responseWindowMs);
-  const created = [];
-  for (const input of inputs) {
-    const dependency = await client.dependency.create({
-      data: {
-        projectId,
-        requestingAgencyId,
-        respondingAgencyId: input.respondingAgencyId,
-        requirement: input.requirement,
-        deadline,
-        // Part III §12 — REQUESTED and delivery to PENDING_RESPONSE are both
-        // recorded even though they commit in the same request transaction.
-        state: DependencyState.PENDING_RESPONSE,
-      },
-    });
-    await transition(client, dependency.id, null, DependencyState.REQUESTED, "DEPENDENCY_REQUESTED", actedById);
-    await transition(client, dependency.id, DependencyState.REQUESTED, DependencyState.PENDING_RESPONSE, "SENT_TO_RESPONDING_AGENCY", actedById);
-    await notifyAgency(
-      client,
-      input.respondingAgencyId,
-      [UserRole.PROJECT_HEAD, UserRole.ENGINEER],
-      "DEPENDENCY_REQUEST",
-      { dependencyId: dependency.id, projectId, deadline: deadline.toISOString() },
-    );
-    created.push(dependency);
-  }
-  return created;
+  const requests = inputs.map((input) => ({ id: randomUUID(), input }));
+  await client.dependency.createMany({ data: requests.map(({ id, input }) => ({
+    id, projectId, requestingAgencyId, respondingAgencyId: input.respondingAgencyId,
+    requirement: input.requirement, deadline, state: DependencyState.PENDING_RESPONSE,
+  })) });
+  // Part III §12 — both transitions remain explicit even though the batched
+  // writes commit in the same project transaction.
+  await client.dependencyStateTransition.createMany({ data: requests.flatMap(({ id }) => [
+    { dependencyId: id, fromState: null, toState: DependencyState.REQUESTED, reason: "DEPENDENCY_REQUESTED", actedById },
+    { dependencyId: id, fromState: DependencyState.REQUESTED, toState: DependencyState.PENDING_RESPONSE, reason: "SENT_TO_RESPONDING_AGENCY", actedById },
+  ]) });
+  const recipients = await client.user.findMany({
+    where: { agencyId: { in: respondingAgencyIds }, role: { in: [UserRole.PROJECT_HEAD, UserRole.ENGINEER] } },
+    select: { id: true, agencyId: true },
+  });
+  await createNotifications(client, requests.flatMap(({ id, input }) => recipients
+    .filter((recipient) => recipient.agencyId === input.respondingAgencyId)
+    .map(({ id: userId }) => ({ userId, type: "DEPENDENCY_REQUEST", payload: { dependencyId: id, projectId, deadline: deadline.toISOString() } }))));
+  const created = await client.dependency.findMany({ where: { id: { in: requests.map(({ id }) => id) } } });
+  const byId = new Map(created.map((dependency) => [dependency.id, dependency]));
+  return requests.map(({ id }) => byId.get(id)).filter((dependency): dependency is NonNullable<typeof dependency> => Boolean(dependency));
 }
 
 export async function respondToDependency(
@@ -206,6 +202,7 @@ export async function runDependencyEscalationJob(now = new Date()): Promise<{ es
     where: { state: DependencyState.PENDING_RESPONSE, deadline: { lte: now } },
     orderBy: { deadline: "asc" },
     select: { id: true },
+    take: 50,
   });
   let escalated = 0;
   for (const item of due) {
@@ -228,7 +225,14 @@ export async function runDependencyEscalationJob(now = new Date()): Promise<{ es
 }
 
 export function startDependencyEscalationScheduler(intervalMinutes: number): NodeJS.Timeout {
-  const run = () => { void runDependencyEscalationJob().catch((error: unknown) => console.error("Dependency escalation job failed", error)); };
+  let running = false;
+  const run = () => {
+    if (running) return;
+    running = true;
+    void runDependencyEscalationJob()
+      .catch((error: unknown) => console.error("Dependency escalation job failed", error))
+      .finally(() => { running = false; });
+  };
   run();
   const timer = setInterval(run, intervalMinutes * 60 * 1000);
   timer.unref();

@@ -158,7 +158,14 @@ export async function runPushDeliveryJob(
 }
 
 export function startPushDeliveryScheduler(gateway: PushGateway, intervalSeconds: number): NodeJS.Timeout {
-  const run = () => { void runPushDeliveryJob(gateway).catch((error: unknown) => console.error("Push delivery job failed", error)); };
+  let running = false;
+  const run = () => {
+    if (running) return;
+    running = true;
+    void runPushDeliveryJob(gateway)
+      .catch((error: unknown) => console.error("Push delivery job failed", error))
+      .finally(() => { running = false; });
+  };
   run();
   const timer = setInterval(run, intervalSeconds * 1000);
   timer.unref();

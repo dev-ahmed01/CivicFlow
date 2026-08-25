@@ -15,6 +15,7 @@ import { createDependencyRequests, DependencyActionError } from "../dependencies
 import type { ImageStorage } from "../images/storage";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
 import { createNotification, createNotifications } from "../notifications/service";
+import { paginationMeta, parsePagination } from "../http/pagination";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -231,7 +232,8 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       const agency = request.query.agency ? idSchema.safeParse(request.query.agency) : null;
       const ward = request.query.ward ? idSchema.safeParse(request.query.ward) : null;
       const scope = request.query.scope ? scopeSchema.safeParse(request.query.scope) : null;
-      if ((status && !status.success) || (agency && !agency.success) || (ward && !ward.success) || (scope && !scope.success)) {
+      const pagination = parsePagination(request.query);
+      if ((status && !status.success) || (agency && !agency.success) || (ward && !ward.success) || (scope && !scope.success) || !pagination.success) {
         response.status(400).json({ error: "Invalid project filter" });
         return;
       }
@@ -250,16 +252,20 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         ...(!engineerScope && status?.success ? { state: status.data } : {}),
         ...(ward?.success ? { ticket: { wardId: ward.data } } : {}),
       };
-      const projects = await prisma.project.findMany({
+      const [projects, total] = await Promise.all([prisma.project.findMany({
         where,
-        orderBy: { createdAt: "desc" },
-        include: {
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: pagination.data.skip,
+        take: pagination.data.limit,
+        select: {
+          id: true, ticketId: true, agencyId: true, state: true, plannedStart: true, plannedEnd: true,
+          workDescription: true, dependencyFlags: true, engineerId: true, createdAt: true, updatedAt: true,
           agency: { select: { id: true, name: true } },
           engineer: { select: { id: true, email: true } },
           ticket: { select: { id: true, title: true, ward: { select: { id: true, name: true } } } },
         },
-      });
-      response.json({ projects: projects.map((project) => ({ ...project, editable: canEngineerEdit(request, project) })) });
+      }), prisma.project.count({ where })]);
+      response.json({ projects: projects.map((project) => ({ ...project, editable: canEngineerEdit(request, project) })), pagination: paginationMeta(pagination.data.page, pagination.data.limit, total) });
     }),
   );
 

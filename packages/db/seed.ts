@@ -12,6 +12,11 @@ import bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
 const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+const demoSeedMode = process.env.DEMO_SEED_MODE ?? "reset";
+
+if (demoSeedMode !== "reset" && demoSeedMode !== "if_empty") {
+  throw new Error("DEMO_SEED_MODE must be reset or if_empty");
+}
 
 if (process.env.NODE_ENV === "production" && demoInternalPassword === "CivicOS@123") {
   throw new Error("DEMO_INTERNAL_PASSWORD must replace the local demo password in production");
@@ -519,6 +524,16 @@ async function seedRoadCuttingDemo(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  if (demoSeedMode === "if_empty") {
+    const [generalTicket, flagshipSegment] = await Promise.all([
+      prisma.ticket.findUnique({ where: { id: ids.generalDemo.ticket }, select: { id: true } }),
+      prisma.roadSegment.findUnique({ where: { id: ids.roadSegments.flagship }, select: { id: true } }),
+    ]);
+    if (generalTicket && flagshipSegment) {
+      console.log("Demo fixtures already exist; skipping startup seed. Run db:seed without DEMO_SEED_MODE to reset the rehearsal state.");
+      return;
+    }
+  }
   await seedWards();
 
   for (const agency of agencies) {

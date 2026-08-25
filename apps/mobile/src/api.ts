@@ -64,7 +64,7 @@ export async function internalLogin(email: string, password: string): Promise<Cu
     user: { id: string; role: UserRole; agencyId: string | null };
     accessToken: string;
     requiresPasswordReset: boolean;
-  }>("/auth/internal/login", { method: "POST", body: JSON.stringify({ email, password }) });
+  }>("/auth/internal/login", { method: "POST", body: JSON.stringify({ email, password, expectedRole: "ENGINEER" }) });
   if (result.user.role !== "ENGINEER" || !result.user.agencyId) throw new Error("Use an Executive Engineer account");
   if (result.requiresPasswordReset) throw new Error("Reset this account's temporary password before continuing");
   accessToken = result.accessToken;
@@ -102,6 +102,7 @@ export async function respondToDependency(dependencyId: string, response: Depend
 
 export async function loadEngineerProjects(scope: "mine" | "assigned" | "geographic", filters: { agencyId?: string; status?: ProjectState } = {}): Promise<ProjectListItem[]> {
   const query = new URLSearchParams({ scope });
+  query.set("limit", "50");
   if (filters.agencyId) query.set("agency", filters.agencyId);
   if (filters.status) query.set("status", filters.status);
   const result = await apiFetch<{ projects: ProjectListItem[] }>(`/projects?${query.toString()}`);
@@ -167,7 +168,7 @@ export async function loadCategories(): Promise<CategorySummary[]> {
 }
 
 export async function loadMyTickets(filter: "ongoing" | "past"): Promise<CitizenTicketSummary[]> {
-  const result = await apiFetch<{ tickets: CitizenTicketSummary[] }>(`/citizens/me/tickets?filter=${filter}`);
+  const result = await apiFetch<{ tickets: CitizenTicketSummary[] }>(`/citizens/me/tickets?filter=${filter}&limit=50`);
   return result.tickets;
 }
 
@@ -205,12 +206,12 @@ export async function verifyCompletion(evidenceId: string, decision: CompletionV
 export type MobileNotification = Omit<Notification, "createdAt"> & { createdAt: string };
 
 export async function loadNotifications(unread?: boolean): Promise<{ notifications: MobileNotification[]; unreadCount: number }> {
-  const query = unread === undefined ? "" : `?unread=${String(unread)}`;
+  const query = unread === undefined ? "?limit=50" : `?unread=${String(unread)}&limit=50`;
   return apiFetch(`/notifications${query}`);
 }
 
-export async function markNotificationRead(notificationId: string): Promise<void> {
-  await apiFetch(`/notifications/${notificationId}/read`, { method: "PATCH" });
+export async function markNotificationsRead(ids: string[]): Promise<void> {
+  if (ids.length > 0) await apiFetch("/notifications/read", { method: "PATCH", body: JSON.stringify({ ids }) });
 }
 
 export async function registerPushToken(token: string, platform: "ios" | "android"): Promise<void> {

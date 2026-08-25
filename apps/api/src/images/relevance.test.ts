@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseEnv } from "../config/env";
-import { cosineSimilarity, createImageRelevanceService, DevelopmentRelevanceService } from "./relevance";
+import { cosineSimilarity, createImageRelevanceService, DevelopmentRelevanceService, HostedClipRelevanceService } from "./relevance";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("cosineSimilarity", () => {
   it("recognizes aligned and orthogonal image embeddings", () => {
@@ -30,5 +32,15 @@ describe("free-demo relevance", () => {
       CORS_ORIGINS: "https://civicos-demo.vercel.app",
     });
     expect(createImageRelevanceService(env)).toBeInstanceOf(DevelopmentRelevanceService);
+  });
+});
+
+describe("hosted relevance reliability", () => {
+  it("aborts an inference request at the configured deadline", async () => {
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+    })));
+    const service = new HostedClipRelevanceService("https://clip.example.com/infer", undefined, 5);
+    await expect(service.checkImageRelevance("https://images.example.com/photo.jpg", "category-1")).rejects.toBeDefined();
   });
 });

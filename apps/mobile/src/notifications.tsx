@@ -6,7 +6,7 @@ import {
   type UserRole,
 } from "@civicos/shared";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
-import { loadNotifications, markNotificationRead, type MobileNotification } from "./api";
+import { loadNotifications, markNotificationsRead, type MobileNotification } from "./api";
 import { clearAppBadge } from "./push-notifications";
 import { Shell } from "./screens";
 import { colors } from "./theme";
@@ -31,7 +31,7 @@ export function NotificationsScreen({ role, onBack, onOpen, onViewed }: {
     try {
       const result = await loadNotifications();
       setNotifications(result.notifications.map((item) => ({ ...item, read: true })));
-      await Promise.all(result.notifications.filter((item) => !item.read).map((item) => markNotificationRead(item.id)));
+      await markNotificationsRead(result.notifications.filter((item) => !item.read).map((item) => item.id));
       await clearAppBadge();
       onViewedRef.current();
     } catch (caught) {

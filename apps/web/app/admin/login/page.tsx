@@ -17,7 +17,7 @@ export default function AdminLoginPage() {
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError(undefined);
     try {
-      const result = await adminApiFetch<LoginResponse>("/auth/internal/login", { method: "POST", body: JSON.stringify({ email, password, ...(totpCode ? { totpCode } : {}) }) });
+      const result = await adminApiFetch<LoginResponse>("/auth/internal/login", { method: "POST", body: JSON.stringify({ email, password, expectedRole: "ADMIN", ...(totpCode ? { totpCode } : {}) }) });
       if (result.user.role !== "ADMIN") throw new Error("This workspace is available to city administrators only");
       if (result.requiresPasswordReset) throw new Error("Reset this account’s temporary password before opening the workspace");
       saveAdminSession({ accessToken: result.accessToken, refreshToken: result.refreshToken, user: { id: result.user.id, email: result.user.email } } satisfies AdminSession);

@@ -54,6 +54,10 @@ services:
       # Set hosted + URL/token instead to call a compatible free/local endpoint.
       - key: CLIP_MODE
         value: demo_deterministic
+      - key: CLIP_TIMEOUT_MS
+        value: 8000
+      - key: DEMO_SEED_MODE
+        value: if_empty
       - key: CORS_ORIGINS
         sync: false
       - key: CRON_SECRET

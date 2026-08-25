@@ -1,4 +1,5 @@
 import cors from "cors";
+import compression from "compression";
 import express, { type Express } from "express";
 import helmet from "helmet";
 import { UserRole } from "db";
@@ -34,6 +35,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   const app = express();
   app.disable("x-powered-by");
   app.use(helmet());
+  app.use(compression());
   const allowedOrigins = env.CORS_ORIGINS?.split(",").map((origin) => origin.trim()).filter(Boolean);
   app.use(cors({
     origin(origin, callback) {

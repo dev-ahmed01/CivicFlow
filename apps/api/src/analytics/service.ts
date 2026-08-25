@@ -61,6 +61,78 @@ function numberConfig(value: Prisma.JsonValue | undefined, fallback: number): nu
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+export type ProjectHeadPerformance = {
+  ticketsResolved: number;
+  resolutionRatePercent: number;
+  averageInspectionHours: number | null;
+  dependencyEscalationRatePercent: number;
+  reworkRatePercent: number;
+  roadConflicts: number;
+  simulatedRestorationCostSaved: { amountInr: number; label: "Simulated/Illustrative" };
+};
+
+const projectHeadCache = new Map<string, { expiresAt: number; value: ProjectHeadPerformance }>();
+
+// The operations dashboard displays only these six agency metrics. A dedicated,
+// short-lived query avoids building the full admin analytics report on every visit.
+export async function buildProjectHeadPerformance(agencyId: string): Promise<ProjectHeadPerformance> {
+  const cached = projectHeadCache.get(agencyId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const [tickets, inspectionTransitions, dependencyTotal, dependencyEscalated, verificationTotal, verificationRework, roadConflicts, repeatedRisks, configs] = await Promise.all([
+    prisma.ticket.findMany({ where: { assignedAgencyId: agencyId }, select: { state: true, project: { select: { id: true } } } }),
+    prisma.ticketStateTransition.findMany({
+      where: { toState: TicketState.INSPECTION_COMPLETE, ticket: { assignedAgencyId: agencyId } },
+      orderBy: { createdAt: "asc" },
+      select: { ticketId: true, createdAt: true, ticket: { select: { createdAt: true } } },
+    }),
+    prisma.dependency.count({ where: { respondingAgencyId: agencyId } }),
+    prisma.dependency.count({ where: { respondingAgencyId: agencyId, escalatedAt: { not: null } } }),
+    prisma.completionVerification.count({ where: { completionEvidence: { project: { agencyId } } } }),
+    prisma.completionVerification.count({ where: { decision: "REWORK_REQUESTED", completionEvidence: { project: { agencyId } } } }),
+    prisma.roadConflictLog.count({ where: { projectAgencyId: agencyId } }),
+    prisma.roadConflictLog.findMany({ where: { projectAgencyId: agencyId, type: "REPEATED_EXCAVATION_RISK" }, distinct: ["segmentId"], select: { segmentId: true } }),
+    prisma.adminConfig.findMany({ where: { key: { in: ["road.simulated_restoration_cost_per_meter", "road.simulated_avoided_rework_factor"] } }, select: { key: true, value: true } }),
+  ]);
+
+  const firstInspectionByTicket = new Map<string, number>();
+  for (const transition of inspectionTransitions) {
+    if (!firstInspectionByTicket.has(transition.ticketId)) {
+      firstInspectionByTicket.set(transition.ticketId, Math.max(0, (transition.createdAt.getTime() - transition.ticket.createdAt.getTime()) / HOUR_MS));
+    }
+  }
+
+  const segmentIds = repeatedRisks.map(({ segmentId }) => segmentId);
+  const acceptedLogs = segmentIds.length === 0 ? [] : await prisma.sequencingRecommendationLog.findMany({
+    where: { outcome: "ACCEPTED", segmentId: { in: segmentIds }, actedBy: { agencyId } },
+    select: { recommendation: { select: { projectIds: true } } },
+  });
+  const agencyProjectIds = new Set(tickets.flatMap(({ project }) => project ? [project.id] : []));
+  const qualifyingProjectIds = [...new Set(acceptedLogs
+    .map(({ recommendation }) => jsonProjectIds(recommendation.projectIds))
+    .filter((ids) => ids.some((id) => agencyProjectIds.has(id)))
+    .flat())];
+  const interventions = qualifyingProjectIds.length === 0 ? [] : await prisma.intervention.findMany({ where: { projectId: { in: qualifyingProjectIds } }, select: { affectedLengthM: true } });
+  const configMap = new Map(configs.map((item) => [item.key, item.value]));
+  const simulatedAmount = Math.round(
+    interventions.reduce((sum, item) => sum + item.affectedLengthM, 0)
+      * numberConfig(configMap.get("road.simulated_restoration_cost_per_meter"), 1800)
+      * numberConfig(configMap.get("road.simulated_avoided_rework_factor"), 0.65),
+  );
+  const resolved = tickets.filter(({ state }) => RESOLVED_STATES.includes(state)).length;
+  const value: ProjectHeadPerformance = {
+    ticketsResolved: resolved,
+    resolutionRatePercent: percent(resolved, tickets.length),
+    averageInspectionHours: average([...firstInspectionByTicket.values()]) ?? null,
+    dependencyEscalationRatePercent: percent(dependencyEscalated, dependencyTotal),
+    reworkRatePercent: percent(verificationRework, verificationTotal),
+    roadConflicts,
+    simulatedRestorationCostSaved: { amountInr: simulatedAmount, label: "Simulated/Illustrative" },
+  };
+  projectHeadCache.set(agencyId, { expiresAt: Date.now() + 30_000, value });
+  return value;
+}
+
 export async function buildAnalyticsReport(filter: AnalyticsFilter): Promise<AnalyticsReport> {
   const createdAt = dateRange(filter);
   const tickets = await prisma.ticket.findMany({

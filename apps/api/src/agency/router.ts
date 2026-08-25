@@ -11,7 +11,8 @@ import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/
 import type { ImageStorage } from "../images/storage";
 import { checkProjectConflicts } from "../conflicts/service";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
-import { buildAnalyticsReport } from "../analytics/service";
+import { buildProjectHeadPerformance } from "../analytics/service";
+import { paginationMeta, parsePagination } from "../http/pagination";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -63,19 +64,13 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         prisma.project.count({
           where: { agencyId, state: { notIn: [ProjectState.CLOSED, ProjectState.CANCELLED] } },
         }),
-        buildAnalyticsReport({ agencyId }),
+        buildProjectHeadPerformance(agencyId),
       ]);
       response.json({
         agency,
         counts: { newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects },
         performance: {
-          ticketsResolved: analytics.totals.ticketsResolved,
-          resolutionRatePercent: analytics.totals.resolutionRatePercent,
-          averageInspectionHours: analytics.inspectionTimeByAgency[0]?.averageHours ?? null,
-          dependencyEscalationRatePercent: analytics.dependencyEscalationByAgency[0]?.ratePercent ?? 0,
-          reworkRatePercent: analytics.citizenNotResolvedByAgency[0]?.ratePercent ?? 0,
-          roadConflicts: analytics.totals.roadConflicts,
-          simulatedRestorationCostSaved: analytics.simulatedRestorationCostSaved,
+          ...analytics,
         },
       });
     }),
@@ -123,19 +118,23 @@ export function createAgencyRouter(storage: ImageStorage): Router {
       const status = request.query.status ? ticketStateSchema.safeParse(request.query.status) : null;
       const category = request.query.category ? idSchema.safeParse(request.query.category) : null;
       const ward = request.query.ward ? idSchema.safeParse(request.query.ward) : null;
-      if (status && !status.success || category && !category.success || ward && !ward.success) {
+      const pagination = parsePagination(request.query);
+      if (status && !status.success || category && !category.success || ward && !ward.success || !pagination.success) {
         response.status(400).json({ error: "Invalid ticket filter" });
         return;
       }
       const agencyId = request.auth!.role === UserRole.PROJECT_HEAD ? projectHeadAgency(request) : undefined;
-      const tickets = await prisma.ticket.findMany({
-        where: {
+      const where = {
           ...(agencyId ? { assignedAgencyId: agencyId } : {}),
           ...(status?.success ? { state: status.data } : {}),
           ...(category?.success ? { categoryId: category.data } : {}),
           ...(ward?.success ? { wardId: ward.data } : {}),
-        },
-        orderBy: { createdAt: "desc" },
+      };
+      const [tickets, total] = await Promise.all([prisma.ticket.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: pagination.data.skip,
+        take: pagination.data.limit,
         select: {
           id: true,
           title: true,
@@ -150,13 +149,14 @@ export function createAgencyRouter(storage: ImageStorage): Router {
             select: { createdAt: true },
           },
         },
-      });
+      }), prisma.ticket.count({ where })]);
       response.json({
         tickets: tickets.map(({ stateTransitions, ...ticket }) => ({
           ...ticket,
           validatedAt: stateTransitions[0]?.createdAt ?? null,
           inspectionDue: ticket.state === TicketState.INSPECTION_DUE,
         })),
+        pagination: paginationMeta(pagination.data.page, pagination.data.limit, total),
       });
     }),
   );

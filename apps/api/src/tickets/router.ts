@@ -13,6 +13,7 @@ import { requireAuth, requireRole } from "../auth/middleware";
 import type { ImageStorage } from "../images/storage";
 import { cosineSimilarity, type ImageRelevanceService } from "../images/relevance";
 import { enterPendingValidation } from "../validations/service";
+import { paginationMeta, parsePagination } from "../http/pagination";
 
 const terminalStates: TicketState[] = [TicketState.RESOLVED, TicketState.CLOSED, TicketState.REJECTED, TicketState.CANCELLED];
 
@@ -435,18 +436,25 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
 
   router.get("/citizens/me/tickets", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {
     const filter = citizenTicketFilterSchema.safeParse(request.query.filter ?? "ongoing");
-    if (!filter.success) {
-      response.status(400).json({ error: "filter must be ongoing or past" });
+    const pagination = parsePagination(request.query);
+    if (!filter.success || !pagination.success) {
+      response.status(400).json({ error: !filter.success ? "filter must be ongoing or past" : "page and limit must be positive integers; limit cannot exceed 50" });
       return;
     }
-    const tickets = await prisma.ticket.findMany({
-      where: {
-        observations: { some: { submitterId: request.auth!.userId } },
-        state: filter.data === "past" ? { in: terminalStates } : { notIn: terminalStates },
-      },
-      include: { category: { select: { id: true, name: true } }, _count: { select: { observations: true } } },
-      orderBy: { createdAt: "desc" },
-    });
+    const where = {
+      observations: { some: { submitterId: request.auth!.userId } },
+      state: filter.data === "past" ? { in: terminalStates } : { notIn: terminalStates },
+    };
+    const [tickets, total] = await Promise.all([
+      prisma.ticket.findMany({
+        where,
+        select: { id: true, title: true, address: true, state: true, createdAt: true, category: { select: { id: true, name: true } }, _count: { select: { observations: true } } },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: pagination.data.skip,
+        take: pagination.data.limit,
+      }),
+      prisma.ticket.count({ where }),
+    ]);
     response.json({ tickets: tickets.map((ticket) => ({
       id: ticket.id,
       title: ticket.title,
@@ -455,7 +463,7 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
       observationCount: ticket._count.observations,
       createdAt: ticket.createdAt,
       ...publicStatus(ticket.state),
-    })) });
+    })), pagination: paginationMeta(pagination.data.page, pagination.data.limit, total) });
   }));
 
   return router;

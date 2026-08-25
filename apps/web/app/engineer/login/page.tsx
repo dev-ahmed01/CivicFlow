@@ -15,7 +15,7 @@ export default function EngineerLoginPage() {
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError(undefined);
     try {
-      const result = await apiFetch<LoginResponse>("/auth/internal/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      const result = await apiFetch<LoginResponse>("/auth/internal/login", { method: "POST", body: JSON.stringify({ email, password, expectedRole: "ENGINEER" }) });
       if (result.user.role !== "ENGINEER" || !result.user.agencyId) throw new Error("This workspace is available to Executive Engineers only");
       if (result.requiresPasswordReset) throw new Error("Reset this account's temporary password before continuing");
       saveSession({ accessToken: result.accessToken, refreshToken: result.refreshToken, user: { id: result.user.id, email: result.user.email, agencyId: result.user.agencyId } } satisfies EngineerSession);

@@ -159,7 +159,7 @@ export async function checkProjectConflicts(
     ORDER BY other."plannedStart", other."id"
   `);
 
-  return Promise.all(candidates.map(async (candidate) => {
+  const prepared = candidates.map((candidate) => {
     const sourceFirst = candidate.sourceProjectId.localeCompare(candidate.candidateProjectId) < 0;
     const first = sourceFirst
       ? { id: candidate.sourceProjectId, agencyId: candidate.sourceAgencyId, start: candidate.sourcePlannedStart, end: candidate.sourcePlannedEnd }
@@ -172,73 +172,68 @@ export async function checkProjectConflicts(
     const overlapEnd = new Date(Math.min(candidate.sourcePlannedEnd.getTime(), candidate.candidatePlannedEnd.getTime()));
     const description = locationDescription(candidate);
     const fingerprint = timelineFingerprint(first, second);
-    const existing = await client.conflictLog.findUnique({
-      where: { projectId_conflictingProjectId_timelineFingerprint: {
-        projectId: first.id,
-        conflictingProjectId: second.id,
-        timelineFingerprint: fingerprint,
-      } },
-      select: { id: true },
-    });
-    const log = await client.conflictLog.upsert({
-      where: { projectId_conflictingProjectId_timelineFingerprint: {
-        projectId: first.id,
-        conflictingProjectId: second.id,
-        timelineFingerprint: fingerprint,
-      } },
-      update: {
-        overlapStart,
-        overlapEnd,
-        locationDescription: description,
-        distanceMeters: candidate.distanceMeters,
-        severity,
-      },
+    return { candidate, first, second, severity, overlapStart, overlapEnd, description, fingerprint };
+  });
+  if (prepared.length === 0) return [];
+
+  const existingLogs = await client.conflictLog.findMany({
+    where: { OR: prepared.map(({ first, second, fingerprint }) => ({ projectId: first.id, conflictingProjectId: second.id, timelineFingerprint: fingerprint })) },
+    select: { projectId: true, conflictingProjectId: true, timelineFingerprint: true },
+  });
+  const key = (firstId: string, secondId: string, fingerprint: string) => `${firstId}:${secondId}:${fingerprint}`;
+  const existingKeys = new Set(existingLogs.map((log) => key(log.projectId, log.conflictingProjectId, log.timelineFingerprint)));
+  const logs: Array<{ id: string; createdAt: Date }> = [];
+  // Keep concurrent writes bounded so a 100-project conflict sweep does not
+  // consume the entire Prisma connection pool.
+  for (let offset = 0; offset < prepared.length; offset += 10) {
+    const batch = prepared.slice(offset, offset + 10);
+    logs.push(...await Promise.all(batch.map(({ candidate, first, second, severity, overlapStart, overlapEnd, description, fingerprint }) => client.conflictLog.upsert({
+      where: { projectId_conflictingProjectId_timelineFingerprint: { projectId: first.id, conflictingProjectId: second.id, timelineFingerprint: fingerprint } },
+      update: { overlapStart, overlapEnd, locationDescription: description, distanceMeters: candidate.distanceMeters, severity },
       create: {
-        projectId: first.id,
-        conflictingProjectId: second.id,
-        projectAgencyId: first.agencyId,
-        conflictingAgencyId: second.agencyId,
-        projectTimelineStart: first.start,
-        projectTimelineEnd: first.end,
-        conflictingTimelineStart: second.start,
-        conflictingTimelineEnd: second.end,
-        overlapStart,
-        overlapEnd,
-        locationDescription: description,
-        distanceMeters: candidate.distanceMeters,
-        severity,
-        timelineFingerprint: fingerprint,
+        projectId: first.id, conflictingProjectId: second.id, projectAgencyId: first.agencyId, conflictingAgencyId: second.agencyId,
+        projectTimelineStart: first.start, projectTimelineEnd: first.end, conflictingTimelineStart: second.start,
+        conflictingTimelineEnd: second.end, overlapStart, overlapEnd, locationDescription: description,
+        distanceMeters: candidate.distanceMeters, severity, timelineFingerprint: fingerprint,
       },
       select: { id: true, createdAt: true },
+    }))));
+  }
+
+  const newIndexes = prepared.flatMap((item, index) => existingKeys.has(key(item.first.id, item.second.id, item.fingerprint)) ? [] : [index]);
+  if (newIndexes.length > 0) {
+    const projectIds = [...new Set(newIndexes.flatMap((index) => [prepared[index]!.first.id, prepared[index]!.second.id]))];
+    const agencyIds = [...new Set(newIndexes.flatMap((index) => [prepared[index]!.first.agencyId, prepared[index]!.second.agencyId]))];
+    const projects = await client.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, engineerId: true } });
+    const engineerIds = projects.flatMap(({ engineerId }) => engineerId ? [engineerId] : []);
+    const users = await client.user.findMany({
+      where: { OR: [
+        { agencyId: { in: agencyIds }, role: UserRole.PROJECT_HEAD },
+        ...(engineerIds.length > 0 ? [{ id: { in: engineerIds }, role: UserRole.ENGINEER }] : []),
+      ] },
+      select: { id: true, agencyId: true, role: true },
     });
-    if (!existing) {
-      const projects = await client.project.findMany({
-        where: { id: { in: [first.id, second.id] } },
-        select: { engineerId: true },
-      });
-      const engineerIds = projects.flatMap((project) => project.engineerId ? [project.engineerId] : []);
-      const users = await client.user.findMany({
-        where: { OR: [
-          { agencyId: { in: [first.agencyId, second.agencyId] }, role: UserRole.PROJECT_HEAD },
-          ...(engineerIds.length ? [{ id: { in: engineerIds }, role: UserRole.ENGINEER }] : []),
-        ] },
-        select: { id: true, agencyId: true },
-      });
-      await createNotifications(client, users.map((user) => ({
+    await createNotifications(client, newIndexes.flatMap((index) => {
+      const item = prepared[index]!;
+      const assignedEngineers = new Set(projects.filter((project) => project.id === item.first.id || project.id === item.second.id).flatMap(({ engineerId }) => engineerId ? [engineerId] : []));
+      return users.filter((user) => user.role === UserRole.PROJECT_HEAD
+        ? user.agencyId === item.first.agencyId || user.agencyId === item.second.agencyId
+        : assignedEngineers.has(user.id)).map((user) => ({
         userId: user.id,
         type: "CONFLICT_DETECTED",
         payload: {
-          conflictId: log.id,
-          projectId: user.agencyId === first.agencyId ? first.id : second.id,
-          conflictingProjectId: user.agencyId === first.agencyId ? second.id : first.id,
-          severity,
+          conflictId: logs[index]!.id,
+          projectId: user.agencyId === item.first.agencyId ? item.first.id : item.second.id,
+          conflictingProjectId: user.agencyId === item.first.agencyId ? item.second.id : item.first.id,
+          severity: item.severity,
           advisory: true,
         },
-      })));
-    }
+      }));
+    }));
+  }
 
-    return {
-      id: log.id,
+  return prepared.map(({ candidate, severity, overlapStart, overlapEnd, description }, index) => ({
+      id: logs[index]!.id,
       projectId: candidate.sourceProjectId,
       conflictingProjectId: candidate.candidateProjectId,
       conflictingProjectName: candidate.candidateProjectName,
@@ -249,7 +244,6 @@ export async function checkProjectConflicts(
       distanceMeters: candidate.distanceMeters,
       severity,
       reason: reasonFor(candidate, severity, radiusMeters),
-      detectedAt: log.createdAt,
-    } satisfies ProjectConflict;
-  }));
+      detectedAt: logs[index]!.createdAt,
+    } satisfies ProjectConflict));
 }

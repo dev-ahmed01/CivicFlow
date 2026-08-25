@@ -40,4 +40,4 @@ _(Update this section as phases complete — Codex should read it to know what a
 - [x] Phase 9 — Notifications
 - [x] Phase 10 — Analytics, admin config, transparency dashboard
 - [x] Phase 11 — Design system / UI polish
-- [ ] Phase 12 — Seed data, demo rehearsal, deployment
+- [x] Phase 12 — Seed data, demo rehearsal, deployment

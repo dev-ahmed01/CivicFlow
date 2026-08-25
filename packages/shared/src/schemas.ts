@@ -726,6 +726,7 @@ export const internalLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   totpCode: z.string().regex(/^\d{6}$/).optional(),
+  expectedRole: z.enum(["PROJECT_HEAD", "ENGINEER", "ADMIN"]).optional(),
 });
 
 export const totpCodeSchema = z.object({ code: z.string().regex(/^\d{6}$/) });
@@ -802,3 +803,4 @@ export type ProjectHeadTicketSummary = z.infer<typeof projectHeadTicketSummarySc
 export type ProjectHeadTicketDetail = z.infer<typeof projectHeadTicketDetailSchema>;
 export type ProjectHeadDashboardCounts = z.infer<typeof projectHeadDashboardCountsSchema>;
 export type ProjectListItem = z.infer<typeof projectListItemSchema>;
+export type PaginationMeta = { page: number; limit: number; total: number; totalPages: number };

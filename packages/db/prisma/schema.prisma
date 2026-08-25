@@ -229,6 +229,7 @@ model Ticket {
   @@index([categoryId])
   @@index([reporterId])
   @@index([assignedAgencyId])
+  @@index([assignedAgencyId, createdAt])
   @@index([wardId])
   @@index([roadSegmentId])
   @@index([state])
@@ -368,6 +369,8 @@ model Project {
   @@index([agencyId])
   @@index([engineerId])
   @@index([state])
+  @@index([agencyId, createdAt])
+  @@index([engineerId, state, createdAt])
 }
 
 model ConflictLog {
@@ -640,6 +643,7 @@ model Notification {
 
   @@index([userId])
   @@index([userId, read])
+  @@index([userId, read, createdAt])
 }
 
 model PushToken {

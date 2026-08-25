@@ -62,6 +62,11 @@ export function NotificationRow({ icon, message, time, tone, href }: { icon: str
   return href ? <Link className="cv-notification-row" href={href}>{content}</Link> : <div className="cv-notification-row">{content}</div>;
 }
 
+export function PaginationControls({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (page: number) => void }) {
+  if (totalPages <= 1) return null;
+  return <nav aria-label="Pagination" className="pagination-controls"><button disabled={page <= 1} onClick={() => onPageChange(page - 1)} type="button">Previous</button><span>Page {page} of {totalPages}</span><button disabled={page >= totalPages} onClick={() => onPageChange(page + 1)} type="button">Next</button></nav>;
+}
+
 export type CategoryTile = { id: string; name: string };
 export function CategoryGrid({ categories, selectedId, onSelect }: { categories: CategoryTile[]; selectedId?: string; onSelect: (category: CategoryTile) => void }) {
   return <div aria-label="Issue categories" className="cv-category-grid">{categories.map((category) => <button aria-pressed={category.id === selectedId} className="cv-category-tile" key={category.id} onClick={() => onSelect(category)} type="button"><span aria-hidden="true">{category.name.slice(0, 1)}</span><strong>{category.name}</strong></button>)}</div>;

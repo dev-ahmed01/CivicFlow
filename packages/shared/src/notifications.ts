@@ -68,7 +68,7 @@ export function notificationDestination(notification: Pick<Notification, "type" 
     if (role === "ENGINEER") return `/engineer/projects/${projectId}`;
   }
   if (ticketId && role === "PROJECT_HEAD") return `/project-head/tickets/${ticketId}`;
-  if (role === "CITIZEN") return "/";
+  if (role === "CITIZEN") return ticketId ? `/tickets/${ticketId}` : "/tickets";
   return undefined;
 }
 

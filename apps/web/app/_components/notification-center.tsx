@@ -11,9 +11,10 @@ import {
   type Notification,
   type NotificationFilter,
   type NotificationListResponse,
+  type PaginationMeta,
   type UserRole,
 } from "@civicos/shared";
-import { NotificationRow } from "./ui";
+import { NotificationRow, PaginationControls } from "./ui";
 
 type ClientNotification = Omit<Notification, "createdAt"> & { createdAt: string };
 type ApiFetch = <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -51,20 +52,23 @@ export function NotificationCenter({ apiFetch, role, showFilters }: { apiFetch: 
   const [filter, setFilter] = useState<NotificationFilter>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta>({ page: 1, limit: 20, total: 0, totalPages: 1 });
 
   const load = useCallback(async () => {
     setError(undefined);
     try {
-      const result = await apiFetch<{ notifications: ClientNotification[]; unreadCount: number }>("/notifications");
+      const result = await apiFetch<{ notifications: ClientNotification[]; unreadCount: number; pagination: PaginationMeta }>(`/notifications?page=${page}&limit=20`);
       setNotifications(result.notifications.map((item) => ({ ...item, read: true })));
+      setPagination(result.pagination);
       const unread = result.notifications.filter((item) => !item.read);
-      await Promise.all(unread.map((item) => apiFetch(`/notifications/${item.id}/read`, { method: "PATCH" })));
+      if (unread.length > 0) await apiFetch("/notifications/read", { method: "PATCH", body: JSON.stringify({ ids: unread.map(({ id }) => id) }) });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load notifications");
     } finally {
       setLoading(false);
     }
-  }, [apiFetch]);
+  }, [apiFetch, page]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -95,5 +99,6 @@ export function NotificationCenter({ apiFetch, role, showFilters }: { apiFetch: 
         })}
       </div></section>)}
     </div>
+    <PaginationControls page={pagination.page} totalPages={pagination.totalPages} onPageChange={setPage} />
   </section>;
 }

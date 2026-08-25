@@ -25,15 +25,23 @@ function accessToken() {
 describe("notification API", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("returns reverse-chronological user rows and the authoritative unread count", async () => {
-    const createdAt = new Date("2026-08-23T10:00:00.000Z");
-    const row = { id: "60000000-0000-4000-8000-000000000091", userId, type: "CONFLICT_DETECTED", payload: { severity: "HIGH" }, read: false, createdAt };
-    const findMany = vi.spyOn(prisma.notification, "findMany").mockResolvedValue([row]);
+  it("returns the authoritative unread count without sending notification rows to polling clients", async () => {
+    const findMany = vi.spyOn(prisma.notification, "findMany");
     vi.spyOn(prisma.notification, "count").mockResolvedValue(1);
     const response = await request(app).get("/notifications?unread=true").set("Authorization", `Bearer ${accessToken()}`).expect(200);
     expect(response.body.unreadCount).toBe(1);
-    expect(response.body.notifications[0].type).toBe("CONFLICT_DETECTED");
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId, read: false } }));
+    expect(response.body.notifications).toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("paginates reverse-chronological notification rows at a maximum of 50", async () => {
+    const createdAt = new Date("2026-08-23T10:00:00.000Z");
+    const row = { id: "60000000-0000-4000-8000-000000000091", userId, type: "CONFLICT_DETECTED", payload: { severity: "HIGH" }, read: false, createdAt };
+    const findMany = vi.spyOn(prisma.notification, "findMany").mockResolvedValue([row]);
+    vi.spyOn(prisma.notification, "count").mockResolvedValueOnce(21).mockResolvedValueOnce(1);
+    const response = await request(app).get("/notifications?page=2&limit=20").set("Authorization", `Bearer ${accessToken()}`).expect(200);
+    expect(response.body.pagination).toEqual({ page: 2, limit: 20, total: 21, totalPages: 2 });
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId }, skip: 20, take: 20 }));
   });
 
   it("marks only the authenticated user's notification as read", async () => {
@@ -41,6 +49,13 @@ describe("notification API", () => {
     const notificationId = "60000000-0000-4000-8000-000000000092";
     await request(app).patch(`/notifications/${notificationId}/read`).set("Authorization", `Bearer ${accessToken()}`).expect(200);
     expect(updateMany).toHaveBeenCalledWith({ where: { id: notificationId, userId }, data: { read: true } });
+  });
+
+  it("marks a bounded set of visible notifications in one write", async () => {
+    const updateMany = vi.spyOn(prisma.notification, "updateMany").mockResolvedValue({ count: 2 });
+    const ids = ["60000000-0000-4000-8000-000000000092", "60000000-0000-4000-8000-000000000093"];
+    await request(app).patch("/notifications/read").set("Authorization", `Bearer ${accessToken()}`).send({ ids }).expect(200);
+    expect(updateMany).toHaveBeenCalledWith({ where: { id: { in: ids }, userId, read: false }, data: { read: true } });
   });
 
   it("requires authentication", async () => {

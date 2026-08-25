@@ -15,7 +15,7 @@ type HostedResponse = ImageRelevanceResult & { embedding?: number[] };
 export class HostedClipRelevanceService implements ImageRelevanceService {
   private readonly embeddings = new Map<string, number[]>();
 
-  constructor(private readonly endpoint: string, private readonly token?: string) {}
+  constructor(private readonly endpoint: string, private readonly token?: string, private readonly timeoutMs = 8000) {}
 
   async checkImageRelevance(imageUrl: string, categoryId: string): Promise<ImageRelevanceResult> {
     const response = await fetch(this.endpoint, {
@@ -25,6 +25,7 @@ export class HostedClipRelevanceService implements ImageRelevanceService {
         ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
       },
       body: JSON.stringify({ imageUrl, categoryId }),
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!response.ok) throw new Error(`Image relevance service returned ${response.status}`);
     const result = await response.json() as HostedResponse;
@@ -58,7 +59,7 @@ export class DevelopmentRelevanceService implements ImageRelevanceService {
 export function createImageRelevanceService(env: AppEnv): ImageRelevanceService {
   if (env.CLIP_MODE === "hosted" || env.CLIP_MODE === "auto" && env.CLIP_INFERENCE_URL) {
     if (!env.CLIP_INFERENCE_URL) throw new Error("CLIP_INFERENCE_URL is required for hosted CLIP mode");
-    return new HostedClipRelevanceService(env.CLIP_INFERENCE_URL, env.CLIP_INFERENCE_TOKEN);
+    return new HostedClipRelevanceService(env.CLIP_INFERENCE_URL, env.CLIP_INFERENCE_TOKEN, env.CLIP_TIMEOUT_MS);
   }
   if (env.CLIP_MODE === "demo_deterministic") {
     if (env.DEPLOYMENT_PROFILE !== "free_demo") throw new Error("Deterministic relevance is restricted to the free-demo profile");
