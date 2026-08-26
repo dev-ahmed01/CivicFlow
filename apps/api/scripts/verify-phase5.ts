@@ -25,6 +25,8 @@ const storage: ImageStorage = {
       expiresInSeconds: 900,
     };
   },
+  createDownload(objectKey) { return `https://images.example.test/${objectKey}`; },
+  async verifyUpload() { return true; },
 };
 
 async function login(app: ReturnType<typeof createApp>, email: string): Promise<string> {

@@ -33,11 +33,22 @@ export function AnalyticsDashboard() {
     catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load analytics"); }
     finally { setBusy(false); }
   }, [query]);
-  useEffect(() => { void Promise.all([adminApiFetch<Options>("/analytics/admin/options").then(setOptions), load()]); }, [load]);
+  useEffect(() => {
+    const boot = async () => {
+      try { const [loadedOptions] = await Promise.all([adminApiFetch<Options>("/analytics/admin/options"), load()]); setOptions(loadedOptions); }
+      catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load analytics options"); }
+    };
+    void boot();
+  }, [load]);
 
   const setFilter = (key: keyof Filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
+  const download = async (path: string, fileName: string) => {
+    setError(undefined);
+    try { await downloadAdminExport(path, fileName); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Could not export analytics"); }
+  };
   return <>
-    <header className="portal-heading"><div><p className="eyebrow">Part III §19.2</p><h1>City analytics</h1><p>Measured operational outcomes, filtered across the same report used for exports.</p></div><div className="export-actions"><button type="button" onClick={() => void downloadAdminExport(`/analytics/admin/export.csv${query}`, "city-analytics.csv")}>Export CSV</button><button type="button" onClick={() => void downloadAdminExport(`/analytics/admin/export.pdf${query}`, "city-analytics.pdf")}>Export PDF</button></div></header>
+    <header className="portal-heading"><div><p className="eyebrow">Part III §19.2</p><h1>City analytics</h1><p>Measured operational outcomes, filtered across the same report used for exports.</p></div><div className="export-actions"><button type="button" onClick={() => void download(`/analytics/admin/export.csv${query}`, "city-analytics.csv")}>Export CSV</button><button type="button" onClick={() => void download(`/analytics/admin/export.pdf${query}`, "city-analytics.pdf")}>Export PDF</button></div></header>
     <section className="filter-bar analytics-filters" aria-label="Analytics filters">
       <label>Ward<select value={filters.wardId} onChange={(event) => setFilter("wardId", event.target.value)}><option value="">All wards</option>{options.wards.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
       <label>Category<select value={filters.categoryId} onChange={(event) => setFilter("categoryId", event.target.value)}><option value="">All categories</option>{options.categories.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>

@@ -88,4 +88,10 @@ describe("free-demo environment", () => {
   it("rejects local object storage even in the free-demo profile", () => {
     expect(() => parseEnv({ ...freeDemoEnv, S3_ENDPOINT: "http://localhost:9000" })).toThrow();
   });
+
+  it("requires public HTTPS storage and web origins", () => {
+    expect(() => parseEnv({ ...freeDemoEnv, S3_ENDPOINT: "http://storage.example.com" })).toThrow();
+    expect(() => parseEnv({ ...freeDemoEnv, S3_ENDPOINT: "https://192.168.1.10" })).toThrow();
+    expect(() => parseEnv({ ...freeDemoEnv, CORS_ORIGINS: "http://civicos.example.com" })).toThrow();
+  });
 });

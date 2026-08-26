@@ -14,15 +14,17 @@ process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret-that-is-at-least-32-char
 const titlePrefix = "[Phase 6 acceptance]";
 const reporterId = "40000000-0000-4000-8000-000000000001";
 const validatorId = (number: number) => `41000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
-const pwdAgencyId = "20000000-0000-4000-8000-000000000003";
-const roadCategoryId = "30000000-0000-4000-8000-000000000001";
+const bescomAgencyId = "20000000-0000-4000-8000-000000000002";
+const streetlightCategoryId = "30000000-0000-4000-8000-000000000002";
 const jayanagarWardId = "10000000-0000-4000-8000-000000000004";
-const pwdEngineerId = "40000000-0000-4000-8000-000000000201";
+const bescomEngineerId = "40000000-0000-4000-8000-000000000203";
 
 const storage: ImageStorage = {
   createUpload(objectKey, contentType) {
     return { uploadUrl: `https://uploads.example.test/${objectKey}`, publicUrl: `https://images.example.test/${objectKey}`, headers: { "Content-Type": contentType }, expiresInSeconds: 900 };
   },
+  createDownload(objectKey) { return `https://images.example.test/${objectKey}`; },
+  async verifyUpload() { return true; },
 };
 
 async function login(app: ReturnType<typeof createApp>, email: string): Promise<string> {
@@ -41,14 +43,14 @@ async function createInspectedTicket(): Promise<string> {
   const observationId = randomUUID();
   await prisma.$transaction(async (transaction) => {
     await transaction.$executeRaw`
-      INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
-      VALUES (${ticketId}::uuid, ${roadCategoryId}::uuid, ${reporterId}::uuid, ${pwdAgencyId}::uuid,
+      INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt", "updatedAt")
+      VALUES (${ticketId}::uuid, ${streetlightCategoryId}::uuid, ${reporterId}::uuid, ${bescomAgencyId}::uuid,
         ST_SetSRID(ST_MakePoint(77.5844, 12.9299), 4326), ${jayanagarWardId}::uuid,
-        ${TicketState.INSPECTION_COMPLETE}::"TicketState", ${`${titlePrefix} road repair`}, 'Jayanagar, Bengaluru', NOW())
+        ${TicketState.INSPECTION_COMPLETE}::"TicketState", ${`${titlePrefix} streetlight restoration`}, 'Jayanagar, Bengaluru', NOW(), NOW())
     `;
     await transaction.observation.create({ data: { id: observationId, ticketId, submitterId: reporterId, imageUrl: `https://images.example.test/${ticketId}.jpg` } });
     await transaction.image.create({ data: { observationId, url: `https://images.example.test/${ticketId}.jpg`, objectKey: `phase6/${ticketId}.jpg`, isPrimary: true, uploadedAt: new Date() } });
-    await transaction.inspectionReport.create({ data: { ticketId, submittedById: "40000000-0000-4000-8000-000000000101", fileUrl: `https://images.example.test/${ticketId}-inspection.pdf`, objectKey: `phase6/${ticketId}-inspection.pdf`, contentType: "application/pdf", notes: "Carriageway repair is required before the next monsoon cycle.", uploadedAt: new Date() } });
+    await transaction.inspectionReport.create({ data: { ticketId, submittedById: "40000000-0000-4000-8000-000000000103", fileUrl: `https://images.example.test/${ticketId}-inspection.pdf`, objectKey: `phase6/${ticketId}-inspection.pdf`, contentType: "application/pdf", notes: "The failed luminaire and feeder require replacement.", uploadedAt: new Date() } });
     await transaction.validation.createMany({ data: [1, 2, 3].map((number) => ({ ticketId, validatorId: validatorId(number), vote: "CONFIRM" as const, counted: true })) });
   });
   return ticketId;
@@ -68,17 +70,17 @@ async function main(): Promise<void> {
   await cleanup();
   const app = createApp({ otpProvider: { async sendOtp() {} }, imageStorage: storage });
   const [headToken, engineerToken, otherEngineerToken] = await Promise.all([
-    login(app, "head.pwd@civicos.local"),
+    login(app, "head.bescom@civicos.local"),
+    login(app, "engineer.bescom@civicos.local"),
     login(app, "engineer.pwd@civicos.local"),
-    login(app, "engineer.bwssb@civicos.local"),
   ]);
   try {
     const ticketId = await createInspectedTicket();
-    const created = await request(app).post("/projects").set("Authorization", `Bearer ${headToken}`).send({ ticketId, engineerId: pwdEngineerId }).expect(201);
+    const created = await request(app).post("/projects").set("Authorization", `Bearer ${headToken}`).send({ ticketId, engineerId: bescomEngineerId }).expect(201);
     const projectId = created.body.project.id as string;
     assert.equal(created.body.project.state, ProjectState.PENDING_UPTAKE);
 
-    const geographic = await request(app).get(`/projects?scope=geographic&agency=${pwdAgencyId}`).set("Authorization", `Bearer ${otherEngineerToken}`).expect(200);
+    const geographic = await request(app).get(`/projects?scope=geographic&agency=${bescomAgencyId}`).set("Authorization", `Bearer ${otherEngineerToken}`).expect(200);
     assert.equal(geographic.body.projects.find((item: { id: string }) => item.id === projectId).editable, false);
     assert.equal((await request(app).get(`/projects/${projectId}`).set("Authorization", `Bearer ${otherEngineerToken}`).expect(200)).body.project.editable, false);
     await request(app).post(`/projects/${projectId}/uptake`).set("Authorization", `Bearer ${otherEngineerToken}`).expect(404);
@@ -88,8 +90,8 @@ async function main(): Promise<void> {
     const timeline = await request(app).patch(`/projects/${projectId}/timeline`).set("Authorization", `Bearer ${engineerToken}`).send({
       plannedStart: "2026-10-25T00:00:00.000Z",
       plannedEnd: "2026-11-05T23:59:59.999Z",
-      workDescription: "Mill the damaged surface, rebuild the base, and restore the carriageway.",
-      dependencyFlags: ["Traffic diversion"],
+      workDescription: "Replace the failed luminaire, test the feeder, and restore lighting.",
+      dependencyFlags: ["Electrical isolation"],
     }).expect(200);
     assert.deepEqual(timeline.body.conflicts, []);
     assert.equal(timeline.body.project.state, ProjectState.ACTIVE);
@@ -101,15 +103,15 @@ async function main(): Promise<void> {
     await request(app).patch(`/projects/${projectId}/timeline`).set("Authorization", `Bearer ${engineerToken}`).send({
       plannedStart: "2026-10-26T00:00:00.000Z",
       plannedEnd: "2026-11-06T23:59:59.999Z",
-      workDescription: "Revised field plan after the traffic-diversion coordination meeting.",
-      dependencyFlags: ["Traffic diversion", "Utility clearance"],
+      workDescription: "Revised field plan after the electrical-isolation coordination meeting.",
+      dependencyFlags: ["Electrical isolation", "Feeder clearance"],
     }).expect(200);
     assert.equal(await prisma.notification.count({ where: { type: "PROJECT_TIMELINE_MODIFIED", payload: { path: ["projectId"], equals: projectId } } }) >= 1, true);
 
-    await request(app).patch(`/projects/${projectId}/status`).set("Authorization", `Bearer ${engineerToken}`).send({ state: "COMPLETED", note: "Surface restored and site cleared." }).expect(200);
+    await request(app).patch(`/projects/${projectId}/status`).set("Authorization", `Bearer ${engineerToken}`).send({ state: "COMPLETED", note: "Lighting restored and the site made safe." }).expect(200);
     assert.equal((await prisma.project.findUniqueOrThrow({ where: { id: projectId } })).state, ProjectState.COMPLETED);
     assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } })).state, TicketState.WORK_COMPLETED);
-    const evidence = await request(app).post(`/projects/${projectId}/completion`).set("Authorization", `Bearer ${engineerToken}`).send({ action: "presign", fileName: "complete.jpg", contentType: "image/jpeg", notes: "Finished carriageway with markings restored." }).expect(201);
+    const evidence = await request(app).post(`/projects/${projectId}/completion`).set("Authorization", `Bearer ${engineerToken}`).send({ action: "presign", fileName: "complete.jpg", contentType: "image/jpeg", notes: "Replacement luminaire operating after feeder testing." }).expect(201);
     const completed = await request(app).post(`/projects/${projectId}/completion`).set("Authorization", `Bearer ${engineerToken}`).send({ action: "complete", evidenceId: evidence.body.evidenceId }).expect(200);
     assert.equal(completed.body.validatorsNotified, 3);
     assert.equal((await prisma.project.findUniqueOrThrow({ where: { id: projectId } })).state, ProjectState.AWAITING_VERIFICATION);

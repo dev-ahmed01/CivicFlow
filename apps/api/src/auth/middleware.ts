@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import type { UserRole } from "@civicos/shared";
+import { prisma } from "db";
 import { verifyAccessToken } from "./tokens";
 
 export function requireAuth(
@@ -7,6 +8,10 @@ export function requireAuth(
   response: Response,
   next: NextFunction,
 ): void {
+  if (request.auth) {
+    next();
+    return;
+  }
   const authorization = request.header("authorization");
   if (!authorization?.startsWith("Bearer ")) {
     response.status(401).json({ error: "Authentication required" });
@@ -15,14 +20,25 @@ export function requireAuth(
 
   try {
     const claims = verifyAccessToken(authorization.slice("Bearer ".length));
-    request.auth = {
-      userId: claims.sub,
-      role: claims.role,
-      agencyId: claims.agencyId,
-      wardId: claims.wardId,
-      mustResetPassword: claims.mustResetPassword,
-    };
-    next();
+    void prisma.user.findUnique({
+      where: { id: claims.sub },
+      select: { id: true, role: true, agencyId: true, wardId: true, mustResetPassword: true },
+    }).then((user) => {
+      if (!user) {
+        response.status(401).json({ error: "Account is no longer active" });
+        return;
+      }
+      // Part III §17.2 — the signed token proves the session identity; current
+      // role, agency, ward, and reset state remain database-authoritative.
+      request.auth = {
+        userId: user.id,
+        role: user.role,
+        agencyId: user.agencyId,
+        wardId: user.wardId,
+        mustResetPassword: user.mustResetPassword,
+      };
+      next();
+    }).catch(next);
   } catch {
     response.status(401).json({ error: "Invalid or expired access token" });
   }

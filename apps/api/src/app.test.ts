@@ -1,6 +1,7 @@
 import request from "supertest";
 import jwt from "jsonwebtoken";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { prisma } from "db";
 import { createApp } from "./app";
 import type { OtpProvider } from "./auth/otp-provider";
 
@@ -37,6 +38,16 @@ const noopOtpProvider: OtpProvider = {
   async sendOtp() {},
 };
 
+function mockCurrentUser(role: "CITIZEN" | "PROJECT_HEAD", mustResetPassword = false) {
+  vi.spyOn(prisma.user, "findUnique").mockResolvedValue({
+    id: "40000000-0000-4000-8000-000000000001",
+    role,
+    agencyId: role === "PROJECT_HEAD" ? "20000000-0000-4000-8000-000000000003" : null,
+    wardId: null,
+    mustResetPassword,
+  } as never);
+}
+
 function accessToken(
   role: "CITIZEN" | "PROJECT_HEAD",
   mustResetPassword = false,
@@ -61,6 +72,7 @@ function accessToken(
 
 describe("RBAC middleware", () => {
   const app = createApp(noopOtpProvider);
+  afterEach(() => vi.restoreAllMocks());
 
   it("returns 401 without authentication", async () => {
     await request(app).get("/protected/project-head").expect(401);
@@ -72,13 +84,23 @@ describe("RBAC middleware", () => {
   });
 
   it("returns 403 to a citizen", async () => {
+    mockCurrentUser("CITIZEN");
     await request(app)
       .get("/protected/project-head")
       .set("Authorization", `Bearer ${accessToken("CITIZEN")}`)
       .expect(403);
   });
 
+  it("uses the current database role instead of a stale elevated token claim", async () => {
+    mockCurrentUser("CITIZEN");
+    await request(app)
+      .get("/protected/project-head")
+      .set("Authorization", `Bearer ${accessToken("PROJECT_HEAD")}`)
+      .expect(403);
+  });
+
   it("allows a Project Head", async () => {
+    mockCurrentUser("PROJECT_HEAD");
     const response = await request(app)
       .get("/protected/project-head")
       .set("Authorization", `Bearer ${accessToken("PROJECT_HEAD")}`)
@@ -87,6 +109,7 @@ describe("RBAC middleware", () => {
   });
 
   it("forces first-login Project Heads through password reset", async () => {
+    mockCurrentUser("PROJECT_HEAD", true);
     const response = await request(app)
       .get("/protected/project-head")
       .set("Authorization", `Bearer ${accessToken("PROJECT_HEAD", true)}`)

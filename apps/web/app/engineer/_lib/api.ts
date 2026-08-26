@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiRequestError, apiRequest, redirectToCurrentPortalLogin } from "../../_lib/api";
+import { ApiRequestError, authenticatedApiRequest, redirectToCurrentPortalLogin, revokeSession } from "../../_lib/api";
 
 const sessionKey = "civicos.engineer.session";
 
@@ -27,12 +27,9 @@ export function clearSession(): void {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getSession()?.accessToken;
+  const session = getSession();
   try {
-    return await apiRequest<T>(path, {
-      ...init,
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers },
-    });
+    return await authenticatedApiRequest(path, init, session, saveSession);
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 401) {
       clearSession();
@@ -42,8 +39,16 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 }
 
+export async function logout(): Promise<void> {
+  const session = getSession();
+  clearSession();
+  await revokeSession(session);
+}
+
 export async function uploadFile(upload: { uploadUrl: string; headers: Record<string, string> }, file: File): Promise<void> {
-  const response = await fetch(upload.uploadUrl, { method: "PUT", headers: upload.headers, body: file });
+  let response: Response;
+  try { response = await fetch(upload.uploadUrl, { method: "PUT", headers: upload.headers, body: file }); }
+  catch (cause) { throw new Error("The file could not be uploaded. Check your connection and try again.", { cause }); }
   if (!response.ok) throw new Error("File upload failed");
 }
 

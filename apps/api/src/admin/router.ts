@@ -39,6 +39,51 @@ const userSelect = {
 
 type WardRow = { id: string; name: string; boundary: string; verificationRadiusOverrideMeters: number | null };
 
+const requiredConfigKeys = new Set([
+  "auth.otp_max_attempts",
+  "road.simulated_restoration_cost_per_meter",
+  "road.simulated_avoided_rework_factor",
+  "verification.default_radius_meters",
+  "verification.daily_cap",
+  "verification.quorum",
+  "verification.initial_recipient_count",
+  "verification.renotify_after_hours",
+  "duplicate.radius_meters",
+  "duplicate.open_window_days",
+  "duplicate.visual_similarity_threshold",
+  "ai_relevance.max_retries",
+  "ai_relevance.pass_threshold",
+  "demo.web_auto_route_enabled",
+  "conflict.radius_meters",
+  "road.category_id",
+  "road.repeated_excavation_days",
+]);
+
+const positiveIntegerConfigKeys = new Set([
+  "auth.otp_max_attempts", "verification.daily_cap", "verification.quorum",
+  "verification.initial_recipient_count", "verification.renotify_after_hours",
+  "duplicate.open_window_days", "ai_relevance.max_retries", "road.repeated_excavation_days",
+]);
+const positiveNumberConfigKeys = new Set([
+  "road.simulated_restoration_cost_per_meter", "verification.default_radius_meters",
+  "duplicate.radius_meters", "conflict.radius_meters",
+]);
+const ratioConfigKeys = new Set([
+  "road.simulated_avoided_rework_factor", "duplicate.visual_similarity_threshold", "ai_relevance.pass_threshold",
+]);
+
+async function configValueError(key: string, value: unknown): Promise<string | null> {
+  if (positiveIntegerConfigKeys.has(key) && (typeof value !== "number" || !Number.isInteger(value) || value <= 0)) return `${key} must be a positive integer`;
+  if (positiveNumberConfigKeys.has(key) && (typeof value !== "number" || !Number.isFinite(value) || value <= 0)) return `${key} must be a positive number`;
+  if (ratioConfigKeys.has(key) && (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1)) return `${key} must be between 0 and 1`;
+  if (key === "demo.web_auto_route_enabled" && typeof value !== "boolean") return `${key} must be true or false`;
+  if (key === "road.category_id") {
+    if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) return `${key} must reference a category ID`;
+    if (!(await prisma.category.findUnique({ where: { id: value }, select: { id: true } }))) return `${key} references a category that does not exist`;
+  }
+  return null;
+}
+
 export function createAdminRouter(): Router {
   const router = Router();
   router.use(requireAuth, requireRole(UserRole.ADMIN), requirePasswordResetComplete);
@@ -67,6 +112,7 @@ export function createAdminRouter(): Router {
   router.patch("/categories/:id/routing", asyncRoute(async (request, response) => {
     const parsed = updateCategoryRoutingSchema.safeParse(request.body);
     if (!parsed.success) { response.status(400).json({ error: "Invalid primary agency", details: parsed.error.flatten() }); return; }
+    if (!(await prisma.agency.findUnique({ where: { id: parsed.data.primaryAgencyId }, select: { id: true } }))) { response.status(422).json({ error: "Primary agency does not exist" }); return; }
     const result = await prisma.category.updateMany({ where: { id: param(request), adminEditable: true }, data: parsed.data });
     if (result.count === 0) { response.status(404).json({ error: "Editable category not found" }); return; }
     response.json({ categoryId: param(request), ...parsed.data });
@@ -138,14 +184,19 @@ export function createAdminRouter(): Router {
   router.post("/config", asyncRoute(async (request, response) => {
     const parsed = adminConfigInputSchema.safeParse(request.body);
     if (!parsed.success) { response.status(400).json({ error: "Invalid config", details: parsed.error.flatten() }); return; }
+    const valueError = await configValueError(parsed.data.key, parsed.data.value);
+    if (valueError) { response.status(422).json({ error: valueError }); return; }
     try { response.status(201).json(await prisma.adminConfig.create({ data: { ...parsed.data, value: parsed.data.value as Prisma.InputJsonValue } })); } catch (error) { conflictResponse(error, response); }
   }));
   router.put("/config/:key", asyncRoute(async (request, response) => {
     const parsed = adminConfigInputSchema.safeParse({ ...request.body, key: param(request, "key") });
     if (!parsed.success) { response.status(400).json({ error: "Invalid config", details: parsed.error.flatten() }); return; }
+    const valueError = await configValueError(parsed.data.key, parsed.data.value);
+    if (valueError) { response.status(422).json({ error: valueError }); return; }
     try { response.json(await prisma.adminConfig.update({ where: { key: param(request, "key") }, data: { value: parsed.data.value as Prisma.InputJsonValue, description: parsed.data.description } })); } catch (error) { conflictResponse(error, response); }
   }));
   router.delete("/config/:key", asyncRoute(async (request, response) => {
+    if (requiredConfigKeys.has(param(request, "key"))) { response.status(409).json({ error: "This setting is required by an active workflow and cannot be deleted" }); return; }
     try { await prisma.adminConfig.delete({ where: { key: param(request, "key") } }); response.status(204).send(); } catch (error) { conflictResponse(error, response); }
   }));
 
@@ -175,7 +226,17 @@ export function createAdminRouter(): Router {
     const parsed = adminUserInputSchema.safeParse(request.body);
     if (!parsed.success) { response.status(400).json({ error: "Invalid user", details: parsed.error.flatten() }); return; }
     const { password, ...input } = parsed.data;
-    try { response.json(await prisma.user.update({ where: { id: param(request) }, data: { ...input, email: input.email?.toLowerCase(), ...(password ? { passwordHash: await bcrypt.hash(password, 12) } : {}) }, select: userSelect })); } catch (error) { conflictResponse(error, response); }
+    const existing = await prisma.user.findUnique({ where: { id: param(request) }, select: { passwordHash: true } });
+    if (!existing) { response.status(404).json({ error: "User not found" }); return; }
+    if (input.role !== UserRole.CITIZEN && !password && !existing.passwordHash) { response.status(400).json({ error: "Internal users require a password of at least 12 characters" }); return; }
+    try {
+      const updated = await prisma.$transaction(async (transaction) => {
+        const user = await transaction.user.update({ where: { id: param(request) }, data: { ...input, email: input.email?.toLowerCase(), ...(password ? { passwordHash: await bcrypt.hash(password, 12) } : {}) }, select: userSelect });
+        await transaction.refreshSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
+        return user;
+      });
+      response.json(updated);
+    } catch (error) { conflictResponse(error, response); }
   }));
   router.delete("/users/:id", asyncRoute(async (request, response) => {
     if (param(request) === request.auth!.userId) { response.status(409).json({ error: "You cannot delete your own active admin account" }); return; }

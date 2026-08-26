@@ -8,7 +8,6 @@ import {
   requestOtpSchema,
   resetPasswordSchema,
   totpCodeSchema,
-  userRoleSchema,
   verifyOtpSchema,
 } from "@civicos/shared";
 import { prisma, UserRole } from "db";
@@ -254,8 +253,6 @@ export function createAuthRouter(otpProvider: OtpProvider): Router {
 
   router.post(
     "/logout",
-    requireAuth,
-    requireRole(...userRoleSchema.options),
     async (request: Request, response: Response) => {
       const parsed = refreshTokenRequestSchema.safeParse(request.body);
       if (!parsed.success) {

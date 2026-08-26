@@ -182,10 +182,14 @@ export function createAgencyRouter(storage: ImageStorage): Router {
               ticket: { reporterId: null, assignedAgencyId: projectHeadAgency(request) },
             },
           },
-          select: { id: true, observation: { select: { ticketId: true } } },
+          select: { id: true, objectKey: true, contentType: true, observation: { select: { ticketId: true } } },
         });
         if (!image) {
           response.status(404).json({ error: "Evidence upload not found" });
+          return;
+        }
+        if (!image.contentType || !(await storage.verifyUpload(image.objectKey, image.contentType))) {
+          response.status(422).json({ error: "The uploaded evidence is missing, empty, too large, or has an unexpected file type. Upload it again." });
           return;
         }
         await prisma.image.update({ where: { id: image.id }, data: { uploadedAt: new Date() } });
@@ -243,16 +247,16 @@ export function createAgencyRouter(storage: ImageStorage): Router {
       const result = await prisma.$transaction(async (transaction) => {
         if (input.location) {
           await transaction.$executeRaw`
-            INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
+            INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt", "updatedAt")
             VALUES (${ticketId}::uuid, ${category.id}::uuid, NULL, ${agencyId}::uuid,
               ST_SetSRID(ST_MakePoint(${input.location.longitude}, ${input.location.latitude}), 4326), ${ward.id}::uuid,
-              ${TicketState.ROUTED_TO_AGENCY}::"TicketState", ${title}, ${address}, NOW())
+              ${TicketState.ROUTED_TO_AGENCY}::"TicketState", ${title}, ${address}, NOW(), NOW())
           `;
         } else {
           await transaction.$executeRaw`
-            INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
+            INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt", "updatedAt")
             SELECT ${ticketId}::uuid, ${category.id}::uuid, NULL, ${agencyId}::uuid,
-              ST_PointOnSurface("boundary"), "id", ${TicketState.ROUTED_TO_AGENCY}::"TicketState", ${title}, ${address}, NOW()
+              ST_PointOnSurface("boundary"), "id", ${TicketState.ROUTED_TO_AGENCY}::"TicketState", ${title}, ${address}, NOW(), NOW()
             FROM "Ward" WHERE "id" = ${ward.id}::uuid
           `;
         }
@@ -269,11 +273,11 @@ export function createAgencyRouter(storage: ImageStorage): Router {
           },
         });
         await transaction.image.create({
-          data: { id: imageId, observationId, url: upload.publicUrl, objectKey, isPrimary: true },
+          data: { id: imageId, observationId, url: upload.publicUrl, objectKey, contentType: input.evidence.contentType, isPrimary: true },
         });
         // Part II W-P9 — no citizen validation transitions are synthesized.
         await transaction.ticketStateTransition.create({
-          data: { ticketId, fromState: null, toState: TicketState.ROUTED_TO_AGENCY, reason: "AGENCY_ORIGINATED" },
+          data: { ticketId, fromState: null, toState: TicketState.ROUTED_TO_AGENCY, reason: "AGENCY_ORIGINATED", actedById: request.auth!.userId },
         });
         if (!input.intervention) return { projectId: null, conflicts: [], roadConflicts: [] };
 
@@ -299,7 +303,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
           },
         });
         await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.PROJECT_CREATED, roadSegmentId: intervention.segmentId } });
-        await transaction.ticketStateTransition.create({ data: { ticketId, fromState: TicketState.ROUTED_TO_AGENCY, toState: TicketState.PROJECT_CREATED, reason: "PLANNED_INTERVENTION_CREATED" } });
+        await transaction.ticketStateTransition.create({ data: { ticketId, fromState: TicketState.ROUTED_TO_AGENCY, toState: TicketState.PROJECT_CREATED, reason: "PLANNED_INTERVENTION_CREATED", actedById: request.auth!.userId } });
         // Delta §4.3 — the unchanged Phase 7 engine runs before road-specific checks.
         const conflicts = await checkProjectConflicts(transaction, project.id);
         const roadConflicts = await checkRoadConflicts(transaction, project.id);
@@ -339,7 +343,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
           if (ticket.state === TicketState.ROUTED_TO_AGENCY) {
             await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.INSPECTION_DUE } });
             await transaction.ticketStateTransition.create({
-              data: { ticketId, fromState: ticket.state, toState: TicketState.INSPECTION_DUE, reason: "INSPECTION_OPENED" },
+              data: { ticketId, fromState: ticket.state, toState: TicketState.INSPECTION_DUE, reason: "INSPECTION_OPENED", actedById: request.auth!.userId },
             });
           }
           await transaction.inspectionReport.create({
@@ -360,10 +364,14 @@ export function createAgencyRouter(storage: ImageStorage): Router {
 
       const report = await prisma.inspectionReport.findFirst({
         where: { id: parsed.data.reportId, ticketId, submittedById: request.auth!.userId },
-        select: { id: true },
+        select: { id: true, objectKey: true, contentType: true },
       });
       if (!report) {
         response.status(404).json({ error: "Inspection report not found" });
+        return;
+      }
+      if (!(await storage.verifyUpload(report.objectKey, report.contentType))) {
+        response.status(422).json({ error: "The inspection file is missing, empty, too large, or has an unexpected file type. Upload it again." });
         return;
       }
       const ticket = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { state: true } });
@@ -375,7 +383,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         prisma.inspectionReport.update({ where: { id: report.id }, data: { uploadedAt: new Date() } }),
         prisma.ticket.update({ where: { id: ticketId }, data: { state: TicketState.INSPECTION_COMPLETE } }),
         prisma.ticketStateTransition.create({
-          data: { ticketId, fromState: TicketState.INSPECTION_DUE, toState: TicketState.INSPECTION_COMPLETE, reason: "INSPECTION_COMPLETE" },
+          data: { ticketId, fromState: TicketState.INSPECTION_DUE, toState: TicketState.INSPECTION_COMPLETE, reason: "INSPECTION_COMPLETE", actedById: request.auth!.userId },
         }),
       ]);
       response.json({ reportId: report.id, ticketId, state: TicketState.INSPECTION_COMPLETE });

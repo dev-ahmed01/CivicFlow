@@ -14,6 +14,7 @@ const presentations: Record<string, NotificationPresentation> = {
   VALIDATION_REQUEST: { icon: "i", tone: "info", category: "general", message: "A nearby issue needs your verification." },
   TICKET_VALIDATED: { icon: "✓", tone: "success", category: "general", message: "Community verification validated your report." },
   TICKET_ROUTED_TO_AGENCY: { icon: "✓", tone: "success", category: "general", message: "The responsible agency received your report." },
+  PROJECT_CREATED: { icon: "↓", tone: "info", category: "assignments", message: "An engineer has been assigned to this issue." },
   PROJECT_ACTIVE: { icon: "▶", tone: "info", category: "assignments", message: "Work has started on this issue." },
   WORK_STARTED: { icon: "▶", tone: "info", category: "assignments", message: "Work has started on this issue." },
   PROJECT_COMPLETED: { icon: "◆", tone: "warning", category: "completion", message: "Work is complete and awaiting evidence review." },
@@ -61,7 +62,7 @@ export function notificationDestination(notification: Pick<Notification, "type" 
   const ticketId = value(notification.payload, "ticketId");
   if (dependencyId) {
     if (role === "PROJECT_HEAD") return "/project-head/dependencies/inbox";
-    if (role === "ENGINEER") return "/engineer/assigned";
+    if (role === "ENGINEER") return "/engineer/dependencies";
   }
   if (projectId) {
     if (role === "PROJECT_HEAD") return `/project-head/projects/${projectId}`;

@@ -9,6 +9,7 @@ describe("direct web agency routing", () => {
         findUnique: vi.fn(async () => ({
           state: TicketState.AI_CHECK_PENDING,
           reporterId: "40000000-0000-4000-8000-000000000001",
+          observations: [{ submitterId: "40000000-0000-4000-8000-000000000001" }],
           category: { primaryAgencyId: "40000000-0000-4000-8000-000000000002" },
         })),
         update: vi.fn(async () => ({})),

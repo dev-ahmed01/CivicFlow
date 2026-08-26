@@ -4,25 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { CategorySummary, CitizenTicketSummary, ReportingArea } from "@civicos/shared";
 import { CitizenIcon, PrimaryButton, StatusChip } from "./_components/ui";
-import { getCitizenAccessToken } from "./_lib/citizen-auth";
-
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const accessToken = getCitizenAccessToken();
-  let response: Response;
-  try {
-    response = await fetch(`${apiUrl}${path}`, {
-      ...init,
-      headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...init?.headers },
-    });
-  } catch (cause) {
-    throw new Error("The CivicFlow API is unavailable. Start the local services and API, then try again.", { cause });
-  }
-  const body = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(body.error ?? "Request failed");
-  return body;
-}
+import { citizenApiFetch as apiFetch } from "./_lib/citizen-auth";
 
 async function uploadImage(upload: { uploadUrl: string; headers: Record<string, string> }, file: File, label: string): Promise<void> {
   let response: Response;

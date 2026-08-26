@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { clearSession, getSession } from "../_lib/api";
-import { apiFetch } from "../_lib/api";
+import { apiFetch, getSession, logout } from "../_lib/api";
 import { NotificationBell } from "../../_components/notification-center";
 import { CitizenIcon, type CitizenIconName } from "../../_components/ui";
 
@@ -36,8 +35,8 @@ export function ProjectHeadShell({ children }: { children: ReactNode }) {
   if (loginPage) return children;
   if (!ready) return <main className="portal-loading">Opening your agency workspace…</main>;
 
-  const logout = () => {
-    clearSession();
+  const signOut = async () => {
+    await logout();
     router.replace("/login");
   };
   return (
@@ -49,7 +48,7 @@ export function ProjectHeadShell({ children }: { children: ReactNode }) {
           <div className="portal-nav-group"><p>Work</p>{workLinks.map((item) => <Link className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
           <div className="portal-nav-group"><p>Account</p><NotificationBell active={pathname === "/project-head/notifications"} apiFetch={apiFetch} href="/project-head/notifications" label="Notifications" />{accountLinks.map((item) => <Link className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
         </nav>
-        <button className="portal-logout" type="button" onClick={logout}><CitizenIcon name="logout" size={19} />Sign out</button>
+        <button className="portal-logout" type="button" onClick={() => void signOut()}><CitizenIcon name="logout" size={19} />Sign out</button>
       </aside>
       <main className="portal-content">{children}</main>
     </div>

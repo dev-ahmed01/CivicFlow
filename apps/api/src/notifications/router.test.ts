@@ -1,6 +1,6 @@
 import request from "supertest";
 import jwt from "jsonwebtoken";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "db";
 import { createApp } from "../app";
 import type { OtpProvider } from "../auth/otp-provider";
@@ -23,6 +23,15 @@ function accessToken() {
 }
 
 describe("notification API", () => {
+  beforeEach(() => {
+    vi.spyOn(prisma.user, "findUnique").mockResolvedValue({
+      id: userId,
+      role: "ENGINEER",
+      agencyId: "50000000-0000-4000-8000-000000000091",
+      wardId: null,
+      mustResetPassword: false,
+    } as never);
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("returns the authoritative unread count without sending notification rows to polling clients", async () => {

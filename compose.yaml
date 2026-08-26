@@ -43,7 +43,7 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 civicos-local civicos-local-secret;
       mc mb --ignore-existing local/civicos-images;
-      mc anonymous set download local/civicos-images;
+      mc anonymous set none local/civicos-images;
       "
 
 volumes:

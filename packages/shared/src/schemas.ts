@@ -182,6 +182,7 @@ export const citizenTicketSummarySchema = z.object({
   category: categorySummarySchema,
   observationCount: z.number().int().positive(),
   createdAt: dateSchema,
+  updatedAt: dateSchema,
   status: citizenTicketStateSchema,
   statusLabel: z.string(),
 });
@@ -210,6 +211,7 @@ export const ticketSchema = z.object({
   duplicateVisualSimilarity: z.number().min(-1).max(1).nullable(),
   duplicateVisualMatch: z.boolean().nullable(),
   createdAt: dateSchema,
+  updatedAt: dateSchema,
 });
 
 export const observationSchema = z.object({
@@ -393,6 +395,8 @@ export const adminUserInputSchema = z.object({
   if (value.role === "CITIZEN" && !value.phone) context.addIssue({ code: z.ZodIssueCode.custom, path: ["phone"], message: "Citizens require a phone" });
   if (value.role !== "CITIZEN" && !value.email) context.addIssue({ code: z.ZodIssueCode.custom, path: ["email"], message: "Internal users require an email" });
   if (["PROJECT_HEAD", "ENGINEER"].includes(value.role) && !value.agencyId) context.addIssue({ code: z.ZodIssueCode.custom, path: ["agencyId"], message: "Agency role requires an agency" });
+  if (!["PROJECT_HEAD", "ENGINEER"].includes(value.role) && value.agencyId) context.addIssue({ code: z.ZodIssueCode.custom, path: ["agencyId"], message: "Only agency roles may have an agency" });
+  if (value.role !== "CITIZEN" && value.wardId) context.addIssue({ code: z.ZodIssueCode.custom, path: ["wardId"], message: "Only citizens may have a home ward" });
 });
 export const adminRoutingRuleInputSchema = z.object({
   categoryId: idSchema,

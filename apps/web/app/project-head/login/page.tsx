@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { apiFetch, saveSession, type ProjectHeadSession } from "../_lib/api";
+import { RequiredPasswordReset } from "../../_components/required-password-reset";
 
 type LoginResponse = {
   user: { id: string; role: string; email: string; agencyId: string | null };
@@ -14,8 +15,10 @@ type LoginResponse = {
 
 export default function ProjectHeadLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("head.pwd@civicos.local");
-  const [password, setPassword] = useState("CivicOS@123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [resetToken, setResetToken] = useState<string>();
+  const [message, setMessage] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -32,7 +35,8 @@ export default function ProjectHeadLoginPage() {
         throw new Error("This workspace is available to agency Project Heads only");
       }
       if (result.requiresPasswordReset) {
-        throw new Error("Reset this account’s temporary password before opening the workspace");
+        setResetToken(result.accessToken);
+        return;
       }
       saveSession({
         accessToken: result.accessToken,
@@ -54,13 +58,13 @@ export default function ProjectHeadLoginPage() {
         <p className="eyebrow">Agency operations</p>
         <h1>Welcome back.</h1>
         <p className="login-copy">Sign in to your agency-scoped Project Head workspace.</p>
-        <form onSubmit={(event) => void submit(event)}>
+        {message ? <p className="success" role="status">{message}</p> : null}
+        {resetToken ? <RequiredPasswordReset accessToken={resetToken} currentPassword={password} onCancel={() => setResetToken(undefined)} onComplete={() => { setResetToken(undefined); setPassword(""); setMessage("Password updated. Sign in with your new password."); }} /> : <form onSubmit={(event) => void submit(event)}>
           <label>Work email<input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
           <label>Password<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
           {error ? <p className="error" role="alert">{error}</p> : null}
           <button disabled={busy} type="submit">{busy ? "Signing in…" : "Sign in"}</button>
-        </form>
-        <p className="demo-note">Demo: head.pwd@civicos.local / CivicOS@123</p>
+        </form>}
         <Link className="all-roles-link" href="/login">Sign in with a different role</Link>
       </section>
       <section className="login-context" aria-label="Product context">

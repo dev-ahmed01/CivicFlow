@@ -175,10 +175,10 @@ async function seedEngineerWorkflowDemo(): Promise<void> {
     const observationId = `60000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
     const projectId = `70000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
     await prisma.$executeRaw`
-      INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
+      INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt", "updatedAt")
       VALUES (${ticketId}::uuid, ${item.categoryId}::uuid, ${"40000000-0000-4000-8000-000000000001"}::uuid,
         ${item.agencyId}::uuid, ST_SetSRID(ST_MakePoint(${item.longitude}, ${item.latitude}), 4326), ${item.wardId}::uuid,
-        ${item.ticketState}::"TicketState", ${item.title}, ${`${item.title}, Bengaluru`}, NOW())
+        ${item.ticketState}::"TicketState", ${item.title}, ${`${item.title}, Bengaluru`}, NOW(), NOW())
       ON CONFLICT ("id") DO UPDATE SET
         "assignedAgencyId" = EXCLUDED."assignedAgencyId", "coordinates" = EXCLUDED."coordinates", "state" = EXCLUDED."state",
         "wardId" = EXCLUDED."wardId", "title" = EXCLUDED."title", "address" = EXCLUDED."address"
@@ -233,11 +233,11 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
   const evidenceBaseUrl = "https://placehold.co/1200x800/e7ecf7/1f2937.jpg";
 
   await prisma.$executeRaw`
-    INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "aiRetryCount", "createdAt")
+    INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "aiRetryCount", "createdAt", "updatedAt")
     VALUES (${demo.ticket}::uuid, ${categories[1].id}::uuid, ${reporterId}::uuid, ${ids.agencies.bescom}::uuid,
       ST_SetSRID(ST_MakePoint(77.5844, 12.9299), 4326), ${ids.wards.jayanagar}::uuid,
       ${TicketState.CLOSED}::"TicketState", 'Streetlight outage near Jayanagar 4th Block',
-      '11th Main Road, Jayanagar 4th Block, Bengaluru', 1, ${at(1)})
+      '11th Main Road, Jayanagar 4th Block, Bengaluru', 1, ${at(1)}, ${at(9)})
     ON CONFLICT ("id") DO UPDATE SET
       "categoryId" = EXCLUDED."categoryId", "reporterId" = EXCLUDED."reporterId",
       "assignedAgencyId" = EXCLUDED."assignedAgencyId", "coordinates" = EXCLUDED."coordinates",
@@ -504,10 +504,10 @@ async function seedRoadCuttingDemo(): Promise<void> {
     const projectId = `82000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
     const interventionId = `83000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
     await prisma.$executeRaw`
-      INSERT INTO "Ticket" ("id", "categoryId", "assignedAgencyId", "coordinates", "wardId", "roadSegmentId", "state", "title", "address", "createdAt")
+      INSERT INTO "Ticket" ("id", "categoryId", "assignedAgencyId", "coordinates", "wardId", "roadSegmentId", "state", "title", "address", "createdAt", "updatedAt")
       VALUES (${ticketId}::uuid, ${categories[0].id}::uuid, ${item.agencyId}::uuid,
         ST_SetSRID(ST_MakePoint(77.5845, 12.9290), 4326), ${ids.wards.jayanagar}::uuid,
-        ${ids.roadSegments.flagship}::uuid, ${TicketState.WORK_IN_PROGRESS}::"TicketState", ${item.title}, '11th Main Road, Jayanagar, Bengaluru', NOW())
+        ${ids.roadSegments.flagship}::uuid, ${TicketState.WORK_IN_PROGRESS}::"TicketState", ${item.title}, '11th Main Road, Jayanagar, Bengaluru', NOW(), NOW())
       ON CONFLICT ("id") DO UPDATE SET "assignedAgencyId" = EXCLUDED."assignedAgencyId", "roadSegmentId" = EXCLUDED."roadSegmentId",
         "coordinates" = EXCLUDED."coordinates", "wardId" = EXCLUDED."wardId", "state" = EXCLUDED."state",
         "title" = EXCLUDED."title", "address" = EXCLUDED."address"

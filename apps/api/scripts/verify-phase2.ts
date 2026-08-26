@@ -34,6 +34,8 @@ const storage: ImageStorage = {
       expiresInSeconds: 900,
     };
   },
+  createDownload(objectKey) { return `https://images.example.test/${objectKey}`; },
+  async verifyUpload() { return true; },
 };
 
 function token(userId: string): string {

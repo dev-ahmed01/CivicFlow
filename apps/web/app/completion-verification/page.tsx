@@ -5,10 +5,7 @@ import Image from "next/image";
 import type { CompletionVerificationDecision, PendingCompletionVerification } from "@civicos/shared";
 import { CitizenHeader } from "../_components/citizen-header";
 import { Card, PrimaryButton } from "../_components/ui";
-import { getCitizenAccessToken } from "../_lib/citizen-auth";
-
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-async function citizenFetch<T>(path: string, init?: RequestInit): Promise<T> { const token = getCitizenAccessToken(); const response = await fetch(`${apiUrl}${path}`, { ...init, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, cache: "no-store" }); const body = await response.json().catch(() => ({})) as T & { error?: string }; if (!response.ok) throw new Error(body.error ?? "Request failed"); return body; }
+import { citizenApiFetch as citizenFetch } from "../_lib/citizen-auth";
 
 export default function CompletionVerificationPage() {
   const [items, setItems] = useState<PendingCompletionVerification[]>([]);

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { CitizenNotificationBell } from "../notifications/citizen-notifications";
-import { clearCitizenAccessToken } from "../_lib/citizen-auth";
+import { logoutCitizen } from "../_lib/citizen-auth";
 import { CitizenIcon } from "./ui";
 
 function CitizenBrand() {
@@ -18,7 +18,7 @@ export function CitizenHeader({ variant = "authenticated" }: { variant?: "public
     <CitizenBrand />
     {variant === "public" ? <p className="cf-public-tagline"><CitizenIcon name="shield" size={25} />One City. One Workflow. <strong>Complete Accountability.</strong></p> : <>
       <nav aria-label="Citizen navigation"><Link className={reportActive ? "active" : ""} href="/">Report</Link><Link className={pathname.startsWith("/tickets") ? "active" : ""} href="/tickets">My Tickets</Link></nav>
-      <div className="cf-header-actions"><CitizenNotificationBell /><button className="cf-logout" onClick={() => { clearCitizenAccessToken(); router.replace("/login"); }} type="button">Logout<CitizenIcon name="logout" size={25} /></button></div>
+      <div className="cf-header-actions"><CitizenNotificationBell /><button className="cf-logout" onClick={() => void logoutCitizen().finally(() => router.replace("/login"))} type="button">Logout<CitizenIcon name="logout" size={25} /></button></div>
     </>}
   </header>;
 }

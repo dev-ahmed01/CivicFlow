@@ -32,6 +32,8 @@ const storage: ImageStorage = {
       expiresInSeconds: 900,
     };
   },
+  createDownload(objectKey) { return `https://images.example.test/${objectKey}`; },
+  async verifyUpload() { return true; },
 };
 const relevance: ImageRelevanceService = {
   async checkImageRelevance() { return { pass: true, score: 0.99 }; },
@@ -54,10 +56,10 @@ async function createPendingTicket(suffix: string): Promise<string> {
   const observationId = randomUUID();
   await prisma.$transaction(async (transaction) => {
     await transaction.$executeRaw`
-      INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "title", "address", "createdAt")
+      INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "title", "address", "createdAt", "updatedAt")
       VALUES (${ticketId}::uuid, ${roadCategoryId}::uuid, ${reporterId}::uuid,
         ST_SetSRID(ST_MakePoint(77.5844, 12.9290), 4326), ${jayanagarWardId}::uuid,
-        ${TicketState.AI_CHECK_PENDING}::"TicketState", ${`${titlePrefix} ${suffix}`}, 'Jayanagar, Bengaluru', NOW())
+        ${TicketState.AI_CHECK_PENDING}::"TicketState", ${`${titlePrefix} ${suffix}`}, 'Jayanagar, Bengaluru', NOW(), NOW())
     `;
     await transaction.observation.create({
       data: { id: observationId, ticketId, submitterId: reporterId, imageUrl: `https://images.example.test/${ticketId}.jpg` },

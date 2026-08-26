@@ -12,7 +12,7 @@ import { z } from "zod";
 import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/middleware";
 import { checkProjectConflicts } from "../conflicts/service";
 import { createDependencyRequests, DependencyActionError } from "../dependencies/service";
-import type { ImageStorage } from "../images/storage";
+import { storageReadUrl, type ImageStorage } from "../images/storage";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
 import { createNotification, createNotifications } from "../notifications/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
@@ -55,7 +55,7 @@ async function notifyProjectStakeholders(
     where: {
       OR: [
         { agencyId: project.agencyId, role: UserRole.PROJECT_HEAD },
-        ...(project.ticketId ? [{ reportedTickets: { some: { id: project.ticketId } } }] : []),
+        ...(project.ticketId ? [{ observations: { some: { ticketId: project.ticketId } } }] : []),
         ...(project.ticketId ? [{ validations: { some: { ticketId: project.ticketId, counted: true } } }] : []),
       ],
     },
@@ -73,8 +73,8 @@ const projectInclude = {
     include: {
       category: { select: { id: true, name: true } },
       ward: { select: { id: true, name: true } },
-      observations: { orderBy: { createdAt: "asc" as const }, select: { imageUrl: true, note: true } },
-      inspectionReports: { orderBy: { createdAt: "desc" as const }, select: { id: true, fileUrl: true, contentType: true, notes: true, uploadedAt: true, createdAt: true } },
+      observations: { orderBy: { createdAt: "asc" as const }, select: { imageUrl: true, note: true, images: { where: { uploadedAt: { not: null } }, orderBy: { createdAt: "asc" as const }, take: 1, select: { objectKey: true, url: true } } } },
+      inspectionReports: { where: { uploadedAt: { not: null } }, orderBy: { createdAt: "desc" as const }, select: { id: true, fileUrl: true, objectKey: true, contentType: true, notes: true, uploadedAt: true, createdAt: true } },
     },
   },
   dependencies: { include: { respondingAgency: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" as const } },
@@ -83,6 +83,29 @@ const projectInclude = {
   completionEvidence: { where: { uploadedAt: { not: null } }, orderBy: { createdAt: "desc" as const } },
   intervention: { include: { segment: { select: { id: true, roadName: true, wardId: true, surfaceType: true, lastRestorationDate: true, ward: { select: { id: true, name: true } } } } } },
 } satisfies Prisma.ProjectInclude;
+
+type ProjectWithDetails = Prisma.ProjectGetPayload<{ include: typeof projectInclude }>;
+
+function projectForResponse(storage: ImageStorage, project: ProjectWithDetails) {
+  return {
+    ...project,
+    ticket: project.ticket ? {
+      ...project.ticket,
+      observations: project.ticket.observations.map(({ images, ...observation }) => ({
+        ...observation,
+        imageUrl: images[0] ? storageReadUrl(storage, images[0].objectKey, images[0].url) : observation.imageUrl,
+      })),
+      inspectionReports: project.ticket.inspectionReports.map(({ objectKey, ...report }) => ({
+        ...report,
+        fileUrl: storageReadUrl(storage, objectKey, report.fileUrl),
+      })),
+    } : null,
+    completionEvidence: project.completionEvidence.map((evidence) => ({
+      ...evidence,
+      photoUrl: storageReadUrl(storage, evidence.objectKey, evidence.photoUrl),
+    })),
+  };
+}
 
 export function createProjectsRouter(storage: ImageStorage): Router {
   const router = Router();
@@ -176,10 +199,11 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           });
         await transaction.ticket.update({ where: { id: ticket.id }, data: { state: TicketState.ENGINEER_ASSIGNED, ...(intervention ? { roadSegmentId: intervention.segmentId } : {}) } });
         await transaction.ticketStateTransition.createMany({ data: [
-          ...(existing ? [] : [{ ticketId: ticket.id, fromState: TicketState.INSPECTION_COMPLETE, toState: TicketState.PROJECT_CREATED, reason: "PROJECT_CREATED" as const }]),
-          { ticketId: ticket.id, fromState: TicketState.PROJECT_CREATED, toState: TicketState.ENGINEER_ASSIGNED, reason: "ENGINEER_ASSIGNED" },
+          ...(existing ? [] : [{ ticketId: ticket.id, fromState: TicketState.INSPECTION_COMPLETE, toState: TicketState.PROJECT_CREATED, reason: "PROJECT_CREATED" as const, actedById: request.auth!.userId }]),
+          { ticketId: ticket.id, fromState: TicketState.PROJECT_CREATED, toState: TicketState.ENGINEER_ASSIGNED, reason: "ENGINEER_ASSIGNED", actedById: request.auth!.userId },
         ] });
         await createNotification(transaction, { userId: engineer.id, type: "PROJECT_ASSIGNMENT", payload: { projectId: created.id, ticketId: ticket.id } });
+        await notifyProjectStakeholders(transaction, { id: created.id, agencyId, ticketId: ticket.id }, "PROJECT_CREATED", { ticketId: ticket.id });
         const dependencies = await createDependencyRequests(transaction, created.id, agencyId, parsed.data.dependencies ?? [], request.auth!.userId);
         // Delta §4.3 — generic Phase 7 check remains unchanged and runs first.
         const conflicts = intervention || existing?.intervention ? await checkProjectConflicts(transaction, created.id) : [];
@@ -219,7 +243,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         response.status(404).json({ error: "Project not found" });
         return;
       }
-      response.json({ project: { ...project, editable: canEngineerEdit(request, project) } });
+      response.json({ project: { ...projectForResponse(storage, project), editable: canEngineerEdit(request, project) } });
     }),
   );
 
@@ -338,7 +362,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           const ticket = await transaction.ticket.findUnique({ where: { id: project.ticketId }, select: { state: true } });
           if (ticket?.state === TicketState.ENGINEER_ASSIGNED) {
             await transaction.ticket.update({ where: { id: project.ticketId }, data: { state: TicketState.WORK_IN_PROGRESS } });
-            await transaction.ticketStateTransition.create({ data: { ticketId: project.ticketId, fromState: ticket.state, toState: TicketState.WORK_IN_PROGRESS, reason: "EXECUTION_STARTED" } });
+            await transaction.ticketStateTransition.create({ data: { ticketId: project.ticketId, fromState: ticket.state, toState: TicketState.WORK_IN_PROGRESS, reason: "EXECUTION_STARTED", actedById: request.auth!.userId } });
           }
         }
         await notifyProjectStakeholders(
@@ -391,7 +415,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           const ticket = await transaction.ticket.findUnique({ where: { id: project.ticketId }, select: { state: true } });
           if (ticket?.state === TicketState.WORK_IN_PROGRESS) {
             await transaction.ticket.update({ where: { id: project.ticketId }, data: { state: TicketState.WORK_COMPLETED } });
-            await transaction.ticketStateTransition.create({ data: { ticketId: project.ticketId, fromState: ticket.state, toState: TicketState.WORK_COMPLETED, reason: "WORK_COMPLETED" } });
+            await transaction.ticketStateTransition.create({ data: { ticketId: project.ticketId, fromState: ticket.state, toState: TicketState.WORK_COMPLETED, reason: "WORK_COMPLETED", actedById: request.auth!.userId } });
           }
         }
         await notifyProjectStakeholders(transaction, { ...project, agencyId: actorAgency(request) }, "WORK_COMPLETED", {});
@@ -442,6 +466,18 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       }
 
       const evidenceId = parsed.data.evidenceId;
+      const pendingEvidence = await prisma.completionEvidence.findFirst({
+        where: { id: evidenceId, projectId: project.id, submittedById: request.auth!.userId, uploadedAt: null },
+        select: { objectKey: true, contentType: true },
+      });
+      if (!pendingEvidence) {
+        response.status(404).json({ error: "Completion evidence not found" });
+        return;
+      }
+      if (!(await storage.verifyUpload(pendingEvidence.objectKey, pendingEvidence.contentType))) {
+        response.status(422).json({ error: "The completion photo is missing, empty, too large, or has an unexpected file type. Upload it again." });
+        return;
+      }
       const result = await prisma.$transaction(async (transaction) => {
         const evidence = await transaction.completionEvidence.findFirst({ where: { id: evidenceId, projectId: project.id, submittedById: request.auth!.userId, uploadedAt: null }, select: { id: true, ticketId: true } });
         if (!evidence) return { kind: "missing" as const };
@@ -455,7 +491,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         await transaction.project.update({ where: { id: project.id }, data: { state: ProjectState.AWAITING_VERIFICATION } });
         await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: ProjectState.COMPLETED, toState: ProjectState.AWAITING_VERIFICATION, reason: "COMPLETION_EVIDENCE_SUBMITTED", actedById: request.auth!.userId } });
         await transaction.ticket.update({ where: { id: evidence.ticketId }, data: { state: TicketState.AWAITING_CITIZEN_VERIFICATION } });
-        await transaction.ticketStateTransition.create({ data: { ticketId: evidence.ticketId, fromState: TicketState.WORK_COMPLETED, toState: TicketState.AWAITING_CITIZEN_VERIFICATION, reason: "COMPLETION_EVIDENCE_SUBMITTED" } });
+        await transaction.ticketStateTransition.create({ data: { ticketId: evidence.ticketId, fromState: TicketState.WORK_COMPLETED, toState: TicketState.AWAITING_CITIZEN_VERIFICATION, reason: "COMPLETION_EVIDENCE_SUBMITTED", actedById: request.auth!.userId } });
         if (validators.length > 0) {
           await transaction.completionVerificationRequest.createMany({ data: validators.map(({ validatorId }) => ({ completionEvidenceId: evidence.id, citizenId: validatorId })) });
           await createNotifications(transaction, validators.map(({ validatorId }) => ({ userId: validatorId, type: "COMPLETION_VERIFICATION_REQUEST", payload: { projectId: project.id, ticketId: evidence.ticketId, evidenceId: evidence.id } })));

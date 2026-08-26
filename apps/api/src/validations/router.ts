@@ -11,6 +11,7 @@ import {
 import { requireAuth, requireRole } from "../auth/middleware";
 import { runValidationRebatchJob, submitValidation, ValidationDailyCapError } from "./service";
 import { createNotifications } from "../notifications/service";
+import { storageReadUrl, type ImageStorage } from "../images/storage";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -27,7 +28,7 @@ function status(state: TicketState) {
   return { status: citizenState, statusLabel: citizenTicketStateLabels[citizenState] };
 }
 
-export function createValidationsRouter(): Router {
+export function createValidationsRouter(storage: ImageStorage): Router {
   const router = Router();
   router.use(requireAuth);
 
@@ -72,7 +73,7 @@ export function createValidationsRouter(): Router {
             observations: {
               orderBy: { createdAt: "asc" },
               take: 1,
-              select: { images: { where: { isPrimary: true }, orderBy: { createdAt: "desc" }, take: 1, select: { url: true } } },
+              select: { images: { where: { isPrimary: true, uploadedAt: { not: null } }, orderBy: { createdAt: "desc" }, take: 1, select: { objectKey: true, url: true } } },
             },
           },
         },
@@ -94,7 +95,8 @@ export function createValidationsRouter(): Router {
       return;
     }
     response.json({ validations: requests.flatMap((item) => {
-      const imageUrl = item.ticket.observations[0]?.images[0]?.url;
+      const image = item.ticket.observations[0]?.images[0];
+      const imageUrl = image ? storageReadUrl(storage, image.objectKey, image.url) : undefined;
       return imageUrl ? [{
         ticketId: item.ticket.id,
         title: item.ticket.title,
@@ -149,6 +151,7 @@ export function createValidationsRouter(): Router {
             projectId: true,
             ticketId: true,
             photoUrl: true,
+            objectKey: true,
             notes: true,
             uploadedAt: true,
             ticket: { select: { title: true } },
@@ -161,7 +164,7 @@ export function createValidationsRouter(): Router {
       projectId: completionEvidence.projectId,
       ticketId: completionEvidence.ticketId,
       title: completionEvidence.ticket.title,
-      photoUrl: completionEvidence.photoUrl,
+      photoUrl: storageReadUrl(storage, completionEvidence.objectKey, completionEvidence.photoUrl),
       notes: completionEvidence.notes,
       submittedAt: completionEvidence.uploadedAt,
     })) });
@@ -177,7 +180,7 @@ export function createValidationsRouter(): Router {
     const result = await prisma.$transaction(async (transaction) => {
       const invitation = await transaction.completionVerificationRequest.findUnique({
         where: { completionEvidenceId_citizenId: { completionEvidenceId: evidenceId, citizenId: request.auth!.userId } },
-        include: { completionEvidence: { include: { project: { select: { id: true, state: true, agencyId: true, engineerId: true } }, ticket: { select: { id: true, state: true, reporterId: true } } } } },
+        include: { completionEvidence: { include: { project: { select: { id: true, state: true, agencyId: true, engineerId: true } }, ticket: { select: { id: true, state: true } } } } },
       });
       if (!invitation) return { kind: "missing" as const };
       const evidence = invitation.completionEvidence;
@@ -213,7 +216,7 @@ export function createValidationsRouter(): Router {
       });
       await transaction.ticket.update({ where: { id: evidence.ticket.id }, data: { state: ticketState } });
       await transaction.ticketStateTransition.create({
-        data: { ticketId: evidence.ticket.id, fromState: TicketState.AWAITING_CITIZEN_VERIFICATION, toState: ticketState, reason: resolvedState === ProjectState.CLOSED ? "CITIZEN_COMPLETION_VERIFIED" : "CITIZEN_REWORK_REQUESTED" },
+        data: { ticketId: evidence.ticket.id, fromState: TicketState.AWAITING_CITIZEN_VERIFICATION, toState: ticketState, reason: resolvedState === ProjectState.CLOSED ? "CITIZEN_COMPLETION_VERIFIED" : "CITIZEN_REWORK_REQUESTED", actedById: request.auth!.userId },
       });
       const recipients = await transaction.user.findMany({
         where: { OR: [
@@ -230,7 +233,7 @@ export function createValidationsRouter(): Router {
       if (resolvedState === ProjectState.CLOSED) {
         const citizens = await transaction.user.findMany({
           where: { OR: [
-            ...(evidence.ticket.reporterId ? [{ id: evidence.ticket.reporterId }] : []),
+            { observations: { some: { ticketId: evidence.ticket.id } } },
             { validations: { some: { ticketId: evidence.ticket.id, counted: true } } },
           ] },
           select: { id: true },

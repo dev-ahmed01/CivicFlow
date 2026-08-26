@@ -118,6 +118,7 @@ export async function enterPendingValidation(
   ticketId: string,
   fromState: TicketState,
   now = new Date(),
+  actedById?: string,
 ): Promise<number> {
   const transitioned = await client.ticket.updateMany({
     where: { id: ticketId, state: fromState },
@@ -130,6 +131,7 @@ export async function enterPendingValidation(
       fromState,
       toState: TicketState.PENDING_VALIDATION,
       reason: "RELEVANCE_CHECK_COMPLETE",
+      actedById,
     },
   });
   return createBatch(client, ticketId, now);
@@ -205,7 +207,7 @@ export async function submitValidation(
 
     // Part III §§7, 10.2–10.3 — validation and table-driven assignment commit
     // atomically, so an agency queue never observes a half-routed ticket.
-    await routeValidatedTicket(transaction, ticketId);
+    await routeValidatedTicket(transaction, ticketId, citizenId);
     return { validationId: validation.id, counted: true, alreadyResolved: false, state: TicketState.ROUTED_TO_AGENCY };
   });
 }

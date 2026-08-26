@@ -19,7 +19,7 @@ Stable showcase records:
 
 - General non-road lifecycle: ticket `90000000-0000-4000-8000-000000000001`, Streetlight, CMH Road near Indiranagar Metro, state `CLOSED`.
 - General project: `90000000-0000-4000-8000-000000000005`, including three confirmations, BESCOM inspection, fulfilled PWD dependency, field note, completion evidence, and three citizen verifications.
-- Flagship road segment: `80000000-0000-4000-8000-000000000001`, “Segment X · 80 Feet Road”, Koramangala.
+- Flagship road segment: `80000000-0000-4000-8000-000000000001`, “Segment X · 11th Main Road”, Jayanagar.
 - Flagship projects: resurfacing `82000000-0000-4000-8000-000000000001`, pipeline `...0002`, cable `...0003`.
 
 ## FREE DEMO DEPLOYMENT ($0 profile)

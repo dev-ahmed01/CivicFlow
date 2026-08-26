@@ -162,11 +162,11 @@ export const clearCitizenSession = clearInternalSession;
 export async function logoutSession(): Promise<void> {
   await hydrateSession();
   const token = refreshToken;
+  await clearInternalSession();
   if (token) {
     try { await rawTokenRequest("/auth/logout", { refreshToken: token }); }
     catch { /* The local session must still be removed while offline. */ }
   }
-  await clearInternalSession();
 }
 
 export async function resetInternalPassword(currentPassword: string, newPassword: string): Promise<void> {
@@ -243,8 +243,17 @@ export async function loadAgencies(): Promise<Array<{ id: string; name: string }
 }
 
 async function uploadFile(target: UploadTarget, image: LocalImage): Promise<void> {
-  const blob = await fetch(image.uri).then((response) => response.blob());
-  const response = await fetch(target.uploadUrl, { method: "PUT", headers: target.headers, body: blob });
+  let blob: Blob;
+  let response: Response;
+  try {
+    blob = await fetch(image.uri).then((result) => {
+      if (!result.ok) throw new Error("The selected photo is no longer available");
+      return result.blob();
+    });
+    response = await fetch(target.uploadUrl, { method: "PUT", headers: target.headers, body: blob });
+  } catch (cause) {
+    throw new Error("The photo could not be uploaded. Check your connection and try again.", { cause });
+  }
   if (!response.ok) throw new Error("Photo upload failed");
 }
 

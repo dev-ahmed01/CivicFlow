@@ -3,13 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CitizenTicketSummary, CitizenTicketTimelineResponse, PaginationMeta } from "@civicos/shared";
 import { ActionButton, CitizenHeroBackdrop, CitizenIcon, relativeDate } from "../_components/ui";
-import { apiRequest } from "../_lib/api";
-import { getCitizenAccessToken } from "../_lib/citizen-auth";
+import { citizenApiFetch } from "../_lib/citizen-auth";
 import { TicketDetailDialog } from "./_components/ticket-detail-dialog";
 
 async function citizenFetch<T>(path: string): Promise<T> {
-  const accessToken = getCitizenAccessToken();
-  return apiRequest<T>(path, { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} });
+  return citizenApiFetch<T>(path);
 }
 
 async function loadTickets(filter: "ongoing" | "past") {
@@ -37,7 +35,7 @@ function TicketTable({ tickets, past, total, onView }: {
   return <section className="cf-ticket-section">
     <header><div className="cf-ticket-heading-icon"><CitizenIcon name={past ? "check" : "clock"} /></div><div><h2>{past ? "Past" : "Ongoing"} ({total})</h2><p>{past ? "Reports that have been resolved or closed." : "Reports that are currently being worked on."}</p></div>{tickets.length > (past ? 3 : 4) ? <button onClick={() => setShowAll((value) => !value)} type="button">{showAll ? "Show Less" : "View All"} <span>→</span></button> : null}</header>
     <div className="cf-ticket-table-wrap"><table className="cf-ticket-table"><thead><tr><th>#</th><th>Ticket ID</th><th>Issue</th><th>Status</th><th>{past ? "Resolved On" : "Last Updated"}</th><th>Action</th></tr></thead><tbody>
-      {visible.map((ticket, index) => <tr key={ticket.id}><td>{index + 1}</td><td><code>{ticket.referenceNumber}</code></td><td><span className={`cf-issue-icon issue-${index % 4}`}><CitizenIcon name="file" size={17} /></span>{ticket.category.name}</td><td><span className={`cf-ticket-status ${statusClass(ticket)}`}>{ticket.statusLabel}</span></td><td>{past ? new Date(ticket.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : relativeDate(ticket.createdAt)}</td><td><ActionButton onClick={() => onView(ticket)}>View Details</ActionButton></td></tr>)}
+      {visible.map((ticket, index) => <tr key={ticket.id}><td>{index + 1}</td><td><code>{ticket.referenceNumber}</code></td><td><span className={`cf-issue-icon issue-${index % 4}`}><CitizenIcon name="file" size={17} /></span>{ticket.category.name}</td><td><span className={`cf-ticket-status ${statusClass(ticket)}`}>{ticket.statusLabel}</span></td><td>{past ? new Date(ticket.updatedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : relativeDate(ticket.updatedAt)}</td><td><ActionButton onClick={() => onView(ticket)}>View Details</ActionButton></td></tr>)}
       {!visible.length ? <tr><td className="cf-table-empty" colSpan={6}>No {past ? "past" : "ongoing"} reports yet.</td></tr> : null}
     </tbody></table></div>
   </section>;

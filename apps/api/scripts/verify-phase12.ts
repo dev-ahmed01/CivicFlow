@@ -51,7 +51,7 @@ async function main(): Promise<void> {
     where: { id: flagshipSegmentId },
     include: { interventions: { include: { requestingAgency: true }, orderBy: { plannedStart: "asc" } } },
   });
-  assert.equal(segment.roadName, "Segment X · 80 Feet Road");
+  assert.equal(segment.roadName, "Segment X · 11th Main Road");
   assert.deepEqual(segment.interventions.map(({ requestingAgency, purpose, plannedStart, plannedEnd }) => ({
     agency: requestingAgency.name,
     purpose,

@@ -12,7 +12,7 @@ import {
   type TicketState as SharedTicketState,
 } from "@civicos/shared";
 import { requireAuth, requireRole } from "../auth/middleware";
-import type { ImageStorage } from "../images/storage";
+import { storageReadUrl, type ImageStorage } from "../images/storage";
 import { cosineSimilarity, type ImageRelevanceService } from "../images/relevance";
 import { enterPendingValidation } from "../validations/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
@@ -42,6 +42,7 @@ type TicketRow = {
   categoryName: string;
   assignedAgencyId: string | null;
   createdAt: Date;
+  updatedAt: Date;
   latitude: number;
   longitude: number;
   observationCount: bigint;
@@ -100,7 +101,7 @@ function vectorFromJson(value: Prisma.JsonValue | null): number[] | null {
 async function getTicketRow(ticketId: string): Promise<TicketRow | null> {
   const rows = await prisma.$queryRaw<TicketRow[]>`
     SELECT t."id", t."referenceNumber", t."title", t."address", t."state", t."categoryId",
-      c."name" AS "categoryName", t."assignedAgencyId", t."createdAt",
+      c."name" AS "categoryName", t."assignedAgencyId", t."createdAt", t."updatedAt",
       ST_Y(t."coordinates") AS "latitude", ST_X(t."coordinates") AS "longitude",
       COUNT(o."id") AS "observationCount", t."manualReviewRecommended"
     FROM "Ticket" t
@@ -123,6 +124,7 @@ function serializeTicket(row: TicketRow) {
     observationCount: Number(row.observationCount),
     manualReviewRecommended: row.manualReviewRecommended,
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
     ...publicStatus(row.state),
   };
 }
@@ -131,6 +133,7 @@ async function finalizeNewTicket(
   ticketId: string,
   visualEmbedding: number[] | null,
   destination: "COMMUNITY_VALIDATION" | "DIRECT_AGENCY",
+  actedById: string,
 ) {
   const [radiusMeters, openWindowDays, visualThreshold] = await Promise.all([
     getConfigNumber("duplicate.radius_meters"),
@@ -171,10 +174,10 @@ async function finalizeNewTicket(
       await prisma.$transaction(async (transaction) => {
         await transaction.observation.update({ where: { id: observation.id }, data: { ticketId: candidate.id } });
         await transaction.ticket.delete({ where: { id: ticketId } });
-        const existing = await transaction.ticket.findUniqueOrThrow({ where: { id: candidate.id }, select: { state: true } });
+        const existing = await transaction.ticket.update({ where: { id: candidate.id }, data: { updatedAt: new Date() }, select: { state: true } });
         if (preValidationStates.includes(existing.state)) {
           // Part III §§8.2–9 — a valid new observation must recover a stalled shared report.
-          await enterPendingValidation(transaction, candidate.id, existing.state);
+          await enterPendingValidation(transaction, candidate.id, existing.state, new Date(), actedById);
         }
       });
       return { ticketId: candidate.id, shared: true };
@@ -194,9 +197,9 @@ async function finalizeNewTicket(
   const current = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { state: true } });
   await prisma.$transaction(async (transaction) => {
     if (destination === "DIRECT_AGENCY") {
-      await routeRelevantWebTicket(transaction, ticketId);
+      await routeRelevantWebTicket(transaction, ticketId, actedById);
     } else {
-      await enterPendingValidation(transaction, ticketId, current.state);
+      await enterPendingValidation(transaction, ticketId, current.state, new Date(), actedById);
     }
   });
   return { ticketId, shared: false };
@@ -280,10 +283,10 @@ export function createTicketsRouter(
     const upload = storage.createUpload(objectKey, input.primaryImage.contentType);
     await prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`
-        INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "channel", "title", "address", "createdAt")
+        INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "channel", "title", "address", "createdAt", "updatedAt")
         VALUES (${ticketId}::uuid, ${input.categoryId}::uuid, ${request.auth!.userId}::uuid,
           ST_SetSRID(ST_MakePoint(${input.longitude}, ${input.latitude}), 4326), ${ward.id}::uuid,
-          'AI_CHECK_PENDING', ${input.channel ?? Channel.MOBILE}::"Channel", ${input.title}, ${input.address}, NOW())
+          'AI_CHECK_PENDING', ${input.channel ?? Channel.MOBILE}::"Channel", ${input.title}, ${input.address}, NOW(), NOW())
       `;
       await transaction.observation.create({
         data: {
@@ -298,11 +301,11 @@ export function createTicketsRouter(
         },
       });
       await transaction.image.create({
-        data: { id: imageId, observationId, url: upload.publicUrl, objectKey, isPrimary: true },
+        data: { id: imageId, observationId, url: upload.publicUrl, objectKey, contentType: input.primaryImage.contentType, isPrimary: true },
       });
       await transaction.ticketStateTransition.createMany({ data: [
-        { ticketId, fromState: null, toState: TicketState.DRAFT, reason: "REPORT_STARTED" },
-        { ticketId, fromState: TicketState.DRAFT, toState: TicketState.AI_CHECK_PENDING, reason: "PRIMARY_IMAGE_UPLOAD_CREATED" },
+        { ticketId, fromState: null, toState: TicketState.DRAFT, reason: "REPORT_STARTED", actedById: request.auth!.userId },
+        { ticketId, fromState: TicketState.DRAFT, toState: TicketState.AI_CHECK_PENDING, reason: "PRIMARY_IMAGE_UPLOAD_CREATED", actedById: request.auth!.userId },
       ] });
     });
     response.status(201).json({ ticketId, imageId, upload, ...publicStatus(TicketState.AI_CHECK_PENDING) });
@@ -343,12 +346,12 @@ export function createTicketsRouter(
           await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.AI_CHECK_PENDING } });
           if (ticket.state !== TicketState.AI_CHECK_PENDING) {
             await transaction.ticketStateTransition.create({
-              data: { ticketId, fromState: ticket.state, toState: TicketState.AI_CHECK_PENDING, reason: "RETAKE_UPLOADED" },
+              data: { ticketId, fromState: ticket.state, toState: TicketState.AI_CHECK_PENDING, reason: "RETAKE_UPLOADED", actedById: request.auth!.userId },
             });
           }
         }
         await transaction.image.create({
-          data: { id: imageId, observationId: observation.id, url: upload.publicUrl, objectKey, isPrimary: uploadInput.isPrimary },
+          data: { id: imageId, observationId: observation.id, url: upload.publicUrl, objectKey, contentType: uploadInput.contentType, isPrimary: uploadInput.isPrimary },
         });
         if (uploadInput.isPrimary) {
           await transaction.observation.update({ where: { id: observation.id }, data: { imageUrl: upload.publicUrl } });
@@ -366,6 +369,10 @@ export function createTicketsRouter(
       response.status(404).json({ error: "Image not found" });
       return;
     }
+    if (!image.contentType || !(await storage.verifyUpload(image.objectKey, image.contentType))) {
+      response.status(422).json({ error: "The uploaded image is missing, empty, too large, or has an unexpected file type. Upload it again." });
+      return;
+    }
     if (!image.isPrimary) {
       await prisma.image.update({ where: { id: image.id }, data: { uploadedAt: new Date() } });
       response.json({ imageId: image.id, uploaded: true });
@@ -375,8 +382,9 @@ export function createTicketsRouter(
     let check;
     let embedding: number[] | null;
     try {
-      check = await relevance.checkImageRelevance(image.url, image.observation.ticket.categoryId);
-      embedding = await relevance.getImageEmbedding(image.url);
+      const imageUrl = storage.createDownload(image.objectKey);
+      check = await relevance.checkImageRelevance(imageUrl, image.observation.ticket.categoryId);
+      embedding = await relevance.getImageEmbedding(imageUrl);
     } catch (error) {
       response.status(502).json({ error: "We could not check this photo right now. Please try again.", detail: error instanceof Error ? error.message : undefined });
       return;
@@ -406,7 +414,7 @@ export function createTicketsRouter(
       await prisma.$transaction([
         prisma.ticket.update({ where: { id: ticketId }, data: { state: TicketState.AI_FLAGGED, aiRetryCount: nextAttempt } }),
         prisma.ticketStateTransition.create({
-          data: { ticketId, fromState: image.observation.ticket.state, toState: TicketState.AI_FLAGGED, reason: "PHOTO_RETAKE_REQUESTED" },
+          data: { ticketId, fromState: image.observation.ticket.state, toState: TicketState.AI_FLAGGED, reason: "PHOTO_RETAKE_REQUESTED", actedById: request.auth!.userId },
         }),
       ]);
       response.json({
@@ -429,6 +437,7 @@ export function createTicketsRouter(
       ticketId,
       embedding,
       completionDecision,
+      request.auth!.userId,
     );
     const row = await getTicketRow(final.ticketId);
     if (!row) throw new Error("Finalized ticket could not be loaded");
@@ -470,12 +479,13 @@ export function createTicketsRouter(
           take: 1,
           select: {
             note: true,
-            images: { orderBy: { createdAt: "asc" }, select: { id: true, url: true, uploadedAt: true } },
+            images: { where: { uploadedAt: { not: null } }, orderBy: { createdAt: "asc" }, select: { id: true, url: true, objectKey: true, uploadedAt: true } },
           },
         },
         inspectionReports: {
+          where: { uploadedAt: { not: null } },
           orderBy: { createdAt: "desc" },
-          select: { id: true, fileUrl: true, contentType: true, notes: true, uploadedAt: true, createdAt: true },
+          select: { id: true, fileUrl: true, objectKey: true, contentType: true, notes: true, uploadedAt: true, createdAt: true },
         },
         project: { select: { id: true, state: true, engineerId: true, plannedStart: true, plannedEnd: true, intervention: true } },
       },
@@ -488,8 +498,8 @@ export function createTicketsRouter(
         reporterId: internal.reporterId,
         ward: internal.ward,
         description: internal.observations[0]?.note ?? null,
-        evidence: internal.observations[0]?.images ?? [],
-        inspectionReports: internal.inspectionReports,
+        evidence: (internal.observations[0]?.images ?? []).map(({ objectKey, ...image }) => ({ ...image, url: storageReadUrl(storage, objectKey, image.url) })),
+        inspectionReports: internal.inspectionReports.map(({ objectKey, ...report }) => ({ ...report, fileUrl: storageReadUrl(storage, objectKey, report.fileUrl) })),
         project: internal.project ? { ...internal.project, intervention: internal.project.intervention ? {
           ...internal.project.intervention,
           dependencyRefs: Array.isArray(internal.project.intervention.dependencyRefs)
@@ -580,8 +590,8 @@ export function createTicketsRouter(
     const [tickets, total] = await Promise.all([
       prisma.ticket.findMany({
         where,
-        select: { id: true, referenceNumber: true, title: true, address: true, state: true, createdAt: true, category: { select: { id: true, name: true } }, _count: { select: { observations: true } } },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { id: true, referenceNumber: true, title: true, address: true, state: true, createdAt: true, updatedAt: true, category: { select: { id: true, name: true } }, _count: { select: { observations: true } } },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
         skip: pagination.data.skip,
         take: pagination.data.limit,
       }),
@@ -595,6 +605,7 @@ export function createTicketsRouter(
       category: ticket.category,
       observationCount: ticket._count.observations,
       createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
       ...publicStatus(ticket.state),
     })), pagination: paginationMeta(pagination.data.page, pagination.data.limit, total) });
   }));

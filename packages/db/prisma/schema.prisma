@@ -132,6 +132,7 @@ model User {
   inspectionReports    InspectionReport[]
   dependencyTransitions DependencyStateTransition[] @relation("DependencyTransitionActor")
   projectTransitions   ProjectStateTransition[] @relation("ProjectTransitionActor")
+  ticketTransitions    TicketStateTransition[] @relation("TicketTransitionActor")
   projectWorkNotes     ProjectWorkNote[]
   completionEvidence   CompletionEvidence[] @relation("CompletionEvidenceSubmitter")
   completionVerificationRequests CompletionVerificationRequest[]
@@ -219,6 +220,7 @@ model Ticket {
   duplicateVisualSimilarity Float?
   duplicateVisualMatch Boolean?
   createdAt        DateTime                            @default(now())
+  updatedAt        DateTime                            @updatedAt
 
   category       Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   reporter       User?         @relation("TicketReporter", fields: [reporterId], references: [id], onDelete: SetNull)
@@ -290,6 +292,7 @@ model Image {
   observationId    String   @db.Uuid
   url              String
   objectKey        String   @unique
+  contentType      String?
   isPrimary        Boolean  @default(false)
   aiRelevanceScore Float?
   embedding        Json?
@@ -308,11 +311,14 @@ model TicketStateTransition {
   fromState TicketState?
   toState   TicketState
   reason    String
+  actedById String?      @db.Uuid
   createdAt DateTime     @default(now())
 
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actedBy User?  @relation("TicketTransitionActor", fields: [actedById], references: [id], onDelete: SetNull)
 
   @@index([ticketId, createdAt])
+  @@index([actedById])
 }
 
 model Validation {

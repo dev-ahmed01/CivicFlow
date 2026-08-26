@@ -41,10 +41,10 @@ async function prepareFixture() {
       const latitude = 12.929 + (index % 10) * 0.00005;
       const longitude = 77.5844 + Math.floor(index / 10) * 0.00005;
       await transaction.$executeRaw(Prisma.sql`
-        INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
+        INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt", "updatedAt")
         VALUES (${id}::uuid, ${ids.category}::uuid, ${ids.reporter}::uuid, ${ids.agency}::uuid,
           ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326), ${ids.ward}::uuid,
-          ${state}::"TicketState", ${`Demo load event ${index + 1}`}, 'Jayanagar demo load grid, Bengaluru', NOW() - (${index} * INTERVAL '1 minute'))
+          ${state}::"TicketState", ${`Demo load event ${index + 1}`}, 'Jayanagar demo load grid, Bengaluru', NOW() - (${index} * INTERVAL '1 minute'), NOW() - (${index} * INTERVAL '1 minute'))
       `);
     }
   });

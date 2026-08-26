@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { apiFetch, clearSession, getSession } from "../_lib/api";
+import { apiFetch, getSession, logout } from "../_lib/api";
 import { NotificationBell } from "../../_components/notification-center";
 import { CitizenIcon, type CitizenIconName } from "../../_components/ui";
 
@@ -39,7 +39,7 @@ export function EngineerShell({ children }: { children: ReactNode }) {
         <div className="portal-nav-group"><p>Work</p>{workLinks.map((item) => <Link className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
         <div className="portal-nav-group"><p>Account</p><NotificationBell active={pathname === "/engineer/notifications"} apiFetch={apiFetch} href="/engineer/notifications" label="Notifications" />{accountLinks.map((item) => <Link className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
       </nav>
-      <button className="portal-logout" type="button" onClick={() => { clearSession(); router.replace("/login"); }}><CitizenIcon name="logout" size={19} />Sign out</button>
+      <button className="portal-logout" type="button" onClick={() => void logout().finally(() => router.replace("/login"))}><CitizenIcon name="logout" size={19} />Sign out</button>
     </aside>
     <main className="portal-content">{children}</main>
   </div>;

@@ -11,6 +11,7 @@ type RouteTicketOptions = {
     reason: string;
   }>;
   notifyValidated: boolean;
+  actedById?: string;
 };
 
 async function routeTicketToConfiguredAgency(
@@ -23,6 +24,7 @@ async function routeTicketToConfiguredAgency(
     select: {
       state: true,
       reporterId: true,
+      observations: { select: { submitterId: true }, distinct: ["submitterId"] },
       category: { select: { primaryAgencyId: true } },
     },
   });
@@ -39,17 +41,18 @@ async function routeTicketToConfiguredAgency(
     data: { state: TicketState.ROUTED_TO_AGENCY, assignedAgencyId: agencyId },
   });
   await client.ticketStateTransition.createMany({
-    data: options.transitions.map((transition) => ({ ticketId, ...transition })),
+    data: options.transitions.map((transition) => ({ ticketId, ...transition, actedById: options.actedById })),
   });
   const projectHeads = await client.user.findMany({
     where: { agencyId, role: UserRole.PROJECT_HEAD },
     select: { id: true },
   });
+  const citizenIds = [...new Set(ticket.observations.map(({ submitterId }) => submitterId))];
   await createNotifications(client, [
-    ...(ticket.reporterId ? [
-      ...(options.notifyValidated ? [{ userId: ticket.reporterId, type: "TICKET_VALIDATED", payload: { ticketId } }] : []),
-      { userId: ticket.reporterId, type: "TICKET_ROUTED_TO_AGENCY", payload: { ticketId, agencyId } },
-    ] : []),
+    ...citizenIds.flatMap((userId) => [
+      ...(options.notifyValidated ? [{ userId, type: "TICKET_VALIDATED", payload: { ticketId } }] : []),
+      { userId, type: "TICKET_ROUTED_TO_AGENCY", payload: { ticketId, agencyId } },
+    ]),
     ...projectHeads.map(({ id }) => ({ userId: id, type: "TICKET_ROUTED_TO_AGENCY", payload: { ticketId, agencyId } })),
   ]);
   return agencyId;
@@ -58,6 +61,7 @@ async function routeTicketToConfiguredAgency(
 export async function routeValidatedTicket(
   client: DatabaseClient,
   ticketId: string,
+  actedById?: string,
 ): Promise<string> {
   return routeTicketToConfiguredAgency(client, ticketId, {
     fromState: TicketState.PENDING_VALIDATION,
@@ -74,12 +78,14 @@ export async function routeValidatedTicket(
       },
     ],
     notifyValidated: true,
+    actedById,
   });
 }
 
 export async function routeRelevantWebTicket(
   client: DatabaseClient,
   ticketId: string,
+  actedById?: string,
 ): Promise<string> {
   return routeTicketToConfiguredAgency(client, ticketId, {
     fromState: TicketState.AI_CHECK_PENDING,
@@ -89,5 +95,6 @@ export async function routeRelevantWebTicket(
       reason: "WEB_RELEVANCE_CHECK_PASSED_CATEGORY_ROUTING",
     }],
     notifyValidated: false,
+    actedById,
   });
 }

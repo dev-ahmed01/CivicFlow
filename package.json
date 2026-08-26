@@ -4,10 +4,11 @@
   "private": true,
   "packageManager": "pnpm@10.15.1",
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=20.19.0"
   },
   "scripts": {
     "build": "turbo run build",
+    "build:mobile:deps": "turbo run build --filter=mobile... --filter=!mobile",
     "infra:up": "docker compose up -d postgres minio minio-init",
     "dev": "turbo run dev --parallel --filter=api --filter=web",
     "dev:all": "turbo run dev --parallel",

@@ -56,11 +56,6 @@ function groupMessage(type: string, count: number, fallback: string): string {
 
 function contextDestination(href: string | undefined, variant: NotificationVariant): string | undefined {
   if (!href || variant === "portal") return href;
-  if (href.startsWith("/tickets/")) return `/tickets?ticket=${href.slice("/tickets/".length)}`;
-  if (href.startsWith("/project-head/tickets/")) return `/project-head/tickets?ticket=${href.slice("/project-head/tickets/".length)}`;
-  if (href.startsWith("/project-head/projects/")) return `/project-head/projects?project=${href.slice("/project-head/projects/".length)}`;
-  if (href.startsWith("/engineer/projects/")) return `/engineer/projects?project=${href.slice("/engineer/projects/".length)}`;
-  if (href === "/engineer/assigned") return "/engineer/dependencies";
   return href;
 }
 

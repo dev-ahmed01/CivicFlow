@@ -32,6 +32,9 @@ async function main(): Promise<void> {
 
   const login = await request(app).post("/auth/internal/login").send({ email: "admin@civicos.local", password: "CivicOS@123" }).expect(200);
   const authorization = `Bearer ${login.body.accessToken as string}`;
+  await request(app).put("/admin/config/verification.daily_cap").set("Authorization", authorization).send({ value: 0, description: "Invalid cap must not persist" }).expect(422);
+  await request(app).delete("/admin/config/verification.daily_cap").set("Authorization", authorization).expect(409);
+  await request(app).post("/admin/users").set("Authorization", authorization).send({ role: "ADMIN", email: "invalid-scope@civicos.local", password: "temporary-password", agencyId: "20000000-0000-4000-8000-000000000003", mustResetPassword: true }).expect(400);
   const [category, agencies, ward] = await Promise.all([
     prisma.category.findFirstOrThrow({ where: { adminEditable: true }, orderBy: { name: "asc" } }),
     prisma.agency.findMany({ orderBy: { name: "asc" }, take: 2 }),
@@ -42,7 +45,7 @@ async function main(): Promise<void> {
   const ticketId = randomUUID();
   try {
     await request(app).patch(`/admin/categories/${category.id}/routing`).set("Authorization", authorization).send({ primaryAgencyId: targetAgency.id }).expect(200);
-    await prisma.$executeRaw`INSERT INTO "Ticket" ("id", "categoryId", "coordinates", "wardId", "state", "title", "address") VALUES (${ticketId}::uuid, ${category.id}::uuid, ST_SetSRID(ST_MakePoint(77.62, 12.935), 4326), ${ward.id}::uuid, 'PENDING_VALIDATION'::"TicketState", 'Phase 10 live-routing acceptance', 'Acceptance fixture')`;
+    await prisma.$executeRaw`INSERT INTO "Ticket" ("id", "categoryId", "coordinates", "wardId", "state", "title", "address", "updatedAt") VALUES (${ticketId}::uuid, ${category.id}::uuid, ST_SetSRID(ST_MakePoint(77.62, 12.935), 4326), ${ward.id}::uuid, 'PENDING_VALIDATION'::"TicketState", 'Phase 10 live-routing acceptance', 'Acceptance fixture', NOW())`;
     await prisma.$transaction((transaction) => routeValidatedTicket(transaction, ticketId));
     const routed = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { assignedAgencyId: true } });
     assert(routed.assignedAgencyId === targetAgency.id, "The next validated ticket did not use the edited primary routing rule");
@@ -58,7 +61,7 @@ async function main(): Promise<void> {
     await prisma.ticket.deleteMany({ where: { id: ticketId } });
     await prisma.category.update({ where: { id: category.id }, data: { primaryAgencyId: category.primaryAgencyId } });
   }
-  console.log("Phase 10 acceptance passed: public privacy, live routing, simulated labels, and filtered CSV/PDF exports.");
+  console.log("Phase 10 acceptance passed: public privacy, live routing, protected config/user integrity, simulated labels, and filtered CSV/PDF exports.");
 }
 
 main().catch((error: unknown) => { console.error(error); process.exitCode = 1; }).finally(async () => prisma.$disconnect());

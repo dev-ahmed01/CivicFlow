@@ -69,7 +69,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
     imageStorage,
     env.DEPLOYMENT_PROFILE,
   ));
-  app.use(createValidationsRouter());
+  app.use(createValidationsRouter(imageStorage));
   app.use(createAgencyRouter(imageStorage));
   app.use(createProjectsRouter(imageStorage));
   app.use(createDependenciesRouter());

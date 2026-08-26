@@ -82,7 +82,7 @@ export default function App() {
       if (data.type === "COMPLETION_VERIFICATION_REQUEST") { setScreen("completion-validations"); return; }
       if (typeof data.ticketId !== "string") return;
       setTicketDetailLoading(true); setTicketDetailError(undefined);
-      void loadTicket(data.ticketId).then((result) => { setSubmitted(result.ticket); setTicketTimeline({ timeline: result.timeline, notes: result.notes }); setScreen("detail"); }).catch((error: unknown) => setTicketDetailError(error instanceof Error ? error.message : "Could not open this ticket")).finally(() => setTicketDetailLoading(false));
+      void loadTicket(data.ticketId).then((result) => { setSubmitted(result.ticket); setTicketTimeline({ timeline: result.timeline, notes: result.notes }); setScreen("detail"); }).catch((error: unknown) => { const message = error instanceof Error ? error.message : "Could not open this ticket"; setTicketDetailError(message); Alert.alert("Couldn't open update", message); }).finally(() => setTicketDetailLoading(false));
     });
   }, [citizenAuth, viewerRole]);
 
@@ -118,7 +118,7 @@ export default function App() {
     if (notification.type === "VALIDATION_REQUEST") { openValidations(); return; }
     if (notification.type === "COMPLETION_VERIFICATION_REQUEST") { openCompletionValidations(); return; }
     const ticketId = typeof notification.payload.ticketId === "string" ? notification.payload.ticketId : undefined;
-    if (ticketId) { setScreen("detail"); setTicketDetailLoading(true); void loadTicket(ticketId).then((result) => { setSubmitted(result.ticket); setTicketTimeline({ timeline: result.timeline, notes: result.notes }); }).catch((error: unknown) => setTicketDetailError(error instanceof Error ? error.message : "Could not open this ticket")).finally(() => setTicketDetailLoading(false)); return; }
+    if (ticketId) { setTicketDetailLoading(true); setTicketDetailError(undefined); void loadTicket(ticketId).then((result) => { setSubmitted(result.ticket); setTicketTimeline({ timeline: result.timeline, notes: result.notes }); setScreen("detail"); }).catch((error: unknown) => { const message = error instanceof Error ? error.message : "Could not open this ticket"; setTicketDetailError(message); Alert.alert("Couldn't open update", message); }).finally(() => setTicketDetailLoading(false)); return; }
     openTickets(notification.type === "TICKET_RESOLVED" ? "past" : "ongoing");
   };
   const submitValidationVote = async (vote: ValidationVote) => {

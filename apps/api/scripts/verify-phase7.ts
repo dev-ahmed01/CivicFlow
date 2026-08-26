@@ -29,10 +29,10 @@ async function createPlannedProject(input: { title: string; longitude: number; l
   const ticketId = randomUUID();
   const projectId = randomUUID();
   await prisma.$executeRaw`
-    INSERT INTO "Ticket" ("id", "categoryId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt")
+    INSERT INTO "Ticket" ("id", "categoryId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt", "updatedAt")
     VALUES (${ticketId}::uuid, ${categoryId}::uuid, ${input.agencyId}::uuid,
       ST_SetSRID(ST_MakePoint(${input.longitude}, ${input.latitude}), 4326), ${wardId}::uuid,
-      ${TicketState.ENGINEER_ASSIGNED}::"TicketState", ${`${titlePrefix} ${input.title}`}, ${`${input.title}, Jayanagar, Bengaluru`}, NOW())
+      ${TicketState.ENGINEER_ASSIGNED}::"TicketState", ${`${titlePrefix} ${input.title}`}, ${`${input.title}, Jayanagar, Bengaluru`}, NOW(), NOW())
   `;
   await prisma.project.create({ data: {
     id: projectId,

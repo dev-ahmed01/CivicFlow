@@ -91,9 +91,11 @@ const envSchema = baseEnvSchema.transform((env) => ({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["CLIP_INFERENCE_URL"], message: "Hosted CLIP mode requires CLIP_INFERENCE_URL" });
   }
   for (const [key, value] of [["S3_ENDPOINT", env.S3_ENDPOINT], ["S3_PUBLIC_BASE_URL", env.S3_PUBLIC_BASE_URL]] as const) {
-    const hostname = new URL(value).hostname;
-    if (hostname === "localhost" || hostname === "127.0.0.1") {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} cannot point to localhost in production` });
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.toLowerCase();
+    const privateIpv4 = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+    if (parsed.protocol !== "https:" || hostname === "localhost" || privateIpv4) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} must be a public HTTPS URL in production` });
     }
   }
   if (env.S3_ACCESS_KEY_ID === "civicos-local" || env.S3_SECRET_ACCESS_KEY === "civicos-local-secret") {
@@ -101,7 +103,7 @@ const envSchema = baseEnvSchema.transform((env) => ({
   }
   if (env.CORS_ORIGINS) {
     for (const origin of env.CORS_ORIGINS.split(",").map((item) => item.trim())) {
-      if (!z.string().url().safeParse(origin).success) {
+      if (!z.string().url().safeParse(origin).success || new URL(origin).protocol !== "https:") {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ["CORS_ORIGINS"], message: `Invalid CORS origin: ${origin}` });
       }
     }

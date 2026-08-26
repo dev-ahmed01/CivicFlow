@@ -3,20 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import type { PendingValidation, SubmitValidationResult, ValidationVote } from "@civicos/shared";
-import { getCitizenAccessToken } from "../_lib/citizen-auth";
-
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const accessToken = getCitizenAccessToken();
-  const response = await fetch(`${apiUrl}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...init?.headers },
-  });
-  const body = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(body.error ?? "Request failed");
-  return body;
-}
+import { citizenApiFetch as apiFetch } from "../_lib/citizen-auth";
 
 const actions: Array<{ vote: ValidationVote; label: string; className: string }> = [
   { vote: "CONFIRM", label: "Confirm this exists", className: "vote-confirm" },
