@@ -8,6 +8,7 @@ import {
   loadEngineerProject,
   loadEngineerProjects,
   loadNotifications,
+  resetInternalPassword,
   submitCompletionEvidence,
   uptakeProject,
   updateProjectStatus,
@@ -21,7 +22,7 @@ import { EngineerDependenciesApp } from "./engineer-dependencies";
 import { Shell } from "./screens";
 import { internal as colors } from "./theme";
 import { NotificationsScreen } from "./notifications";
-import { registerForPushNotifications } from "./push-notifications";
+import { registerForPushNotifications, subscribeToPushNavigation } from "./push-notifications";
 
 type EngineerScreen = "dashboard" | "mine" | "assigned" | "detail" | "timeline" | "geographic" | "completion" | "dependencies" | "notifications" | "profile";
 
@@ -41,18 +42,32 @@ function daysRemaining(end: string | Date | null): string {
 }
 
 export function EngineerLoginScreen({ onLogin, onCancel }: { onLogin: (auth: CurrentAuth) => void; onCancel: () => void }) {
-  const [email, setEmail] = useState("engineer.pwd@civicos.local");
-  const [password, setPassword] = useState("CivicOS@123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [resetRequired, setResetRequired] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const submit = async () => {
     setBusy(true);
     setError(undefined);
-    try { onLogin(await internalLogin(email.trim().toLowerCase(), password)); }
+    try {
+      const auth = await internalLogin(email.trim().toLowerCase(), password);
+      if (auth.mustResetPassword) { setResetRequired(true); return; }
+      onLogin(auth);
+    }
     catch (caught) { setError(errorMessage(caught)); }
     finally { setBusy(false); }
   };
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Executive Engineer" title="Sign in to field operations" onBack={onCancel} /><Text style={styles.intro}>Your role is detected from your account after sign-in.</Text><TextInput accessibilityLabel="Work email" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} placeholder="Work email" placeholderTextColor={colors.muted} style={styles.input} /><TextInput accessibilityLabel="Password" secureTextEntry value={password} onChangeText={setPassword} placeholder="Password" placeholderTextColor={colors.muted} style={styles.input} />{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || !email || !password} onPress={() => void submit()}>{busy ? "Signing in…" : "Sign in"}</PrimaryButton><Text style={styles.demo}>Demo: engineer.pwd@civicos.local / CivicOS@123</Text></ScrollView></Shell>;
+  const reset = async () => {
+    if (newPassword !== confirmPassword) { setError("New passwords do not match"); return; }
+    setBusy(true); setError(undefined);
+    try { await resetInternalPassword(password, newPassword); setResetRequired(false); setPassword(""); setNewPassword(""); setConfirmPassword(""); Alert.alert("Password updated", "Sign in with your new password."); }
+    catch (caught) { setError(errorMessage(caught)); }
+    finally { setBusy(false); }
+  };
+  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Executive Engineer" title={resetRequired ? "Choose a new password" : "Sign in to field operations"} onBack={resetRequired ? () => setResetRequired(false) : onCancel} /><Text style={styles.intro}>{resetRequired ? "This account uses a temporary password. Set a new password before continuing." : "Your role and agency scope are detected from your account after sign-in."}</Text>{resetRequired ? <><TextInput accessibilityLabel="New password" secureTextEntry value={newPassword} onChangeText={setNewPassword} placeholder="At least 12 characters" placeholderTextColor={colors.muted} style={styles.input} /><TextInput accessibilityLabel="Confirm new password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm new password" placeholderTextColor={colors.muted} style={styles.input} /></> : <><TextInput accessibilityLabel="Work email" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} placeholder="Work email" placeholderTextColor={colors.muted} style={styles.input} /><TextInput accessibilityLabel="Password" secureTextEntry value={password} onChangeText={setPassword} placeholder="Password" placeholderTextColor={colors.muted} style={styles.input} /></>}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (resetRequired ? newPassword.length < 12 || confirmPassword.length < 12 : !email || !password)} onPress={() => void (resetRequired ? reset() : submit())}>{busy ? "Please wait…" : resetRequired ? "Set new password" : "Sign in"}</PrimaryButton></ScrollView></Shell>;
 }
 
 function ProjectCard({ project, canEdit, onOpen, onAccept }: { project: ProjectListItem; canEdit: boolean; onOpen: () => void; onAccept?: () => void }) {
@@ -167,6 +182,10 @@ export function EngineerProjectsApp({ auth, onLogout }: { auth: CurrentAuth; onL
     if (typeof notification.payload.dependencyId === "string") { setScreen("dependencies"); return; }
     setScreen("dashboard");
   };
+  useEffect(() => subscribeToPushNavigation((data) => {
+    if (typeof data.projectId === "string") { openProject(data.projectId); return; }
+    if (typeof data.dependencyId === "string") setScreen("dependencies");
+  }), []);
   const tabs: MobileTab[] = [{ id: "dashboard", label: "Home", icon: "⌂" }, { id: "mine", label: "Work", icon: "□" }, { id: "geographic", label: "Area", icon: "⌖" }, { id: "notifications", label: notificationUnread ? `Updates ${notificationUnread}` : "Updates", icon: "◇" }, { id: "profile", label: "Profile", icon: "○" }];
   const activeTab = ["mine", "assigned", "detail", "timeline", "completion", "dependencies"].includes(screen) ? "mine" : screen;
   const withNavigation = (content: ReactNode) => <View style={styles.app}><View style={styles.stage}>{content}</View><View style={styles.tabInset}><MobileTabBar active={activeTab} items={tabs} onSelect={(id) => setScreen(id as EngineerScreen)} /></View></View>;

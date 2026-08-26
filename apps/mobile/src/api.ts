@@ -1,6 +1,7 @@
 import type {
   CategorySummary,
   CitizenTicketSummary,
+  CitizenTicketTimelineResponse,
   CompletionVerificationDecision,
   DependencyListItem,
   DependencyResponse,
@@ -16,6 +17,7 @@ import type {
   UserRole,
   ValidationVote,
 } from "@civicos/shared";
+import * as SecureStore from "expo-secure-store";
 
 function resolveApiUrl(): string {
   const configured = process.env.EXPO_PUBLIC_API_URL;
@@ -28,22 +30,77 @@ function resolveApiUrl(): string {
 
 const apiUrl = resolveApiUrl();
 let accessToken = process.env.EXPO_PUBLIC_ACCESS_TOKEN ?? "";
+let refreshToken = "";
+let currentAuth: CurrentAuth | undefined;
+const sessionKey = "civicos.mobile.session.v1";
+let hydration: Promise<void> | undefined;
+let refreshInFlight: Promise<TokenResponse> | undefined;
 
 type LocalImage = { uri: string; fileName: string; contentType: "image/jpeg" | "image/png" | "image/webp" | "image/heic" };
 type UploadTarget = { uploadUrl: string; headers: { "Content-Type": string } };
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`, {
+  await hydrateSession();
+  const request = (token: string) => fetch(`${apiUrl}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
   });
-  const body = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(body.error ?? "Request failed");
+  let response: Response;
+  try { response = await request(accessToken); }
+  catch (cause) { throw new Error("The CivicFlow service is unreachable. Check your connection and try again.", { cause }); }
+  if (response.status === 401 && refreshToken && path !== "/auth/refresh" && path !== "/auth/logout") {
+    try {
+      const tokenToRotate = refreshToken;
+      refreshInFlight ??= rawTokenRequest("/auth/refresh", { refreshToken: tokenToRotate }).finally(() => { refreshInFlight = undefined; });
+      const rotated = await refreshInFlight;
+      accessToken = rotated.accessToken;
+      refreshToken = rotated.refreshToken;
+      await persistSession();
+      response = await request(accessToken);
+    } catch (cause) {
+      await clearInternalSession();
+      throw new Error("Your session expired. Please sign in again.", { cause });
+    }
+  }
+  const body = await response.json().catch(() => ({})) as T & { error?: string };
+  if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status})`);
   return body;
+}
+
+type TokenResponse = { accessToken: string; refreshToken: string; expiresIn: string };
+
+async function rawTokenRequest(path: string, payload: Record<string, string>): Promise<TokenResponse> {
+  let response: Response;
+  try { response = await fetch(`${apiUrl}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
+  catch (cause) { throw new Error("The CivicFlow service is unreachable. Check your connection and try again.", { cause }); }
+  const body = await response.json().catch(() => ({})) as TokenResponse & { error?: string };
+  if (!response.ok) throw new Error(body.error ?? "Session expired. Please sign in again.");
+  return body;
+}
+
+async function persistSession(): Promise<void> {
+  if (!currentAuth || !accessToken || !refreshToken) return;
+  await SecureStore.setItemAsync(sessionKey, JSON.stringify({ accessToken, refreshToken, auth: currentAuth }));
+}
+
+async function hydrateSession(): Promise<void> {
+  hydration ??= (async () => {
+    const stored = await SecureStore.getItemAsync(sessionKey);
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored) as { accessToken: string; refreshToken: string; auth: CurrentAuth };
+      accessToken = parsed.accessToken;
+      refreshToken = parsed.refreshToken;
+      currentAuth = parsed.auth;
+    } catch {
+      await SecureStore.deleteItemAsync(sessionKey);
+    }
+  })();
+  await hydration;
 }
 
 export type CurrentAuth = {
@@ -55,7 +112,11 @@ export type CurrentAuth = {
 };
 
 export async function loadCurrentAuth(): Promise<CurrentAuth> {
+  await hydrateSession();
+  if (!accessToken) throw new Error("No saved session");
   const result = await apiFetch<{ auth: CurrentAuth }>("/protected/me");
+  currentAuth = result.auth;
+  await persistSession();
   return result.auth;
 }
 
@@ -63,12 +124,15 @@ export async function internalLogin(email: string, password: string): Promise<Cu
   const result = await apiFetch<{
     user: { id: string; role: UserRole; agencyId: string | null };
     accessToken: string;
+    refreshToken: string;
     requiresPasswordReset: boolean;
   }>("/auth/internal/login", { method: "POST", body: JSON.stringify({ email, password, expectedRole: "ENGINEER" }) });
   if (result.user.role !== "ENGINEER" || !result.user.agencyId) throw new Error("Use an Executive Engineer account");
-  if (result.requiresPasswordReset) throw new Error("Reset this account's temporary password before continuing");
   accessToken = result.accessToken;
-  return { userId: result.user.id, role: result.user.role, agencyId: result.user.agencyId, wardId: null, mustResetPassword: false };
+  refreshToken = result.refreshToken;
+  currentAuth = { userId: result.user.id, role: result.user.role, agencyId: result.user.agencyId, wardId: null, mustResetPassword: result.requiresPasswordReset };
+  await persistSession();
+  return currentAuth;
 }
 
 export async function requestCitizenOtp(phone: string): Promise<{ demoMode: boolean }> {
@@ -76,17 +140,39 @@ export async function requestCitizenOtp(phone: string): Promise<{ demoMode: bool
 }
 
 export async function verifyCitizenOtp(phone: string, code: string): Promise<CurrentAuth> {
-  const result = await apiFetch<{ user: { id: string; role: UserRole }; accessToken: string }>("/auth/citizen/verify-otp", { method: "POST", body: JSON.stringify({ phone, code }) });
+  const result = await apiFetch<{ user: { id: string; role: UserRole }; accessToken: string; refreshToken: string }>("/auth/citizen/verify-otp", { method: "POST", body: JSON.stringify({ phone, code }) });
   if (result.user.role !== "CITIZEN") throw new Error("Use a citizen account");
   accessToken = result.accessToken;
-  return { userId: result.user.id, role: result.user.role, agencyId: null, wardId: null, mustResetPassword: false };
+  refreshToken = result.refreshToken;
+  currentAuth = { userId: result.user.id, role: result.user.role, agencyId: null, wardId: null, mustResetPassword: false };
+  await persistSession();
+  return currentAuth;
 }
 
-export function clearInternalSession(): void {
+export async function clearInternalSession(): Promise<void> {
   accessToken = "";
+  refreshToken = "";
+  currentAuth = undefined;
+  hydration = Promise.resolve();
+  await SecureStore.deleteItemAsync(sessionKey);
 }
 
 export const clearCitizenSession = clearInternalSession;
+
+export async function logoutSession(): Promise<void> {
+  await hydrateSession();
+  const token = refreshToken;
+  if (token) {
+    try { await rawTokenRequest("/auth/logout", { refreshToken: token }); }
+    catch { /* The local session must still be removed while offline. */ }
+  }
+  await clearInternalSession();
+}
+
+export async function resetInternalPassword(currentPassword: string, newPassword: string): Promise<void> {
+  await apiFetch("/auth/internal/reset-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) });
+  await clearInternalSession();
+}
 
 export async function loadDependencies(direction: "sent" | "received"): Promise<DependencyListItem[]> {
   const result = await apiFetch<{ dependencies: DependencyListItem[] }>(`/dependencies?direction=${direction}`);
@@ -170,6 +256,14 @@ export async function loadCategories(): Promise<CategorySummary[]> {
 export async function loadMyTickets(filter: "ongoing" | "past"): Promise<CitizenTicketSummary[]> {
   const result = await apiFetch<{ tickets: CitizenTicketSummary[] }>(`/citizens/me/tickets?filter=${filter}&limit=50`);
   return result.tickets;
+}
+
+export async function loadTicket(ticketId: string): Promise<{ ticket: CitizenTicketSummary } & CitizenTicketTimelineResponse> {
+  const [detail, timeline] = await Promise.all([
+    apiFetch<{ ticket: CitizenTicketSummary }>(`/tickets/${ticketId}`),
+    apiFetch<CitizenTicketTimelineResponse>(`/tickets/${ticketId}/timeline`),
+  ]);
+  return { ticket: detail.ticket, ...timeline };
 }
 
 export async function loadPendingValidations(): Promise<PendingValidation[]> {

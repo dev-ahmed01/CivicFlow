@@ -38,7 +38,8 @@
           "locationWhenInUsePermission": "City Connect uses your location to route civic reports to the right ward."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {

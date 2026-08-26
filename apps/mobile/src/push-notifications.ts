@@ -35,3 +35,12 @@ export async function registerForPushNotifications(): Promise<boolean> {
 export async function clearAppBadge(): Promise<void> {
   await Notifications.setBadgeCountAsync(0);
 }
+
+export type PushNavigationData = Record<string, unknown> & { type?: string };
+
+export function subscribeToPushNavigation(onOpen: (data: PushNavigationData) => void): () => void {
+  const handle = (response: Notifications.NotificationResponse) => onOpen(response.notification.request.content.data as PushNavigationData);
+  const subscription = Notifications.addNotificationResponseReceivedListener(handle);
+  void Notifications.getLastNotificationResponseAsync().then((response) => { if (response) handle(response); });
+  return () => subscription.remove();
+}
