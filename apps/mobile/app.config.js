@@ -1,12 +1,10 @@
-const appJson = require("./app.json");
-
-module.exports = () => {
+module.exports = ({ config }) => {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL;
 
   return {
-    ...appJson.expo,
+    ...config,
     extra: {
-      ...appJson.expo.extra,
+      ...config.extra,
       apiUrl
     }
   };
