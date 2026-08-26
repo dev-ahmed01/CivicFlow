@@ -244,7 +244,7 @@ export async function submitReport(
   if (!ticketId) {
     const created = await apiFetch<{ ticketId: string; imageId: string; upload: UploadTarget }>("/tickets", {
       method: "POST",
-      body: JSON.stringify({ ...report, primaryImage: { fileName: primary.fileName, contentType: primary.contentType } }),
+      body: JSON.stringify({ ...report, channel: "MOBILE", primaryImage: { fileName: primary.fileName, contentType: primary.contentType } }),
     });
     ticketId = created.ticketId;
     primaryImageId = created.imageId;

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { Prisma, TicketState, UserRole, prisma } from "db";
+import { Channel, Prisma, TicketState, UserRole, prisma } from "db";
 import {
   citizenTicketFilterSchema,
   citizenTicketStateLabels,
@@ -16,6 +16,8 @@ import type { ImageStorage } from "../images/storage";
 import { cosineSimilarity, type ImageRelevanceService } from "../images/relevance";
 import { enterPendingValidation } from "../validations/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
+import { routeRelevantWebTicket } from "../routing/service";
+import { imageCompletionDecision, webAutoRoutingEnabled, type DeploymentProfile } from "./web-routing-policy";
 
 const terminalStates: TicketState[] = [TicketState.RESOLVED, TicketState.CLOSED, TicketState.REJECTED, TicketState.CANCELLED];
 const preValidationStates: TicketState[] = [TicketState.DRAFT, TicketState.AI_CHECK_PENDING, TicketState.AI_FLAGGED];
@@ -59,6 +61,11 @@ async function getConfigNumber(key: string): Promise<number> {
   const config = await prisma.adminConfig.findUnique({ where: { key } });
   if (!config) throw new Error(`Missing required AdminConfig ${key}`);
   return configNumber(config.value, key);
+}
+
+async function getConfigBoolean(key: string): Promise<boolean> {
+  const config = await prisma.adminConfig.findUnique({ where: { key } });
+  return config?.value === true;
 }
 
 function safeFileName(fileName: string): string {
@@ -120,7 +127,11 @@ function serializeTicket(row: TicketRow) {
   };
 }
 
-async function finalizeNewTicket(ticketId: string, visualEmbedding: number[] | null) {
+async function finalizeNewTicket(
+  ticketId: string,
+  visualEmbedding: number[] | null,
+  destination: "COMMUNITY_VALIDATION" | "DIRECT_AGENCY",
+) {
   const [radiusMeters, openWindowDays, visualThreshold] = await Promise.all([
     getConfigNumber("duplicate.radius_meters"),
     getConfigNumber("duplicate.open_window_days"),
@@ -182,12 +193,20 @@ async function finalizeNewTicket(ticketId: string, visualEmbedding: number[] | n
 
   const current = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { state: true } });
   await prisma.$transaction(async (transaction) => {
-    await enterPendingValidation(transaction, ticketId, current.state);
+    if (destination === "DIRECT_AGENCY") {
+      await routeRelevantWebTicket(transaction, ticketId);
+    } else {
+      await enterPendingValidation(transaction, ticketId, current.state);
+    }
   });
   return { ticketId, shared: false };
 }
 
-export function createTicketsRouter(relevance: ImageRelevanceService, storage: ImageStorage): Router {
+export function createTicketsRouter(
+  relevance: ImageRelevanceService,
+  storage: ImageStorage,
+  deploymentProfile: DeploymentProfile = "local",
+): Router {
   const router = Router();
   router.use(requireAuth);
 
@@ -225,7 +244,7 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
   router.get("/categories", requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN), asyncRoute(async (_request, response) => {
     const [categories, roadConfig] = await Promise.all([prisma.category.findMany({
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, primaryAgency: { select: { id: true, name: true } } },
     }), prisma.adminConfig.findUnique({ where: { key: "road.category_id" }, select: { value: true } })]);
     const roadCategoryId = typeof roadConfig?.value === "string" ? roadConfig.value : null;
     response.json({ categories: categories.map((category) => ({ ...category, roadIntelligenceEnabled: category.id === roadCategoryId })) });
@@ -261,10 +280,10 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
     const upload = storage.createUpload(objectKey, input.primaryImage.contentType);
     await prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`
-        INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "title", "address", "createdAt")
+        INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "channel", "title", "address", "createdAt")
         VALUES (${ticketId}::uuid, ${input.categoryId}::uuid, ${request.auth!.userId}::uuid,
           ST_SetSRID(ST_MakePoint(${input.longitude}, ${input.latitude}), 4326), ${ward.id}::uuid,
-          'AI_CHECK_PENDING', ${input.title}, ${input.address}, NOW())
+          'AI_CHECK_PENDING', ${input.channel ?? Channel.MOBILE}::"Channel", ${input.title}, ${input.address}, NOW())
       `;
       await transaction.observation.create({
         data: {
@@ -364,19 +383,41 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
     }
     const maxRetries = await getConfigNumber("ai_relevance.max_retries");
     const nextAttempt = image.observation.ticket.aiRetryCount + 1;
+    // The channel is client-reported and spoofable. It is acceptable only as a
+    // demo workflow hint: authorization and agency ownership remain server-side.
+    const directWebFlow = image.observation.ticket.channel === Channel.WEB
+      && webAutoRoutingEnabled(
+        image.observation.ticket.channel,
+        deploymentProfile,
+        await getConfigBoolean("demo.web_auto_route_enabled"),
+      );
+    const completionDecision = imageCompletionDecision({
+      relevancePassed: check.pass,
+      directWebFlow,
+      attempt: nextAttempt,
+      maxRetries,
+    });
     await prisma.image.update({
       where: { id: image.id },
       data: { aiRelevanceScore: check.score, embedding: embedding ?? Prisma.JsonNull, uploadedAt: new Date() },
     });
 
-    if (!check.pass && nextAttempt < maxRetries) {
+    if (completionDecision === "RETAKE") {
       await prisma.$transaction([
         prisma.ticket.update({ where: { id: ticketId }, data: { state: TicketState.AI_FLAGGED, aiRetryCount: nextAttempt } }),
         prisma.ticketStateTransition.create({
           data: { ticketId, fromState: image.observation.ticket.state, toState: TicketState.AI_FLAGGED, reason: "PHOTO_RETAKE_REQUESTED" },
         }),
       ]);
-      response.json({ ticketId, needsRetake: true, attemptsRemaining: maxRetries - nextAttempt, message: "This photo does not clearly show the selected issue. Please take another photo.", ...publicStatus(TicketState.AI_FLAGGED) });
+      response.json({
+        ticketId,
+        needsRetake: true,
+        attemptsRemaining: Math.max(0, maxRetries - nextAttempt),
+        message: directWebFlow
+          ? "This photo is not relevant to the selected issue. Please upload a photo that clearly shows it."
+          : "This photo does not clearly show the selected issue. Please take another photo.",
+        ...publicStatus(TicketState.AI_FLAGGED),
+      });
       return;
     }
 
@@ -384,7 +425,11 @@ export function createTicketsRouter(relevance: ImageRelevanceService, storage: I
       where: { id: ticketId },
       data: { aiRetryCount: nextAttempt, manualReviewRecommended: !check.pass },
     });
-    const final = await finalizeNewTicket(ticketId, embedding);
+    const final = await finalizeNewTicket(
+      ticketId,
+      embedding,
+      completionDecision,
+    );
     const row = await getTicketRow(final.ticketId);
     if (!row) throw new Error("Finalized ticket could not be loaded");
     response.json({ ticket: serializeTicket(row), needsRetake: false });

@@ -3,9 +3,20 @@ import { createNotifications } from "../notifications/service";
 
 type DatabaseClient = Prisma.TransactionClient;
 
-export async function routeValidatedTicket(
+type RouteTicketOptions = {
+  fromState: TicketState;
+  transitions: Array<{
+    fromState: TicketState;
+    toState: TicketState;
+    reason: string;
+  }>;
+  notifyValidated: boolean;
+};
+
+async function routeTicketToConfiguredAgency(
   client: DatabaseClient,
   ticketId: string,
+  options: RouteTicketOptions,
 ): Promise<string> {
   const ticket = await client.ticket.findUnique({
     where: { id: ticketId },
@@ -16,32 +27,19 @@ export async function routeValidatedTicket(
     },
   });
   if (!ticket) throw new Error("Ticket not found during agency routing");
-  if (ticket.state !== TicketState.PENDING_VALIDATION) {
+  if (ticket.state !== options.fromState) {
     throw new Error(`Ticket ${ticketId} cannot be routed from ${ticket.state}`);
   }
 
-  // Part III §7 — the database mapping is authoritative; no category or agency
-  // identifiers are encoded in application logic.
+  // Part III §7 — the database mapping selected through the category menu is
+  // authoritative; clients never choose or submit an agency assignment.
   const agencyId = ticket.category.primaryAgencyId;
   await client.ticket.update({
     where: { id: ticketId },
     data: { state: TicketState.ROUTED_TO_AGENCY, assignedAgencyId: agencyId },
   });
   await client.ticketStateTransition.createMany({
-    data: [
-      {
-        ticketId,
-        fromState: TicketState.PENDING_VALIDATION,
-        toState: TicketState.VALIDATED,
-        reason: "COMMUNITY_VALIDATION_QUORUM_MET",
-      },
-      {
-        ticketId,
-        fromState: TicketState.VALIDATED,
-        toState: TicketState.ROUTED_TO_AGENCY,
-        reason: "CATEGORY_PRIMARY_AGENCY_ROUTING",
-      },
-    ],
+    data: options.transitions.map((transition) => ({ ticketId, ...transition })),
   });
   const projectHeads = await client.user.findMany({
     where: { agencyId, role: UserRole.PROJECT_HEAD },
@@ -49,10 +47,47 @@ export async function routeValidatedTicket(
   });
   await createNotifications(client, [
     ...(ticket.reporterId ? [
-      { userId: ticket.reporterId, type: "TICKET_VALIDATED", payload: { ticketId } },
+      ...(options.notifyValidated ? [{ userId: ticket.reporterId, type: "TICKET_VALIDATED", payload: { ticketId } }] : []),
       { userId: ticket.reporterId, type: "TICKET_ROUTED_TO_AGENCY", payload: { ticketId, agencyId } },
     ] : []),
     ...projectHeads.map(({ id }) => ({ userId: id, type: "TICKET_ROUTED_TO_AGENCY", payload: { ticketId, agencyId } })),
   ]);
   return agencyId;
+}
+
+export async function routeValidatedTicket(
+  client: DatabaseClient,
+  ticketId: string,
+): Promise<string> {
+  return routeTicketToConfiguredAgency(client, ticketId, {
+    fromState: TicketState.PENDING_VALIDATION,
+    transitions: [
+      {
+        fromState: TicketState.PENDING_VALIDATION,
+        toState: TicketState.VALIDATED,
+        reason: "COMMUNITY_VALIDATION_QUORUM_MET",
+      },
+      {
+        fromState: TicketState.VALIDATED,
+        toState: TicketState.ROUTED_TO_AGENCY,
+        reason: "CATEGORY_PRIMARY_AGENCY_ROUTING",
+      },
+    ],
+    notifyValidated: true,
+  });
+}
+
+export async function routeRelevantWebTicket(
+  client: DatabaseClient,
+  ticketId: string,
+): Promise<string> {
+  return routeTicketToConfiguredAgency(client, ticketId, {
+    fromState: TicketState.AI_CHECK_PENDING,
+    transitions: [{
+      fromState: TicketState.AI_CHECK_PENDING,
+      toState: TicketState.ROUTED_TO_AGENCY,
+      reason: "WEB_RELEVANCE_CHECK_PASSED_CATEGORY_ROUTING",
+    }],
+    notifyValidated: false,
+  });
 }

@@ -132,6 +132,7 @@ const adminConfigs = [
   { key: "duplicate.visual_similarity_threshold", value: 0.75, description: "Advisory CLIP embedding similarity threshold" },
   { key: "ai_relevance.max_retries", value: 3, description: "Maximum relevance-check retries before manual-review recommendation" },
   { key: "ai_relevance.pass_threshold", value: 0.6, description: "Minimum hosted image/category relevance confidence" },
+  { key: "demo.web_auto_route_enabled", value: true, description: "Demo-only: route relevant web reports directly to the category's configured primary agency" },
   { key: "conflict.radius_meters", value: 200, description: "Default generic project conflict radius" },
   { key: "road.category_id", value: categories[0].id, description: "Admin-configured category that enables Road-Cutting Intelligence" },
   { key: "road.repeated_excavation_days", value: 90, description: "Days after restoration during which a new excavation receives an advisory warning" },

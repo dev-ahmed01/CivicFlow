@@ -27,6 +27,7 @@ export const ticketStateSchema = z.enum([
   "REJECTED",
   "CANCELLED",
 ]);
+export const ticketChannelSchema = z.enum(["WEB", "MOBILE"]);
 
 export const citizenTicketStateSchema = z.enum([
   "REPORT_RECEIVED",
@@ -162,7 +163,9 @@ export const categorySchema = z.object({
   adminEditable: z.boolean(),
 });
 
-export const categorySummarySchema = categorySchema.pick({ id: true, name: true });
+export const categorySummarySchema = categorySchema.pick({ id: true, name: true }).extend({
+  primaryAgency: agencySchema.pick({ id: true, name: true }).optional(),
+});
 
 export const reportingAreaSchema = z.object({
   id: idSchema,
@@ -197,6 +200,7 @@ export const ticketSchema = z.object({
   coordinates: pointSchema,
   wardId: idSchema,
   state: ticketStateSchema,
+  channel: ticketChannelSchema,
   title: z.string().min(1).max(160),
   address: z.string().min(1),
   aiRetryCount: z.number().int().nonnegative(),
@@ -222,6 +226,7 @@ export const observationSchema = z.object({
 
 export const createTicketSchema = z.object({
   categoryId: idSchema,
+  channel: ticketChannelSchema.optional(),
   title: z.string().trim().min(3).max(160),
   address: z.string().trim().min(3).max(500),
   latitude: z.number().min(-90).max(90),
@@ -763,6 +768,7 @@ export const authTokensSchema = z.object({
 
 export type UserRole = z.infer<typeof userRoleSchema>;
 export type TicketState = z.infer<typeof ticketStateSchema>;
+export type TicketChannel = z.infer<typeof ticketChannelSchema>;
 export type CitizenTicketState = z.infer<typeof citizenTicketStateSchema>;
 export type ProjectState = z.infer<typeof projectStateSchema>;
 export type DependencyState = z.infer<typeof dependencyStateSchema>;

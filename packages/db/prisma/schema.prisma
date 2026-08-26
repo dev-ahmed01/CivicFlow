@@ -36,6 +36,11 @@ enum TicketState {
   CANCELLED
 }
 
+enum Channel {
+  WEB
+  MOBILE
+}
+
 enum ProjectState {
   CREATED
   PENDING_UPTAKE
@@ -204,6 +209,7 @@ model Ticket {
   wardId           String                              @db.Uuid
   roadSegmentId    String?                             @db.Uuid
   state            TicketState                         @default(DRAFT)
+  channel          Channel                             @default(MOBILE)
   title            String                              @default("Civic issue") @db.VarChar(160)
   address          String                              @default("Location pending")
   aiRetryCount     Int                                 @default(0)

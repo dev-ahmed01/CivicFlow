@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { citizenLoginSchema, internalLoginSchema, requestOtpSchema, submitValidationSchema, ticketStateSchema, toCitizenTicketState } from "./schemas";
+import { citizenLoginSchema, createTicketSchema, internalLoginSchema, requestOtpSchema, submitValidationSchema, ticketStateSchema, toCitizenTicketState } from "./schemas";
 
 describe("shared schemas", () => {
   it("accepts a citizen phone in E.164 format", () => {
@@ -36,5 +36,19 @@ describe("shared schemas", () => {
   it("accepts a citizen user ID without requiring email syntax", () => {
     expect(citizenLoginSchema.parse({ userId: "+919876500001", password: "CityConnect@123" }).userId).toBe("+919876500001");
     expect(citizenLoginSchema.parse({ userId: "citizen.jayanagar", password: "CityConnect@123" }).userId).toBe("citizen.jayanagar");
+  });
+
+  it("accepts explicit web and mobile ticket channels while keeping the field optional", () => {
+    const report = {
+      categoryId: "40000000-0000-4000-8000-000000000001",
+      title: "Pothole near the bus stop",
+      address: "Jayanagar, Bengaluru",
+      latitude: 12.9295,
+      longitude: 77.5854,
+      primaryImage: { fileName: "pothole.jpg", contentType: "image/jpeg" as const },
+    };
+    expect(createTicketSchema.parse({ ...report, channel: "WEB" }).channel).toBe("WEB");
+    expect(createTicketSchema.parse({ ...report, channel: "MOBILE" }).channel).toBe("MOBILE");
+    expect(createTicketSchema.parse(report).channel).toBeUndefined();
   });
 });
