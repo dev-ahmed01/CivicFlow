@@ -27,6 +27,7 @@
     "verify:phase9": "pnpm --filter api verify:phase9",
     "verify:phase10": "pnpm --filter api verify:phase10",
     "verify:phase12": "pnpm --filter api verify:phase12",
+    "verify:phase15": "pnpm --filter api verify:phase15",
     "verify:demo100": "pnpm --filter api verify:demo100"
   },
   "devDependencies": {

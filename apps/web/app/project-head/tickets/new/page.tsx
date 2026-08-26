@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import type { InterventionPurpose, RoadConflict, RoadInterventionHistoryItem, RoadSegmentSummary, WardSummary } from "@civicos/shared";
+import { notifyPortalDataChanged } from "../../../_lib/portal-refresh";
 import { apiFetch, evidenceContentType, uploadFile } from "../../_lib/api";
 import { CategoryGrid, PrimaryButton } from "../../../_components/ui";
 
@@ -79,6 +80,7 @@ export default function AgencyTicketPage() {
       setCreatedId(created.ticketId);
       setProjectId(created.projectId ?? undefined);
       setRoadConflicts(created.roadConflicts);
+      notifyPortalDataChanged();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not create ticket");
     } finally {

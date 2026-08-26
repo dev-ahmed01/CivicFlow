@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import type { ProjectHeadTicketDetail } from "@civicos/shared";
+import { notifyPortalDataChanged, usePortalPolling } from "../../../_lib/portal-refresh";
 import { apiFetch, evidenceContentType, uploadFile } from "../../_lib/api";
 
 type UploadTarget = { uploadUrl: string; headers: Record<string, string> };
@@ -13,10 +14,15 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
   const [report, setReport] = useState<File>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const load = useCallback(() => {
-    void apiFetch<{ ticket: ProjectHeadTicketDetail }>(`/tickets/${ticketId}`).then((result) => setTicket(result.ticket)).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load ticket"));
+  const load = useCallback(async () => {
+    try {
+      setTicket((await apiFetch<{ ticket: ProjectHeadTicketDetail }>(`/tickets/${ticketId}`)).ticket);
+      setError(undefined);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not load ticket");
+    }
   }, [ticketId]);
-  useEffect(load, [load]);
+  usePortalPolling(load);
 
   const completeInspection = async (event: FormEvent) => {
     event.preventDefault();
@@ -32,7 +38,8 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
       await apiFetch(`/tickets/${ticketId}/inspection-report`, { method: "POST", body: JSON.stringify({ action: "complete", reportId: created.reportId }) });
       setNotes("");
       setReport(undefined);
-      load();
+      await load();
+      notifyPortalDataChanged();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not complete inspection");
     } finally {
@@ -53,7 +60,7 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
         </section>
         <aside>
           {canInspect ? <form className="portal-panel inspection-card" onSubmit={(event) => void completeInspection(event)}><p className="eyebrow">W-P4 · Inspection</p><h2>Complete field inspection</h2><label>Inspection notes<textarea required minLength={3} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Findings, measurements, urgency, and recommended action…" /></label><label className="portal-upload compact"><strong>{report?.name ?? "Attach report or photo"}</strong><input required type="file" accept="image/*,application/pdf" onChange={(event) => setReport(event.target.files?.[0])} /></label>{error ? <p className="error" role="alert">{error}</p> : null}<button disabled={busy || !report} type="submit">{busy ? "Completing…" : "Inspection Complete"}</button></form> : null}
-          {ticket.internalState === "INSPECTION_COMPLETE" && !ticket.project ? <section className="portal-panel action-card"><p className="eyebrow">W-P6 · Ready</p><h2>Create delivery project</h2><p>Review this ticket and assign an Executive Engineer from your agency.</p><Link className="primary-link" href={`/project-head/projects?ticketId=${ticket.id}`}>Create project</Link></section> : null}
+          {ticket.internalState === "INSPECTION_COMPLETE" && !ticket.project ? <section className="portal-panel action-card"><p className="eyebrow">Ready for delivery</p><h2>Create project and coordinate</h2><p>Assign an Executive Engineer and add dependency agencies in the same guided workflow.</p><Link className="primary-link" href={`/project-head/projects?ticketId=${ticket.id}`}>Create Project + Add Dependency</Link></section> : null}
           {ticket.project ? <section className="portal-panel action-card"><p className="eyebrow">Project created</p><h2>{ticket.project.state.replaceAll("_", " ")}</h2>{ticket.project.state === "CREATED" ? <Link className="primary-link" href={`/project-head/projects?ticketId=${ticket.id}`}>Assign engineer and continue</Link> : <Link href={`/project-head/projects?project=${ticket.project.id}`}>Open project →</Link>}</section> : null}
         </aside>
       </div>

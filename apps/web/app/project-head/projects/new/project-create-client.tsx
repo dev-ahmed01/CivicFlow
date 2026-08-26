@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import type { Agency, EngineerSummary, InterventionPurpose, Project, ProjectHeadTicketDetail, RoadInterventionHistoryItem, RoadSegmentSummary } from "@civicos/shared";
+import { notifyPortalDataChanged } from "../../../_lib/portal-refresh";
 import { apiFetch, getSession } from "../../_lib/api";
 
-export function ProjectCreateClient({ ticketId }: { ticketId: string }) {
+export function ProjectCreateClient({ ticketId, onCreated }: { ticketId: string; onCreated?: (project: Project) => void }) {
   const [ticket, setTicket] = useState<ProjectHeadTicketDetail>();
   const [engineers, setEngineers] = useState<EngineerSummary[]>([]);
   const [engineerId, setEngineerId] = useState("");
@@ -69,6 +70,8 @@ export function ProjectCreateClient({ ticketId }: { ticketId: string }) {
       const intervention = roadEnabled ? { segmentId, purpose, plannedStart: `${plannedStart}T00:00:00.000Z`, plannedEnd: `${plannedEnd}T23:59:59.999Z`, affectedLengthM: Number(affectedLengthM), startOffsetM: Number(startOffsetM), dependencyRefs: interventionDependencyRefs } : undefined;
       const result = await apiFetch<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ ticketId, engineerId, dependencies, intervention }) });
       setCreated(result.project);
+      notifyPortalDataChanged();
+      onCreated?.(result.project);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not create project");
     } finally {

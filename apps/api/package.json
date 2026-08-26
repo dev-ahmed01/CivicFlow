@@ -20,6 +20,7 @@
     "verify:phase9": "tsc -p tsconfig.json && node dist/scripts/verify-phase9.js",
     "verify:phase10": "tsc -p tsconfig.json && node dist/scripts/verify-phase10.js",
     "verify:phase12": "tsc -p tsconfig.json && node dist/scripts/verify-phase12.js",
+    "verify:phase15": "tsc -p tsconfig.json && node dist/scripts/verify-phase15.js",
     "verify:demo100": "tsc -p tsconfig.json && node dist/scripts/verify-demo100.js"
   },
   "dependencies": {
