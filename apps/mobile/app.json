@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "City Connect",
+    "slug": "city-connect",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "newArchEnabled": true,
+    "scheme": "cityconnect",
+    "ios": {
+      "bundleIdentifier": "com.cityconnect.mobile",
+      "buildNumber": "1",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.cityconnect.mobile",
+      "versionCode": 1,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "City Connect uses your photos as evidence for civic reports.",
+          "cameraPermission": "City Connect uses your camera to photograph civic issues."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "City Connect uses your location to route civic reports to the right ward."
+        }
+      ],
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "836f9ba9-34a3-4ca7-8742-eb33d4923f6f"
+      }
+    }
+  }
+}
