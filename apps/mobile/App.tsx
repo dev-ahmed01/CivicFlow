@@ -87,10 +87,11 @@ export default function App() {
     });
   }, [citizenAuth, viewerRole]);
 
+  const updateLocation = useCallback((next: ConfirmedLocation) => setLocation(next), []);
+
   if (viewerRole === "ENGINEER" && engineerAuth) return <DesignSystemProvider theme="internal"><StatusBar style="dark" /><EngineerProjectsApp auth={engineerAuth} onLogout={() => { void logoutSession(); setEngineerAuth(undefined); setViewerRole("OTHER"); setScreen("home"); }} /></DesignSystemProvider>;
   if (viewerRole === "LOADING") return <DesignSystemProvider theme="citizen"><StatusBar style="dark" /><Shell><View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loadingText}>Loading CivicOS…</Text></View></Shell></DesignSystemProvider>;
 
-  const updateLocation = useCallback((next: ConfirmedLocation) => setLocation(next), []);
   const reset = () => {
     setScreen("home"); setSelectedCategory(undefined); setImages([]); setLocation(undefined); setDraftTicketId(undefined); setSubmitted(undefined); setTicketTimeline(undefined); setTicketDetailError(undefined);
   };
