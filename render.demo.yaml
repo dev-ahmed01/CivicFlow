@@ -37,6 +37,8 @@ services:
         value: fixed_otp
       - key: DEMO_AUTH_CODE
         sync: false
+      - key: DEMO_NOTIFY_ALL_CITIZENS
+        value: true
       # Cloudflare R2 uses the existing S3-compatible signer.
       - key: S3_ENDPOINT
         sync: false

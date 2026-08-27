@@ -18,7 +18,7 @@ describe("Expo notification delivery", () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ status: "ok", id: "receipt-1" }] }) });
     vi.stubGlobal("fetch", fetchMock);
     const gateway = new ExpoPushGateway("expo-secret");
-    const result = await gateway.send([{ to: "ExpoPushToken[device-1]", sound: "default", title: "CivicOS", body: "Update", data: {} }]);
+    const result = await gateway.send([{ to: "ExpoPushToken[device-1]", sound: "default", title: "City Connect", body: "Update", data: {} }]);
     expect(result).toEqual([{ status: "ok", id: "receipt-1" }]);
     expect(fetchMock).toHaveBeenCalledWith("https://exp.host/--/api/v2/push/send", expect.objectContaining({ method: "POST" }));
   });

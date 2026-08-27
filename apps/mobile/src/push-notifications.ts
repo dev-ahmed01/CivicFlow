@@ -16,8 +16,8 @@ Notifications.setNotificationHandler({
 export async function registerForPushNotifications(): Promise<boolean> {
   if (!Device.isDevice || (Platform.OS !== "ios" && Platform.OS !== "android")) return false;
   if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("civicos-updates", {
-      name: "CivicOS updates",
+    await Notifications.setNotificationChannelAsync("city-connect-updates", {
+      name: "City Connect updates",
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
     });

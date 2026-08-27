@@ -1,14 +1,29 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { CategorySummary, CitizenGrievanceReason, CitizenTicketSummary, CitizenTicketTimelineResponse, CompletionVerificationDecision, PendingCompletionVerification, PendingValidation, ValidationVote } from "@civicos/shared";
-import * as ImagePicker from "expo-image-picker";
-import * as Location from "expo-location";
-import MapView, { Marker } from "react-native-maps";
-import { ActivityIndicator, FlatList, Image, Pressable, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { requestCitizenOtp, verifyCitizenOtp, type CurrentAuth, type LocalImage } from "./api";
-import { CategoryGrid, PrimaryButton, ScreenHeader, SecondaryButton, StatusChip, TicketCard } from "./components";
+import { useState } from "react";
+import { notificationPresentation, relativeNotificationTime } from "@civicos/shared";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { requestCitizenOtp, verifyCitizenOtp, type CurrentAuth, type MobileNotification } from "./api";
+import { AppIcon, BrandLockup, Card, NotificationRow, PrimaryButton, ScreenHeader, SecondaryButton } from "./components";
+import { Shell } from "./screen-shell";
 import { colors, fontWeights, radii, typeScale } from "./theme";
 
-export function Shell({ children }: { children: ReactNode }) { return <SafeAreaView style={styles.safe}><View style={styles.shell}>{children}</View></SafeAreaView>; }
+export { Shell } from "./screen-shell";
+export * from "./report-screens";
+export * from "./ticket-screens";
+export * from "./validation-screens";
+export * from "./profile-screen";
+
+export function SplashScreen() {
+  return <View style={styles.splash}><View style={styles.splashGlow} /><BrandLockup light /><ActivityIndicator color={colors.lime} size="large" /><Text style={styles.splashCopy}>Report. Track. Resolve.</Text></View>;
+}
+
+export function WelcomeScreen({ onCitizen, onStaff }: { onCitizen: () => void; onStaff: () => void }) {
+  return <Shell><ScrollView contentContainerStyle={styles.welcome}>
+    <View style={styles.welcomeTop}><BrandLockup /><View style={styles.welcomeArt}><View style={styles.cityCircle}><AppIcon color={colors.surface} name="business" size={46} /></View><View style={styles.roadLine} /></View></View>
+    <View style={styles.welcomeCopy}><Text style={styles.welcomeTitle}>Your city, one tap away.</Text><Text style={styles.welcomeSubtitle}>Report civic issues, follow every update, and help your community move problems toward resolution.</Text></View>
+    <View style={styles.welcomeActions}><PrimaryButton icon="phone-portrait-outline" onPress={onCitizen}>Continue as Citizen</PrimaryButton><Pressable accessibilityRole="button" onPress={onStaff} style={styles.staffLink}><AppIcon color={colors.muted} name="shield-checkmark-outline" size={17} /><Text style={styles.staffLinkText}>Staff sign in</Text></Pressable></View>
+    <Text style={styles.secureNote}>Secure access · Real ticket tracking · City Connect</Text>
+  </ScrollView></Shell>;
+}
 
 export function CitizenLoginScreen({ onAuthenticated, onBack }: { onAuthenticated: (auth: CurrentAuth) => void; onBack: () => void }) {
   const [phone, setPhone] = useState("");
@@ -20,167 +35,57 @@ export function CitizenLoginScreen({ onAuthenticated, onBack }: { onAuthenticate
   const submit = async () => {
     setBusy(true); setError(undefined);
     try {
-      if (step === "phone") { const result = await requestCitizenOtp(phone); setDemoMode(result.demoMode); setStep("code"); }
-      else onAuthenticated(await verifyCitizenOtp(phone, code));
+      if (step === "phone") { const result = await requestCitizenOtp(phone.replaceAll(" ", "")); setDemoMode(result.demoMode); setStep("code"); }
+      else onAuthenticated(await verifyCitizenOtp(phone.replaceAll(" ", ""), code));
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not sign in"); }
     finally { setBusy(false); }
   };
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow={step === "phone" ? "Citizen sign in" : "Verify phone"} title={step === "phone" ? "Your city, one tap away" : "Enter the 6-digit code"} onBack={step === "code" ? () => setStep("phone") : onBack} /><Text style={styles.body}>{step === "phone" ? "Use your verified mobile number to report issues and follow their progress." : demoMode ? "Demo authentication is active. Enter the rehearsal code supplied by the presenter." : `We sent a one-time code to ${phone}.`}</Text>{step === "phone" ? <TextInput accessibilityLabel="Mobile number" keyboardType="phone-pad" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" placeholderTextColor={colors.muted} style={styles.input} /> : <TextInput accessibilityLabel="One-time code" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} placeholder="6-digit code" placeholderTextColor={colors.muted} style={styles.input} />}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (step === "phone" ? phone.length < 10 : code.length !== 6)} onPress={() => void submit()}>{busy ? "Please wait…" : step === "phone" ? "Send verification code" : "Verify and continue"}</PrimaryButton>{step === "code" ? <SecondaryButton disabled={busy} onPress={() => void requestCitizenOtp(phone)}>Send a new code</SecondaryButton> : null}</ScrollView></Shell>;
-}
-
-export function HomeScreen({ signedIn, onSignIn, onReport, onTickets, onValidations, onCompletionValidations, onEngineerLogin }: { signedIn: boolean; onSignIn: () => void; onReport: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void; onCompletionValidations: () => void; onEngineerLogin: () => void }) {
-  return <Shell><ScrollView contentContainerStyle={styles.content}>
-    <View style={styles.brand}><Text style={styles.brandMark}>C</Text><Text style={styles.brandName}>CivicOS</Text></View>
-    <View style={styles.hero}><Text style={styles.kicker}>Your city, heard</Text><Text style={styles.heroTitle}>Spot a civic issue?</Text><Text style={styles.body}>Share a photo and location. We’ll keep you updated in plain language.</Text><PrimaryButton onPress={onReport}>Report an Issue</PrimaryButton></View>
-    <Pressable accessibilityRole="button" style={styles.validationBanner} onPress={onValidations}><View><Text style={styles.kicker}>Community check</Text><Text style={styles.cardTitle}>Nearby verification requests</Text><Text style={styles.cardHint}>Help confirm an issue close to you</Text></View><Text style={styles.bannerArrow}>›</Text></Pressable>
-    <Pressable accessibilityRole="button" style={styles.validationBanner} onPress={onCompletionValidations}><View><Text style={styles.kicker}>Completion check</Text><Text style={styles.cardTitle}>Verify completed work</Text><Text style={styles.cardHint}>Review evidence for issues you validated</Text></View><Text style={styles.bannerArrow}>›</Text></Pressable>
-    <Text style={styles.sectionTitle}>My tickets</Text><View style={styles.row}>
-      <Pressable style={styles.statCard} onPress={() => onTickets("ongoing")}><Text style={styles.statIcon}>◷</Text><Text style={styles.cardTitle}>Ongoing</Text><Text style={styles.cardHint}>Track current reports</Text></Pressable>
-      <Pressable style={styles.statCard} onPress={() => onTickets("past")}><Text style={styles.statIcon}>✓</Text><Text style={styles.cardTitle}>Past</Text><Text style={styles.cardHint}>See closed reports</Text></Pressable>
-    </View>{!signedIn ? <PrimaryButton onPress={onSignIn}>Sign in with phone</PrimaryButton> : null}<SecondaryButton onPress={onEngineerLogin}>Executive Engineer sign in</SecondaryButton>
+  return <Shell><ScrollView contentContainerStyle={styles.authContent}><BrandLockup compact /><ScreenHeader eyebrow={step === "phone" ? "Citizen access" : "Phone verification"} title={step === "phone" ? "Sign in with your phone" : "Enter your 6-digit code"} subtitle={step === "phone" ? "New phone numbers automatically create a secure citizen account." : demoMode ? "Demo mode is active. Enter the rehearsal OTP supplied by the presenter." : `We sent a one-time code to ${phone}.`} onBack={step === "code" ? () => setStep("phone") : onBack} />
+    <Card style={styles.authCard}>{step === "phone" ? <><Text style={styles.inputLabel}>Mobile number</Text><TextInput accessibilityLabel="Mobile number" autoComplete="tel" keyboardType="phone-pad" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" placeholderTextColor={colors.muted} style={styles.input} /></> : <><Text style={styles.inputLabel}>One-time password</Text><TextInput accessibilityLabel="One-time code" autoComplete="one-time-code" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} placeholder="000000" placeholderTextColor={colors.muted} style={[styles.input, styles.otpInput]} /></>}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (step === "phone" ? phone.replace(/\D/g, "").length < 10 : code.length !== 6)} onPress={() => void submit()}>{busy ? "Please wait…" : step === "phone" ? "Send OTP" : "Verify and continue"}</PrimaryButton>{step === "code" ? <SecondaryButton disabled={busy} onPress={() => void requestCitizenOtp(phone.replaceAll(" ", ""))}>Send a new code</SecondaryButton> : null}</Card>
+    <Text style={styles.privacy}>Your phone number is used only to secure your City Connect account and connect you to your reports.</Text>
   </ScrollView></Shell>;
 }
 
-export function CitizenProfileScreen({ signedIn, onSignIn, onSignOut }: { signedIn: boolean; onSignIn: () => void; onSignOut: () => void }) {
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Account" title="Citizen profile" /><View style={styles.ticketCard}><Text style={styles.cardTitle}>{signedIn ? "Phone verified" : "Sign in to continue"}</Text><Text style={styles.body}>{signedIn ? "Your reports and verification activity stay connected to your verified account." : "A verified phone number is required before reporting or reviewing nearby work."}</Text></View><View style={styles.ticketCard}><Text style={styles.kicker}>Privacy</Text><Text style={styles.body}>CivicOS shows public outcomes without exposing citizen names or individual account details.</Text></View>{signedIn ? <SecondaryButton onPress={onSignOut}>Sign out</SecondaryButton> : <PrimaryButton onPress={onSignIn}>Sign in with phone</PrimaryButton>}</ScrollView></Shell>;
-}
-
-export function CategoryScreen({ categories, selectedId, onSelect, onBack, loading, error }: { categories: CategorySummary[]; selectedId?: string; onSelect: (category: CategorySummary) => void; onBack: () => void; loading: boolean; error?: string }) {
-  const [query, setQuery] = useState("");
-  const filtered = useMemo(() => categories.filter((category) => category.name.toLowerCase().includes(query.toLowerCase())), [categories, query]);
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Step 1 of 4" title="What needs attention?" onBack={onBack} />
-    <TextInput accessibilityLabel="Search issue categories" placeholder="Search issue types" placeholderTextColor={colors.muted} value={query} onChangeText={setQuery} style={styles.input} />
-    {loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}
-    <CategoryGrid categories={filtered} selectedId={selectedId} onSelect={onSelect} />
-  </ScrollView></Shell>;
-}
-
-function normalizeAsset(asset: ImagePicker.ImagePickerAsset): LocalImage {
-  const extension = asset.uri.split(".").pop()?.toLowerCase();
-  const contentType = asset.mimeType === "image/png" || extension === "png" ? "image/png" : asset.mimeType === "image/webp" || extension === "webp" ? "image/webp" : asset.mimeType === "image/heic" || extension === "heic" ? "image/heic" : "image/jpeg";
-  return { uri: asset.uri, fileName: asset.fileName ?? `civic-photo-${Date.now()}.${extension ?? "jpg"}`, contentType };
-}
-
-export function EvidenceScreen({ images, onChange, onNext, onBack }: { images: LocalImage[]; onChange: (images: LocalImage[]) => void; onNext: () => void; onBack: () => void }) {
-  const pick = async (source: "camera" | "gallery") => {
-    const permission = source === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
-    const result = source === "camera" ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.85, exif: true }) : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.85, allowsMultipleSelection: true, selectionLimit: Math.max(1, 4 - images.length), exif: true });
-    if (!result.canceled) onChange([...images, ...result.assets.map(normalizeAsset)].slice(0, 4));
-  };
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Step 2 of 4" title="Show us the issue" onBack={onBack} /><Text style={styles.body}>Add one clear main photo. You can include up to three more angles.</Text>
-    <View style={[styles.photoTile, styles.primaryPhoto]}>{images[0] ? <Image source={{ uri: images[0].uri }} style={styles.photo} /> : <><Text style={styles.photoPlus}>＋</Text><Text style={styles.cardTitle}>Main photo required</Text></>}</View>
-    <View style={styles.row}><SecondaryButton onPress={() => void pick("camera")}>Use Camera</SecondaryButton><SecondaryButton onPress={() => void pick("gallery")}>Choose Photos</SecondaryButton></View>
-    {images.length > 1 ? <View style={styles.supportingRow}>{images.slice(1).map((image, index) => <View key={`${image.uri}-${index}`} style={styles.supportingTile}><Image source={{ uri: image.uri }} style={styles.photo} /></View>)}</View> : null}<PrimaryButton disabled={!images[0]} onPress={onNext}>Continue</PrimaryButton>
-  </ScrollView></Shell>;
-}
-
-export type ConfirmedLocation = { latitude: number; longitude: number; address: string; confidenceLow: boolean };
-export function LocationScreen({ value, onChange, onNext, onBack }: { value?: ConfirmedLocation; onChange: (location: ConfirmedLocation) => void; onNext: () => void; onBack: () => void }) {
-  const [loading, setLoading] = useState(!value); const [error, setError] = useState<string>(); const [adjusting, setAdjusting] = useState(false);
-  useEffect(() => { if (value) return; void (async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (!permission.granted) { setError("Location access is needed to place the report."); setLoading(false); return; } const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }); const { latitude, longitude, accuracy } = position.coords; const places = await Location.reverseGeocodeAsync({ latitude, longitude }); const place = places[0]; const address = place ? [place.name, place.street, place.district, place.city].filter(Boolean).join(", ") : `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`; onChange({ latitude, longitude, address, confidenceLow: (accuracy ?? 100) > 40 }); setLoading(false); })().catch(() => { setError("We couldn’t detect your location. Please try again."); setLoading(false); }); }, [onChange, value]);
-  const movePin = (event: { nativeEvent: { coordinate: { latitude: number; longitude: number } } }) => { if (value) onChange({ ...value, ...event.nativeEvent.coordinate, confidenceLow: false }); };
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Step 3 of 4" title="Confirm the location" onBack={onBack} />{loading ? <View style={styles.loadingBox}><ActivityIndicator color={colors.primary} /><Text style={styles.body}>Finding your location…</Text></View> : null}{error ? <Text style={styles.error}>{error}</Text> : null}{value ? <><MapView style={styles.map} onPress={adjusting ? movePin : undefined} region={{ latitude: value.latitude, longitude: value.longitude, latitudeDelta: 0.008, longitudeDelta: 0.008 }}><Marker coordinate={value} draggable={adjusting} onDragEnd={movePin} /></MapView><TextInput accessibilityLabel="Issue address" multiline value={value.address} onChangeText={(address) => onChange({ ...value, address })} style={[styles.input, styles.addressInput]} />{value.confidenceLow ? <Text style={styles.notice}>Please check the pin — the detected location may be approximate.</Text> : null}<SecondaryButton onPress={() => setAdjusting((current) => !current)}>{adjusting ? "Finish Adjusting" : "Adjust Pin"}</SecondaryButton><PrimaryButton disabled={!value.address.trim()} onPress={onNext}>Review & Submit</PrimaryButton></> : null}</ScrollView></Shell>;
-}
-
-export function RetakeScreen({ message, attemptsRemaining, onRetake }: { message: string; attemptsRemaining: number; onRetake: () => void }) { return <Shell><View style={[styles.content, styles.centered]}><View style={styles.feedbackIcon}><Text style={styles.feedbackIconText}>↻</Text></View><ScreenHeader title="Let’s try a clearer photo" /><Text style={[styles.body, styles.centerText]}>{message}</Text><Text style={styles.hint}>{attemptsRemaining} photo {attemptsRemaining === 1 ? "try" : "tries"} remaining before we send it for a person to review.</Text><PrimaryButton onPress={onRetake}>Retake Photo</PrimaryButton></View></Shell>; }
-export function ConfirmationScreen({ ticket, onView, onDone }: { ticket: CitizenTicketSummary; onView: () => void; onDone: () => void }) { return <Shell><View style={[styles.content, styles.centered]}><View style={styles.success}><Text style={styles.successText}>✓</Text></View><Text style={styles.kicker}>Report submitted</Text><Text style={[styles.heroTitle, styles.centerText]}>{ticket.title}</Text><View style={styles.idCard}><Text style={styles.hint}>Ticket No.</Text><Text selectable style={styles.ticketId}>{ticket.referenceNumber}</Text></View><PrimaryButton onPress={onView}>View Ticket</PrimaryButton><SecondaryButton onPress={onDone}>Done</SecondaryButton></View></Shell>; }
-export function TicketDetailScreen({ ticket, timeline, loading, error, onRefresh, onDone, onRaiseGrievance }: { ticket: CitizenTicketSummary; timeline?: CitizenTicketTimelineResponse; loading: boolean; error?: string; onRefresh: () => void; onDone: () => void; onRaiseGrievance: () => void }) { return <Shell><ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor={colors.primary} />}><ScreenHeader title={ticket.title} onBack={onDone} />{error ? <Text style={styles.error}>{error}</Text> : null}<StatusChip label={ticket.statusLabel} /><TicketCard id={ticket.id} referenceNumber={ticket.referenceNumber} category={ticket.category.name} status={ticket.statusLabel} relativeDate={`Updated ${new Date(ticket.updatedAt).toLocaleDateString("en-IN")}`} meta={`${ticket.address} · ${ticket.observationCount} community ${ticket.observationCount === 1 ? "report" : "reports"}`} />{timeline?.timeline.length ? <View style={styles.ticketCard}><Text style={styles.kicker}>Progress</Text>{timeline.timeline.map((item, index) => <View key={`${item.status}-${index}`}><Text style={styles.cardTitle}>{item.label}</Text><Text style={styles.cardHint}>{new Date(item.at).toLocaleString("en-IN")}</Text></View>)}</View> : null}{timeline?.notes.length ? <View style={styles.ticketCard}><Text style={styles.kicker}>Updates from the team</Text>{timeline.notes.map((note) => <View key={note.id}><Text style={styles.cardTitle}>{note.label}</Text><Text style={styles.body}>{note.text}</Text><Text style={styles.cardHint}>{new Date(note.at).toLocaleString("en-IN")}</Text></View>)}</View> : null}{timeline?.grievances.length ? <View style={styles.ticketCard}><Text style={styles.kicker}>Grievance status</Text>{timeline.grievances.map((grievance) => <View key={grievance.id}><Text style={styles.cardTitle}>{grievance.status.replaceAll("_", " ")}</Text><Text style={styles.body}>{grievance.reason.replaceAll("_", " ")}</Text><Text style={styles.cardHint}>Created {new Date(grievance.createdAt).toLocaleDateString("en-IN")}</Text></View>)}</View> : null}{timeline?.canRaiseGrievance ? <SecondaryButton onPress={onRaiseGrievance}>Raise a grievance</SecondaryButton> : null}<PrimaryButton onPress={onDone}>Done</PrimaryButton></ScrollView></Shell>; }
-
-const grievanceReasons: Array<{ value: CitizenGrievanceReason; label: string }> = [
-  { value: "WORK_INCOMPLETE", label: "Work is incomplete" },
-  { value: "INCORRECT_CLOSURE", label: "Closure is incorrect" },
-  { value: "ISSUE_UNRESOLVED", label: "Issue remains unresolved" },
-  { value: "POOR_EXECUTION_QUALITY", label: "Execution quality is poor" },
+const journey = [
+  { label: "Report", icon: "camera-outline" as const },
+  { label: "Community\nCheck", icon: "people-outline" as const },
+  { label: "Agency", icon: "business-outline" as const },
+  { label: "Work", icon: "construct-outline" as const },
+  { label: "Verify", icon: "checkmark-circle-outline" as const },
 ];
 
-export function GrievanceScreen({ submitting, onBack, onSubmit }: { submitting: boolean; onBack: () => void; onSubmit: (reason: CitizenGrievanceReason, note?: string, evidence?: LocalImage) => void }) {
-  const [reason, setReason] = useState<CitizenGrievanceReason>("WORK_INCOMPLETE");
-  const [note, setNote] = useState("");
-  const [evidence, setEvidence] = useState<LocalImage>();
-  const pickEvidence = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.85 });
-    if (!result.canceled && result.assets[0]) setEvidence(normalizeAsset(result.assets[0]));
-  };
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Citizen grievance" title="Tell us what remains wrong" onBack={onBack} /><Text style={styles.body}>This creates an internal CivicFlow grievance linked to your original ticket.</Text><View style={styles.validationActions}>{grievanceReasons.map((item) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: reason === item.value }} key={item.value} onPress={() => setReason(item.value)} style={[styles.voteButton, reason === item.value && styles.voteConfirm]}><Text style={styles.voteLabel}>{item.label}</Text></Pressable>)}</View><TextInput accessibilityLabel="Optional grievance note" multiline onChangeText={setNote} placeholder="Add an optional note" style={[styles.input, styles.addressInput]} value={note} /><SecondaryButton onPress={() => void pickEvidence()}>{evidence ? "Change evidence image" : "Add evidence image (optional)"}</SecondaryButton>{evidence ? <Image source={{ uri: evidence.uri }} resizeMode="cover" style={styles.photo} /> : null}<PrimaryButton disabled={submitting} onPress={() => onSubmit(reason, note.trim() || undefined, evidence)}>{submitting ? "Submitting…" : "Submit Grievance"}</PrimaryButton></ScrollView></Shell>;
-}
-export function TicketsScreen({ filter, tickets, loading, error, onBack, onOpen }: { filter: "ongoing" | "past"; tickets: CitizenTicketSummary[]; loading: boolean; error?: string; onBack: () => void; onOpen: (ticket: CitizenTicketSummary) => void }) { return <Shell><View style={styles.content}><ScreenHeader title={filter === "ongoing" ? "Ongoing tickets" : "Past tickets"} onBack={onBack} />{loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}<FlatList data={tickets} keyExtractor={(item) => item.id} ListEmptyComponent={!loading ? <Text style={styles.body}>No {filter} tickets yet.</Text> : null} renderItem={({ item }) => <TicketCard id={item.id} referenceNumber={item.referenceNumber} category={item.category.name} status={item.statusLabel} relativeDate={new Date(item.updatedAt).toLocaleDateString("en-IN")} title={item.title} meta={item.address} onPress={() => onOpen(item)} />} /></View></Shell>; }
+export type CitizenHomeSummary = {
+  pendingValidations: number;
+  pendingCompletions: number;
+  ongoingReports: number;
+  resolvedReports: number;
+  recentNotifications: MobileNotification[];
+};
 
-export function VerificationListScreen({ validations, loading, error, onBack, onOpen }: { validations: PendingValidation[]; loading: boolean; error?: string; onBack: () => void; onOpen: (validation: PendingValidation) => void }) {
-  return <Shell><View style={styles.content}><ScreenHeader eyebrow="Community validation" title="Community Validation" onBack={onBack} />{loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}<FlatList data={validations} keyExtractor={(item) => item.ticketId} ListEmptyComponent={!loading ? <Text style={styles.body}>No community requests need your help right now.</Text> : null} renderItem={({ item }) => <Pressable accessibilityRole="button" onPress={() => onOpen(item)} style={styles.ticketCard}><Text style={styles.kicker}>{item.category.name}</Text><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.cardHint}>{item.address}</Text><Text style={styles.cardHint}>{item.confirmationCount}/{item.quorum} confirmed</Text></Pressable>} /></View></Shell>;
-}
-
-const validationActions: Array<{ vote: ValidationVote; label: string; style: "confirm" | "neutral" | "reject" }> = [
-  { vote: "CONFIRM", label: "Confirm", style: "confirm" },
-  { vote: "NOT_SURE", label: "Not sure", style: "neutral" },
-  { vote: "REJECT", label: "Reject", style: "reject" },
-];
-
-export function VerificationRequestScreen({ validation, submitting, onBack, onSubmit }: { validation: PendingValidation; submitting: boolean; onBack: () => void; onSubmit: (vote: ValidationVote) => void }) {
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Community validation request" title="Can you confirm this?" onBack={onBack} /><View style={styles.validationPhoto}><Image source={{ uri: validation.imageUrl }} resizeMode="cover" style={styles.photo} /></View><View style={styles.ticketCard}><Text style={styles.kicker}>{validation.category.name}</Text><Text style={styles.cardTitle}>{validation.title}</Text><Text style={styles.cardHint}>{validation.address}</Text><Text style={styles.cardHint}>{validation.confirmationCount}/{validation.quorum} confirmations</Text></View><Text style={styles.body}>Confirm if this issue exists at the shown location, or reject it if it does not.</Text><View style={styles.validationActions}>{validationActions.map((action) => <Pressable accessibilityRole="button" disabled={submitting} key={action.vote} onPress={() => onSubmit(action.vote)} style={[styles.voteButton, action.style === "confirm" ? styles.voteConfirm : action.style === "reject" ? styles.voteReject : styles.voteNeutral, submitting && styles.disabled]}><Text style={[styles.voteLabel, action.style === "confirm" ? styles.voteConfirmLabel : action.style === "reject" ? styles.voteRejectLabel : undefined]}>{action.label}</Text></Pressable>)}</View></ScrollView></Shell>;
-}
-
-export function CompletionVerificationListScreen({ completions, loading, error, onBack, onOpen }: { completions: PendingCompletionVerification[]; loading: boolean; error?: string; onBack: () => void; onOpen: (completion: PendingCompletionVerification) => void }) {
-  return <Shell><View style={styles.content}><ScreenHeader eyebrow="Completion verification" title="Work awaiting your check" onBack={onBack} />{loading ? <ActivityIndicator color={colors.primary} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}<FlatList data={completions} keyExtractor={(item) => item.evidenceId} ListEmptyComponent={!loading ? <Text style={styles.body}>No completed work needs your review.</Text> : null} renderItem={({ item }) => <Pressable accessibilityRole="button" onPress={() => onOpen(item)} style={styles.ticketCard}><Text style={styles.kicker}>Ticket {item.ticketId.slice(0, 8)}</Text><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.cardHint}>Submitted {new Date(item.submittedAt).toLocaleDateString()}</Text></Pressable>} /></View></Shell>;
-}
-
-export function CompletionVerificationScreen({ completion, submitting, onBack, onSubmit }: { completion: PendingCompletionVerification; submitting: boolean; onBack: () => void; onSubmit: (decision: CompletionVerificationDecision) => void }) {
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Completion verification" title="Does the completed work look right?" onBack={onBack} /><View style={styles.validationPhoto}><Image source={{ uri: completion.photoUrl }} resizeMode="cover" style={styles.photo} /></View><View style={styles.ticketCard}><Text style={styles.cardTitle}>{completion.title}</Text><Text style={styles.body}>{completion.notes}</Text></View><PrimaryButton disabled={submitting} onPress={() => onSubmit("VERIFIED")}>Verify completion</PrimaryButton><Pressable accessibilityRole="button" disabled={submitting} onPress={() => onSubmit("REWORK_REQUESTED")} style={[styles.voteButton, styles.voteReject, submitting && styles.disabled]}><Text style={[styles.voteLabel, styles.voteRejectLabel]}>Request rework</Text></Pressable></ScrollView></Shell>;
+export function HomeScreen({ auth, unread, summary, loading, onReport, onTickets, onValidations, onCompletionValidations, onNotifications, onProfile, onOpenNotification }: {
+  auth: CurrentAuth; unread: number; summary: CitizenHomeSummary; loading: boolean; onReport: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void; onCompletionValidations: () => void; onNotifications: () => void; onProfile: () => void; onOpenNotification: (notification: MobileNotification) => void;
+}) {
+  const attention = summary.pendingValidations + summary.pendingCompletions;
+  const phoneTail = auth.phone?.slice(-4);
+  return <Shell><ScrollView contentContainerStyle={styles.homeContent}>
+    <View style={styles.homeHeader}><View><BrandLockup compact /><Text style={styles.greeting}>{phoneTail ? `Welcome back · •••• ${phoneTail}` : "Welcome back"}</Text></View><View style={styles.headerActions}><Pressable accessibilityLabel="Open notifications" accessibilityRole="button" onPress={onNotifications} style={styles.iconButton}><AppIcon color={colors.ink} name="notifications-outline" size={22} />{unread > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{unread > 9 ? "9+" : unread}</Text></View> : null}</Pressable><Pressable accessibilityLabel="Open profile" accessibilityRole="button" onPress={onProfile} style={styles.avatar}><AppIcon color={colors.primary} name="person" size={20} /></Pressable></View></View>
+    <View style={styles.hero}><View style={styles.heroGlow} /><Text style={styles.heroEyebrow}>CITY CONNECT</Text><Text style={styles.heroTitle}>Spot a civic issue?</Text><Text style={styles.heroBody}>Report it with a photo and location. We’ll help take it from report to resolution.</Text><Pressable accessibilityRole="button" onPress={onReport} style={styles.heroButton}><AppIcon color={colors.hero} name="add-circle" size={21} /><Text style={styles.heroButtonText}>Report an Issue</Text><AppIcon color={colors.hero} name="arrow-forward" size={18} /></Pressable></View>
+    <View style={styles.journeyCard}><Text style={styles.sectionKicker}>HOW IT WORKS</Text><View style={styles.journey}>{journey.map((item, index) => <View key={item.label} style={styles.journeyItem}><View style={styles.journeyIcon}><AppIcon color={colors.primary} name={item.icon} size={18} /></View><Text style={styles.journeyLabel}>{item.label}</Text>{index < journey.length - 1 ? <View style={styles.journeyLine} /> : null}</View>)}</View></View>
+    {loading ? <ActivityIndicator color={colors.primary} /> : null}
+    {attention > 0 ? <View style={styles.section}><View style={styles.sectionHeading}><Text style={styles.sectionTitle}>Needs your attention</Text><View style={styles.countChip}><Text style={styles.countChipText}>{attention}</Text></View></View>{summary.pendingCompletions > 0 ? <Pressable onPress={onCompletionValidations} style={styles.attentionCard}><View style={[styles.taskIcon, styles.taskIconWarning]}><AppIcon color={colors.warningText} name="checkmark-done-outline" size={22} /></View><View style={styles.taskCopy}><Text style={styles.taskTitle}>Verify completed work</Text><Text style={styles.taskSubtitle}>{summary.pendingCompletions} resolution {summary.pendingCompletions === 1 ? "check needs" : "checks need"} your response</Text></View><AppIcon color={colors.muted} name="chevron-forward" /></Pressable> : null}{summary.pendingValidations > 0 ? <Pressable onPress={onValidations} style={styles.attentionCard}><View style={styles.taskIcon}><AppIcon color={colors.infoText} name="people-outline" size={22} /></View><View style={styles.taskCopy}><Text style={styles.taskTitle}>Community validation</Text><Text style={styles.taskSubtitle}>{summary.pendingValidations} reported {summary.pendingValidations === 1 ? "issue" : "issues"} to confirm</Text></View><AppIcon color={colors.muted} name="chevron-forward" /></Pressable> : null}</View> : null}
+    <View style={styles.section}><View style={styles.sectionHeading}><View><Text style={styles.sectionTitle}>Community validation</Text><Text style={styles.sectionSubtitle}>Help confirm reported civic issues</Text></View></View><Pressable accessibilityRole="button" onPress={onValidations} style={styles.communityCard}><View style={styles.communityIcon}><AppIcon color={colors.surface} name="people" size={26} /></View><View style={styles.taskCopy}><Text style={styles.taskTitle}>Help verify reported issues</Text><Text style={styles.taskSubtitle}>{summary.pendingValidations ? `${summary.pendingValidations} pending requests` : "You’re all caught up"}</Text></View><AppIcon color={colors.primary} name="arrow-forward-circle" size={25} /></Pressable></View>
+    <View style={styles.section}><Text style={styles.sectionTitle}>My reports</Text><View style={styles.reportStats}><Pressable onPress={() => onTickets("ongoing")} style={styles.reportStat}><View style={styles.reportStatTop}><AppIcon color={colors.infoText} name="time-outline" size={21} /><Text style={styles.reportCount}>{summary.ongoingReports}</Text></View><Text style={styles.reportLabel}>Ongoing</Text><Text style={styles.reportHint}>Track active work</Text></Pressable><Pressable onPress={() => onTickets("past")} style={styles.reportStat}><View style={styles.reportStatTop}><AppIcon color={colors.successText} name="checkmark-circle-outline" size={21} /><Text style={styles.reportCount}>{summary.resolvedReports}</Text></View><Text style={styles.reportLabel}>Resolved</Text><Text style={styles.reportHint}>View closed reports</Text></Pressable></View></View>
+    <View style={styles.section}><View style={styles.sectionHeading}><Text style={styles.sectionTitle}>Recent updates</Text><Pressable onPress={onNotifications}><Text style={styles.seeAll}>View all</Text></Pressable></View>{summary.recentNotifications.length ? <Card style={styles.notificationCard}>{summary.recentNotifications.slice(0, 3).map((notification) => { const display = notificationPresentation(notification.type); return <NotificationRow icon={display.icon} key={notification.id} message={display.message} onPress={() => onOpenNotification(notification)} time={relativeNotificationTime(notification.createdAt)} tone={display.tone} />; })}</Card> : <View style={styles.emptyUpdates}><AppIcon color={colors.muted} name="notifications-off-outline" size={24} /><Text style={styles.emptyText}>Your latest ticket updates will appear here.</Text></View>}</View>
+  </ScrollView></Shell>;
 }
 
 const styles = StyleSheet.create({
-  safe: { backgroundColor: colors.canvas, flex: 1 },
-  shell: { flex: 1 },
-  content: { flexGrow: 1, gap: 18, padding: 22, paddingTop: 30 },
-  brand: { alignItems: "center", flexDirection: "row", gap: 10 },
-  brandMark: { backgroundColor: colors.primarySoft, borderRadius: 12, color: colors.primary, fontSize: 22, fontWeight: "500", overflow: "hidden", paddingHorizontal: 12, paddingVertical: 7 },
-  brandName: { color: colors.ink, fontSize: 22, fontWeight: "500" },
-  hero: { backgroundColor: colors.surface, borderRadius: 26, gap: 16, marginTop: 28, padding: 24 },
-  kicker: { color: colors.primary, fontSize: 12, fontWeight: "500" },
-  heroTitle: { color: colors.ink, fontSize: 22, fontWeight: "500" },
-  body: { color: colors.muted, fontSize: 16, lineHeight: 24 },
-  sectionTitle: { color: colors.ink, fontSize: 18, fontWeight: "500", marginTop: 12 },
-  row: { flexDirection: "row", gap: 12 },
-  statCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, gap: 6, padding: 18 },
-  statIcon: { color: colors.primary, fontSize: 22, fontWeight: "500" },
-  cardTitle: { color: colors.ink, flexShrink: 1, fontSize: 16, fontWeight: "500" },
-  cardHint: { color: colors.muted, fontSize: 14, lineHeight: 20 },
-  input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 15, borderWidth: 1, color: colors.ink, fontSize: 16, paddingHorizontal: 16, paddingVertical: 14 },
-  photoTile: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderStyle: "dashed", borderWidth: 2, justifyContent: "center", overflow: "hidden" },
-  primaryPhoto: { height: 260 },
-  photo: { height: "100%", width: "100%" },
-  photoPlus: { color: colors.primary, fontSize: 44 },
-  supportingRow: { flexDirection: "row", gap: 10 },
-  supportingTile: { borderRadius: 14, height: 90, overflow: "hidden", width: 90 },
-  loadingBox: { alignItems: "center", gap: 12, padding: 30 },
-  map: { borderRadius: 22, height: 300, overflow: "hidden" },
-  addressInput: { minHeight: 74, textAlignVertical: "top" },
-  notice: { backgroundColor: colors.warningBg, borderRadius: radii.card, color: colors.warningText, fontSize: typeScale.body, lineHeight: 20, padding: 13 },
-  centered: { justifyContent: "center" },
-  centerText: { textAlign: "center" },
-  feedbackIcon: { alignItems: "center", alignSelf: "center", backgroundColor: colors.warningBg, borderRadius: 40, height: 80, justifyContent: "center", width: 80 },
-  feedbackIconText: { color: colors.warningText, fontSize: 38, fontWeight: fontWeights.medium },
-  hint: { color: colors.muted, fontSize: 13, lineHeight: 19, textAlign: "center" },
-  error: { color: colors.danger, fontSize: 15, lineHeight: 21 },
-  success: { alignItems: "center", alignSelf: "center", backgroundColor: colors.primarySoft, borderRadius: 44, height: 88, justifyContent: "center", width: 88 },
-  successText: { color: colors.primary, fontSize: 22, fontWeight: "500" },
-  idCard: { alignItems: "center", backgroundColor: colors.surface, borderRadius: 18, gap: 8, padding: 18 },
-  ticketId: { color: colors.ink, fontSize: 14, fontWeight: "500" },
-  ticketCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, gap: 10, marginBottom: 12, padding: 18 },
-  ticketTop: { alignItems: "flex-start", flexDirection: "row", gap: 10, justifyContent: "space-between" },
-  status: { backgroundColor: colors.successBg, borderRadius: 20, color: colors.successText, fontSize: 12, fontWeight: "500", overflow: "hidden", paddingHorizontal: 10, paddingVertical: 6 },
-  validationBanner: { alignItems: "center", backgroundColor: colors.primarySoft, borderColor: colors.primary, borderRadius: 22, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", padding: 18 },
-  bannerArrow: { color: colors.primary, fontSize: 34, fontWeight: "500" },
-  validationPhoto: { backgroundColor: colors.surface, borderRadius: 22, height: 320, overflow: "hidden" },
-  validationActions: { gap: 12 },
-  voteButton: { alignItems: "center", borderRadius: 16, borderWidth: 1.5, padding: 16 },
-  voteConfirm: { backgroundColor: colors.primary, borderColor: colors.primary },
-  voteNeutral: { backgroundColor: colors.surface, borderColor: colors.border },
-  voteReject: { backgroundColor: colors.dangerBg, borderColor: colors.danger },
-  voteLabel: { color: colors.ink, fontSize: 16, fontWeight: "500" },
-  voteConfirmLabel: { color: colors.surface },
-  voteRejectLabel: { color: colors.danger },
-  disabled: { opacity: 0.45 },
+  splash: { alignItems: "center", backgroundColor: colors.hero, flex: 1, gap: 28, justifyContent: "center", overflow: "hidden" }, splashGlow: { backgroundColor: colors.heroAlt, borderRadius: 220, height: 440, position: "absolute", right: -200, top: -120, width: 440 }, splashCopy: { color: colors.heroMuted, fontSize: 15, letterSpacing: 1 },
+  welcome: { flexGrow: 1, gap: 28, justifyContent: "space-between", padding: 24, paddingBottom: 32, paddingTop: 28 }, welcomeTop: { gap: 40 }, welcomeArt: { alignItems: "center", height: 190, justifyContent: "center" }, cityCircle: { alignItems: "center", backgroundColor: colors.primary, borderRadius: 70, height: 140, justifyContent: "center", width: 140 }, roadLine: { backgroundColor: colors.lime, borderRadius: 4, bottom: 16, height: 8, position: "absolute", transform: [{ rotate: "-8deg" }], width: 230 }, welcomeCopy: { gap: 13 }, welcomeTitle: { color: colors.ink, fontSize: 34, fontWeight: fontWeights.bold, letterSpacing: -1.5, lineHeight: 40 }, welcomeSubtitle: { color: colors.muted, fontSize: 16, lineHeight: 25 }, welcomeActions: { gap: 14 }, staffLink: { alignItems: "center", flexDirection: "row", gap: 7, justifyContent: "center", minHeight: 44 }, staffLinkText: { color: colors.muted, fontSize: 14, fontWeight: fontWeights.semibold }, secureNote: { color: colors.muted, fontSize: 11, textAlign: "center" },
+  authContent: { flexGrow: 1, gap: 24, padding: 22, paddingBottom: 40, paddingTop: 24 }, authCard: { gap: 14 }, inputLabel: { color: colors.ink, fontSize: 13, fontWeight: fontWeights.semibold }, input: { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.ink, fontSize: 16, minHeight: 52, paddingHorizontal: 16 }, otpInput: { fontSize: 24, letterSpacing: 8, textAlign: "center" }, error: { color: colors.danger, fontSize: 14, lineHeight: 20 }, privacy: { color: colors.muted, fontSize: 12, lineHeight: 18, textAlign: "center" },
+  homeContent: { gap: 20, padding: 18, paddingBottom: 34, paddingTop: 18 }, homeHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" }, greeting: { color: colors.muted, fontSize: 11, marginLeft: 53, marginTop: 2 }, headerActions: { alignItems: "center", flexDirection: "row", gap: 9 }, iconButton: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, height: 44, justifyContent: "center", width: 44 }, avatar: { alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 22, height: 44, justifyContent: "center", width: 44 }, badge: { alignItems: "center", backgroundColor: colors.danger, borderColor: colors.surface, borderRadius: 9, borderWidth: 1.5, minHeight: 18, justifyContent: "center", minWidth: 18, position: "absolute", right: -3, top: -4 }, badgeText: { color: colors.surface, fontSize: 9, fontWeight: fontWeights.bold },
+  hero: { backgroundColor: colors.hero, borderRadius: 25, gap: 12, overflow: "hidden", padding: 22 }, heroGlow: { backgroundColor: colors.heroAlt, borderRadius: 140, height: 220, position: "absolute", right: -90, top: -85, width: 220 }, heroEyebrow: { color: colors.lime, fontSize: 11, fontWeight: fontWeights.bold, letterSpacing: 1.2 }, heroTitle: { color: colors.surface, fontSize: 27, fontWeight: fontWeights.bold, letterSpacing: -0.8 }, heroBody: { color: colors.heroMuted, fontSize: 14, lineHeight: 21, maxWidth: "90%" }, heroButton: { alignItems: "center", alignSelf: "flex-start", backgroundColor: colors.lime, borderRadius: 14, flexDirection: "row", gap: 9, marginTop: 7, minHeight: 48, paddingHorizontal: 15 }, heroButtonText: { color: colors.hero, fontSize: 15, fontWeight: fontWeights.bold },
+  journeyCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: 13, padding: 15 }, sectionKicker: { color: colors.primary, fontSize: 10, fontWeight: fontWeights.bold, letterSpacing: 1 }, journey: { flexDirection: "row" }, journeyItem: { alignItems: "center", flex: 1, gap: 5 }, journeyIcon: { alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 18, height: 36, justifyContent: "center", width: 36 }, journeyLabel: { color: colors.muted, fontSize: 9, lineHeight: 12, textAlign: "center" }, journeyLine: { backgroundColor: colors.border, height: 1, left: "70%", position: "absolute", top: 18, width: "60%" },
+  section: { gap: 11 }, sectionHeading: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" }, sectionTitle: { color: colors.ink, fontSize: typeScale.section, fontWeight: fontWeights.bold, letterSpacing: -0.4 }, sectionSubtitle: { color: colors.muted, fontSize: 12, marginTop: 2 }, countChip: { alignItems: "center", backgroundColor: colors.dangerBg, borderRadius: 12, justifyContent: "center", minHeight: 24, minWidth: 24 }, countChipText: { color: colors.danger, fontSize: 12, fontWeight: fontWeights.bold }, attentionCard: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 17, borderWidth: 1, flexDirection: "row", gap: 12, minHeight: 74, padding: 13 }, taskIcon: { alignItems: "center", backgroundColor: colors.infoBg, borderRadius: 20, height: 40, justifyContent: "center", width: 40 }, taskIconWarning: { backgroundColor: colors.warningBg }, taskCopy: { flex: 1, gap: 3 }, taskTitle: { color: colors.ink, fontSize: 15, fontWeight: fontWeights.semibold }, taskSubtitle: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  communityCard: { alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 19, flexDirection: "row", gap: 13, minHeight: 88, padding: 15 }, communityIcon: { alignItems: "center", backgroundColor: colors.primary, borderRadius: 24, height: 48, justifyContent: "center", width: 48 }, reportStats: { flexDirection: "row", gap: 11 }, reportStat: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, flex: 1, gap: 5, minHeight: 126, padding: 15 }, reportStatTop: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" }, reportCount: { color: colors.ink, fontSize: 25, fontWeight: fontWeights.bold }, reportLabel: { color: colors.ink, fontSize: 15, fontWeight: fontWeights.semibold }, reportHint: { color: colors.muted, fontSize: 11 }, seeAll: { color: colors.primary, fontSize: 12, fontWeight: fontWeights.semibold }, notificationCard: { gap: 0, overflow: "hidden", padding: 0 }, emptyUpdates: { alignItems: "center", backgroundColor: colors.surface, borderRadius: 17, flexDirection: "row", gap: 10, padding: 18 }, emptyText: { color: colors.muted, flex: 1, fontSize: 13 },
 });

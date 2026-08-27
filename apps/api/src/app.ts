@@ -2,7 +2,7 @@ import cors from "cors";
 import compression from "compression";
 import express, { type Express } from "express";
 import helmet from "helmet";
-import { UserRole } from "db";
+import { UserRole, prisma } from "db";
 import { createAuthRouter } from "./auth/routes";
 import {
   requireAuth,
@@ -99,8 +99,11 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
     "/protected/me",
     requireAuth,
     requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
-    (request, response) => {
-      response.json({ auth: request.auth });
+    (request, response, next) => {
+      void prisma.user.findUnique({
+        where: { id: request.auth!.userId },
+        select: { phone: true, email: true },
+      }).then((user) => response.json({ auth: request.auth, user })).catch(next);
     },
   );
 

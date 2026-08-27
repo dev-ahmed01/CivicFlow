@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { Channel, Prisma, TicketState, UserRole, prisma } from "db";
+import { Channel, Prisma, ProjectState, TicketState, UserRole, prisma } from "db";
 import {
   citizenTicketFilterSchema,
   citizenTicketStateLabels,
@@ -8,6 +8,7 @@ import {
   imageUploadRequestSchema,
   toCitizenTicketState,
   type CitizenTicketNote,
+  type CitizenLifecycleStage,
   type CitizenTicketTimelineItem,
   type TicketState as SharedTicketState,
 } from "@civicos/shared";
@@ -76,6 +77,60 @@ function safeFileName(fileName: string): string {
 function publicStatus(state: TicketState) {
   const status = toCitizenTicketState(state as SharedTicketState);
   return { status, statusLabel: citizenTicketStateLabels[status] };
+}
+
+function projectStatusLabel(state: ProjectState): string {
+  if (state === ProjectState.PENDING_UPTAKE) return "Engineer assignment awaiting acceptance";
+  if (state === ProjectState.UPTAKEN) return "Engineer accepted the work";
+  if (state === ProjectState.TIMELINE_SET || state === ProjectState.CONFLICT_CHECKED) return "Work is being scheduled";
+  if (state === ProjectState.ACTIVE || state === ProjectState.MODIFIED) return "Work in progress";
+  if (state === ProjectState.COMPLETED) return "Completion evidence is being prepared";
+  if (state === ProjectState.AWAITING_VERIFICATION) return "Awaiting citizen verification";
+  if (state === ProjectState.CLOSED) return "Work verified and closed";
+  if (state === ProjectState.CANCELLED) return "Work plan cancelled";
+  return "Project Head review";
+}
+
+function dependencyStatusLabel(state: string): string {
+  if (state === "FULFILLED") return "Completed";
+  if (state === "ASSIGNED") return "Support agency assigned";
+  if (state === "ESCALATED") return "Needs agency attention";
+  if (state.startsWith("DECLINED")) return "Agency coordination required";
+  return "Waiting for another agency";
+}
+
+const lifecycleStages: Array<{ id: CitizenLifecycleStage["id"]; label: string }> = [
+  { id: "REPORTED", label: "Reported" },
+  { id: "COMMUNITY_VALIDATION", label: "Community Validation" },
+  { id: "VALIDATED", label: "Validated" },
+  { id: "ROUTED_TO_AGENCY", label: "Routed to Agency" },
+  { id: "PROJECT_HEAD_REVIEW", label: "Project Head Review" },
+  { id: "ENGINEER_ASSIGNED", label: "Engineer Assigned" },
+  { id: "WORK_IN_PROGRESS", label: "Work in Progress" },
+  { id: "COMPLETION_SUBMITTED", label: "Completion Submitted" },
+  { id: "CITIZEN_VERIFICATION", label: "Citizen Verification" },
+  { id: "CLOSED", label: "Closed" },
+];
+
+function lifecycleRank(state: TicketState): number {
+  if (state === TicketState.DRAFT || state === TicketState.AI_CHECK_PENDING || state === TicketState.AI_FLAGGED) return 0;
+  if (state === TicketState.PENDING_VALIDATION) return 1;
+  if (state === TicketState.VALIDATED) return 2;
+  if (state === TicketState.ROUTED_TO_AGENCY) return 3;
+  if (
+    state === TicketState.INSPECTION_DUE ||
+    state === TicketState.INSPECTION_COMPLETE ||
+    state === TicketState.PROJECT_CREATED
+  ) return 4;
+  if (state === TicketState.ENGINEER_ASSIGNED) return 5;
+  if (state === TicketState.WORK_IN_PROGRESS) return 6;
+  if (state === TicketState.WORK_COMPLETED) return 7;
+  if (state === TicketState.AWAITING_CITIZEN_VERIFICATION) return 8;
+  return 9;
+}
+
+function lifecycleTransitionRank(state: TicketState): number {
+  return lifecycleRank(state);
 }
 
 async function canAccessTicket(request: Request, ticketId: string): Promise<boolean> {
@@ -457,7 +512,74 @@ export function createTicketsRouter(
     }
     const ticket = serializeTicket(row);
     if (request.auth!.role === UserRole.CITIZEN) {
-      response.json({ ticket });
+      const detail = await prisma.ticket.findUniqueOrThrow({
+        where: { id: ticketId },
+        select: {
+          assignedAgency: { select: { id: true, name: true } },
+          observations: {
+            where: { submitterId: request.auth!.userId },
+            orderBy: { createdAt: "asc" },
+            take: 1,
+            select: {
+              images: {
+                where: { uploadedAt: { not: null } },
+                orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+                select: { id: true, url: true, objectKey: true, isPrimary: true },
+              },
+            },
+          },
+          project: {
+            select: {
+              id: true,
+              state: true,
+              engineerId: true,
+              plannedEnd: true,
+              workDescription: true,
+              dependencies: {
+                orderBy: { createdAt: "asc" },
+                select: { id: true, state: true, respondingAgency: { select: { name: true } } },
+              },
+              completionEvidence: {
+                where: { uploadedAt: { not: null } },
+                orderBy: { createdAt: "desc" },
+                select: { id: true, photoUrl: true, objectKey: true, notes: true, uploadedAt: true, createdAt: true },
+              },
+            },
+          },
+          workflowActions: {
+            where: { respondedAt: null },
+            orderBy: { deadline: "asc" },
+            take: 1,
+            select: { deadline: true },
+          },
+        },
+      });
+      response.json({ ticket: {
+        ...ticket,
+        originalEvidence: (detail.observations[0]?.images ?? []).map(({ objectKey, ...image }) => ({
+          ...image,
+          url: storageReadUrl(storage, objectKey, image.url),
+        })),
+        assignedAgency: detail.assignedAgency,
+        project: detail.project ? {
+          id: detail.project.id,
+          stateLabel: projectStatusLabel(detail.project.state),
+          engineerAssigned: Boolean(detail.project.engineerId),
+          plannedEnd: detail.project.plannedEnd,
+          workDescription: detail.project.workDescription,
+          dependencies: detail.project.dependencies.map((dependency) => ({
+            id: dependency.id,
+            agencyName: dependency.respondingAgency.name,
+            statusLabel: dependencyStatusLabel(dependency.state),
+          })),
+          completionEvidence: detail.project.completionEvidence.map(({ objectKey, uploadedAt, createdAt, ...evidence }) => ({
+            ...evidence,
+            photoUrl: storageReadUrl(storage, objectKey, evidence.photoUrl),
+            submittedAt: uploadedAt ?? createdAt,
+          })),
+        } : null,
+        responseDeadline: detail.workflowActions[0]?.deadline ?? null,
+      } });
       return;
     }
     const internal = await prisma.ticket.findUniqueOrThrow({
@@ -582,8 +704,21 @@ export function createTicketsRouter(
         at: evidence.uploadedAt ?? evidence.createdAt,
       })),
     ].sort((first, second) => first.at.getTime() - second.at.getTime()) satisfies CitizenTicketNote[];
+    const currentRank = ticketNotes ? lifecycleRank(ticketNotes.state) : 0;
+    const reachedAt = new Map<number, Date>();
+    if (ticketNotes) reachedAt.set(0, ticketNotes.createdAt);
+    for (const transition of transitions) {
+      const rank = lifecycleTransitionRank(transition.toState);
+      if (!reachedAt.has(rank)) reachedAt.set(rank, transition.createdAt);
+    }
+    const lifecycle: CitizenLifecycleStage[] = lifecycleStages.map((stage, index) => ({
+      ...stage,
+      state: index < currentRank ? "complete" : index === currentRank ? "current" : "upcoming",
+      ...(reachedAt.get(index) ? { at: reachedAt.get(index)! } : {}),
+    }));
     response.json({
       timeline,
+      lifecycle,
       notes,
       grievances: grievances.map(({ evidenceObjectKey, ...grievance }) => ({
         ...grievance,

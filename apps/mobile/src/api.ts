@@ -1,6 +1,7 @@
 import type {
   CategorySummary,
   CitizenTicketSummary,
+  CitizenTicketDetail,
   CitizenTicketTimelineResponse,
   CitizenGrievanceReason,
   GrievanceSummary,
@@ -53,7 +54,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   let response: Response;
   try { response = await request(accessToken); }
-  catch (cause) { throw new Error("The CivicFlow service is unreachable. Check your connection and try again.", { cause }); }
+  catch (cause) { throw new Error("City Connect is unreachable. Check your connection and try again.", { cause }); }
   if (response.status === 401 && refreshToken && path !== "/auth/refresh" && path !== "/auth/logout") {
     try {
       const tokenToRotate = refreshToken;
@@ -78,7 +79,7 @@ type TokenResponse = { accessToken: string; refreshToken: string; expiresIn: str
 async function rawTokenRequest(path: string, payload: Record<string, string>): Promise<TokenResponse> {
   let response: Response;
   try { response = await fetch(`${apiUrl}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
-  catch (cause) { throw new Error("The CivicFlow service is unreachable. Check your connection and try again.", { cause }); }
+  catch (cause) { throw new Error("City Connect is unreachable. Check your connection and try again.", { cause }); }
   const body = await response.json().catch(() => ({})) as TokenResponse & { error?: string };
   if (!response.ok) throw new Error(body.error ?? "Session expired. Please sign in again.");
   return body;
@@ -111,15 +112,17 @@ export type CurrentAuth = {
   agencyId: string | null;
   wardId: string | null;
   mustResetPassword: boolean;
+  phone?: string | null;
+  email?: string | null;
 };
 
 export async function loadCurrentAuth(): Promise<CurrentAuth> {
   await hydrateSession();
   if (!accessToken) throw new Error("No saved session");
-  const result = await apiFetch<{ auth: CurrentAuth }>("/protected/me");
-  currentAuth = result.auth;
+  const result = await apiFetch<{ auth: CurrentAuth; user?: { phone: string | null; email: string | null } }>("/protected/me");
+  currentAuth = { ...result.auth, ...result.user };
   await persistSession();
-  return result.auth;
+  return currentAuth;
 }
 
 export async function internalLogin(email: string, password: string): Promise<CurrentAuth> {
@@ -132,7 +135,7 @@ export async function internalLogin(email: string, password: string): Promise<Cu
   if (result.user.role !== "ENGINEER" || !result.user.agencyId) throw new Error("Use an Executive Engineer account");
   accessToken = result.accessToken;
   refreshToken = result.refreshToken;
-  currentAuth = { userId: result.user.id, role: result.user.role, agencyId: result.user.agencyId, wardId: null, mustResetPassword: result.requiresPasswordReset };
+  currentAuth = { userId: result.user.id, role: result.user.role, agencyId: result.user.agencyId, wardId: null, mustResetPassword: result.requiresPasswordReset, email };
   await persistSession();
   return currentAuth;
 }
@@ -142,11 +145,11 @@ export async function requestCitizenOtp(phone: string): Promise<{ demoMode: bool
 }
 
 export async function verifyCitizenOtp(phone: string, code: string): Promise<CurrentAuth> {
-  const result = await apiFetch<{ user: { id: string; role: UserRole }; accessToken: string; refreshToken: string }>("/auth/citizen/verify-otp", { method: "POST", body: JSON.stringify({ phone, code }) });
+  const result = await apiFetch<{ user: { id: string; role: UserRole; phone: string | null }; accessToken: string; refreshToken: string }>("/auth/citizen/verify-otp", { method: "POST", body: JSON.stringify({ phone, code }) });
   if (result.user.role !== "CITIZEN") throw new Error("Use a citizen account");
   accessToken = result.accessToken;
   refreshToken = result.refreshToken;
-  currentAuth = { userId: result.user.id, role: result.user.role, agencyId: null, wardId: null, mustResetPassword: false };
+  currentAuth = { userId: result.user.id, role: result.user.role, agencyId: null, wardId: null, mustResetPassword: false, phone: result.user.phone };
   await persistSession();
   return currentAuth;
 }
@@ -269,9 +272,9 @@ export async function loadMyTickets(filter: "ongoing" | "past"): Promise<Citizen
   return result.tickets;
 }
 
-export async function loadTicket(ticketId: string): Promise<{ ticket: CitizenTicketSummary } & CitizenTicketTimelineResponse> {
+export async function loadTicket(ticketId: string): Promise<{ ticket: CitizenTicketDetail } & CitizenTicketTimelineResponse> {
   const [detail, timeline] = await Promise.all([
-    apiFetch<{ ticket: CitizenTicketSummary }>(`/tickets/${ticketId}`),
+    apiFetch<{ ticket: CitizenTicketDetail }>(`/tickets/${ticketId}`),
     apiFetch<CitizenTicketTimelineResponse>(`/tickets/${ticketId}/timeline`),
   ]);
   return { ticket: detail.ticket, ...timeline };

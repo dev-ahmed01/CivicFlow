@@ -31,7 +31,8 @@ function errorMessage(error: unknown): string {
 }
 
 function stateLabel(state: string): string {
-  return state.replaceAll("_", " ");
+  const label = state.replaceAll("_", " ").toLowerCase();
+  return `${label[0]?.toUpperCase()}${label.slice(1)}`;
 }
 
 function daysRemaining(end: string | Date | null): string {
@@ -71,7 +72,8 @@ export function EngineerLoginScreen({ onLogin, onCancel }: { onLogin: (auth: Cur
 }
 
 function ProjectCard({ project, canEdit, onOpen, onAccept }: { project: ProjectListItem; canEdit: boolean; onOpen: () => void; onAccept?: () => void }) {
-  return <TicketCard id={project.ticket?.id ?? project.id} category={project.agency.name} status={project.state} relativeDate={daysRemaining(project.plannedEnd)} title={project.ticket?.title ?? "Standalone project"} meta={`${project.ticket?.ward.name ?? "Ward unavailable"}${canEdit ? "" : " · Read-only"}`} onPress={onOpen} action={onAccept ? <PrimaryButton onPress={onAccept}>Accept / uptake</PrimaryButton> : undefined} />;
+  const indicators = [project.ticket?.ward.name ?? "Ward unavailable", project.dependencyCount ? `${project.dependencyCount} dependencies` : undefined, project.grievance ? "Grievance open" : undefined, canEdit ? undefined : "Read-only"].filter(Boolean).join(" · ");
+  return <TicketCard id={project.ticket?.id ?? project.id} category={project.agency.name} status={project.state} relativeDate={daysRemaining(project.plannedEnd)} title={project.ticket?.title ?? "Standalone project"} meta={indicators} onPress={onOpen} action={onAccept ? <PrimaryButton onPress={onAccept}>Accept</PrimaryButton> : undefined} />;
 }
 
 function ProjectsScreen({ scope, auth, onBack, onOpen }: { scope: "mine" | "assigned" | "geographic"; auth: CurrentAuth; onBack: () => void; onOpen: (id: string) => void }) {
@@ -186,7 +188,7 @@ export function EngineerProjectsApp({ auth, onLogout }: { auth: CurrentAuth; onL
     if (typeof data.projectId === "string") { openProject(data.projectId); return; }
     if (typeof data.dependencyId === "string") setScreen("dependencies");
   }), []);
-  const tabs: MobileTab[] = [{ id: "dashboard", label: "Home", icon: "⌂" }, { id: "mine", label: "Work", icon: "□" }, { id: "geographic", label: "Area", icon: "⌖" }, { id: "notifications", label: notificationUnread ? `Updates ${notificationUnread}` : "Updates", icon: "◇" }, { id: "profile", label: "Profile", icon: "○" }];
+  const tabs: MobileTab[] = [{ id: "dashboard", label: "Home", icon: "home-outline", activeIcon: "home" }, { id: "mine", label: "Work", icon: "construct-outline", activeIcon: "construct" }, { id: "geographic", label: "Area", icon: "map-outline", activeIcon: "map" }, { id: "notifications", label: "Updates", icon: "notifications-outline", activeIcon: "notifications", badge: notificationUnread }, { id: "profile", label: "Profile", icon: "person-outline", activeIcon: "person" }];
   const activeTab = ["mine", "assigned", "detail", "timeline", "completion", "dependencies"].includes(screen) ? "mine" : screen;
   const withNavigation = (content: ReactNode) => <View style={styles.app}><View style={styles.stage}>{content}</View><View style={styles.tabInset}><MobileTabBar active={activeTab} items={tabs} onSelect={(id) => setScreen(id as EngineerScreen)} /></View></View>;
   if (screen === "mine" || screen === "assigned" || screen === "geographic") return withNavigation(<ProjectsScreen scope={screen} auth={auth} onBack={() => setScreen("dashboard")} onOpen={openProject} />);

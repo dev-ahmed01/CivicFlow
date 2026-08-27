@@ -103,7 +103,7 @@ The endpoint contract is unchanged: accept `POST { imageUrl, categoryId }` and r
 Create a Render Blueprint using `render.demo.yaml` and supply every `sync: false` value:
 
 - Supabase session-mode `DATABASE_URL`
-- strong `DEMO_INTERNAL_PASSWORD` and six-digit `DEMO_AUTH_CODE`
+- strong `DEMO_INTERNAL_PASSWORD`, six-digit `DEMO_AUTH_CODE`, and `DEMO_NOTIFY_ALL_CITIZENS=true`
 - all six R2 values
 - exact Vercel origin in `CORS_ORIGINS`
 
@@ -178,12 +178,12 @@ The Android preview is an installable APK. The iOS preview is ad hoc: register e
 
 ## General Part I §31 live rehearsal
 
-Preparation: install the preview app on the presenter’s phone plus three validator phones, grant location, and keep all four devices within the configured validation radius. In production, sign in with real Twilio-reachable numbers and SMS codes. In the free-demo profile, use distinct E.164-format numbers and the configured `DEMO_AUTH_CODE`. Use the seeded BESCOM/PWD Project Head and Engineer accounts with `DEMO_INTERNAL_PASSWORD`.
+Preparation: install the preview app on the presenter’s phone plus three validator phones and grant location. The free-demo profile broadcasts validation requests to every eligible citizen except the reporter, while production retains the configured location radius. In production, sign in with real Twilio-reachable numbers and SMS codes. In the free-demo profile, use distinct E.164-format numbers and the configured `DEMO_AUTH_CODE`. Use the seeded BESCOM/PWD Project Head and Engineer accounts with `DEMO_INTERNAL_PASSWORD`.
 
 Start a stopwatch when the citizen taps “Report an Issue”; stop after the third completion verification closes the ticket.
 
 1. Citizen mobile: sign in by SMS OTP (production) or the explicit fixed demo code (free-demo), choose Streetlight, capture evidence, confirm location, submit.
-2. Three citizen mobiles: open Nearby verification requests and confirm the issue. The third confirmation routes it to BESCOM.
+2. Three citizen mobiles: open Community validation requests and confirm the issue. The third unique confirmation routes it to BESCOM.
 3. BESCOM Project Head web: open Ticket queue, attach the inspection file, and complete inspection.
 4. BESCOM Project Head web: create the project, assign the BESCOM engineer, select PWD dependency, and enter the statement of need.
 5. PWD Project Head web: respond in Dependency inbox and assign the PWD engineer.

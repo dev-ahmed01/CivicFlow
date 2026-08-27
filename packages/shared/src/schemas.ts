@@ -187,6 +187,34 @@ export const citizenTicketSummarySchema = z.object({
   statusLabel: z.string(),
 });
 
+export const citizenTicketDetailSchema = citizenTicketSummarySchema.extend({
+  originalEvidence: z.array(z.object({
+    id: idSchema,
+    url: z.string().url(),
+    isPrimary: z.boolean(),
+  })),
+  assignedAgency: agencySchema.pick({ id: true, name: true }).nullable(),
+  project: z.object({
+    id: idSchema,
+    stateLabel: z.string(),
+    engineerAssigned: z.boolean(),
+    plannedEnd: dateSchema.nullable(),
+    workDescription: z.string().nullable(),
+    dependencies: z.array(z.object({
+      id: idSchema,
+      agencyName: z.string(),
+      statusLabel: z.string(),
+    })),
+    completionEvidence: z.array(z.object({
+      id: idSchema,
+      photoUrl: z.string().url(),
+      notes: z.string(),
+      submittedAt: dateSchema,
+    })),
+  }).nullable(),
+  responseDeadline: dateSchema.nullable(),
+});
+
 export const routingRuleSchema = z.object({
   categoryId: idSchema,
   dependencyAgencyId: idSchema,
@@ -441,7 +469,7 @@ export const grievanceSummarySchema = z.object({
   resolutionNote: z.string().nullable(),
   evidenceUrl: z.string().url().nullable(),
 });
-export const citizenGrievanceReasonSchema = z.enum(["WORK_INCOMPLETE", "INCORRECT_CLOSURE", "ISSUE_UNRESOLVED", "POOR_EXECUTION_QUALITY"]);
+export const citizenGrievanceReasonSchema = z.enum(["WORK_INCOMPLETE", "INCORRECT_CLOSURE", "ISSUE_UNRESOLVED", "POOR_EXECUTION_QUALITY", "OTHER"]);
 export const createCitizenGrievanceSchema = z.object({
   reason: citizenGrievanceReasonSchema,
   note: z.string().trim().max(2000).optional(),
@@ -543,6 +571,7 @@ export const pendingValidationSchema = z.object({
   expiresAt: dateSchema,
   confirmationCount: z.number().int().nonnegative(),
   quorum: z.number().int().positive(),
+  reportedAt: dateSchema,
 });
 
 export const submitValidationSchema = z.object({
@@ -623,6 +652,11 @@ export const pendingCompletionVerificationSchema = z.object({
   photoUrl: z.string().url(),
   notes: z.string(),
   submittedAt: dateSchema,
+  originalPhotoUrl: z.string().url().nullable(),
+  address: z.string(),
+  categoryName: z.string(),
+  agencyName: z.string(),
+  engineerLabel: z.string().nullable(),
 });
 
 export const dependencySchema = z.object({
@@ -845,6 +879,7 @@ export type Category = z.infer<typeof categorySchema>;
 export type CategorySummary = z.infer<typeof categorySummarySchema>;
 export type ReportingArea = z.infer<typeof reportingAreaSchema>;
 export type CitizenTicketSummary = z.infer<typeof citizenTicketSummarySchema>;
+export type CitizenTicketDetail = z.infer<typeof citizenTicketDetailSchema>;
 export type RoutingRule = z.infer<typeof routingRuleSchema>;
 export type Ticket = z.infer<typeof ticketSchema>;
 export type Observation = z.infer<typeof observationSchema>;
@@ -901,8 +936,15 @@ export type CitizenTicketNote = {
   text: string;
   at: string | Date;
 };
+export type CitizenLifecycleStage = {
+  id: "REPORTED" | "COMMUNITY_VALIDATION" | "VALIDATED" | "ROUTED_TO_AGENCY" | "PROJECT_HEAD_REVIEW" | "ENGINEER_ASSIGNED" | "WORK_IN_PROGRESS" | "COMPLETION_SUBMITTED" | "CITIZEN_VERIFICATION" | "CLOSED";
+  label: string;
+  state: "complete" | "current" | "upcoming";
+  at?: string | Date;
+};
 export type CitizenTicketTimelineResponse = {
   timeline: CitizenTicketTimelineItem[];
+  lifecycle: CitizenLifecycleStage[];
   notes: CitizenTicketNote[];
   grievances: GrievanceSummary[];
   canRaiseGrievance: boolean;

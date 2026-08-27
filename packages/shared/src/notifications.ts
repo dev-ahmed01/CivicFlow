@@ -11,15 +11,15 @@ export type NotificationPresentation = {
 };
 
 const presentations: Record<string, NotificationPresentation> = {
-  VALIDATION_REQUEST: { icon: "i", tone: "info", category: "general", message: "A community issue needs your validation." },
-  TICKET_VALIDATED: { icon: "✓", tone: "success", category: "general", message: "Community verification validated your report." },
-  TICKET_ROUTED_TO_AGENCY: { icon: "✓", tone: "success", category: "general", message: "The responsible agency received your report." },
-  PROJECT_CREATED: { icon: "↓", tone: "info", category: "assignments", message: "An engineer has been assigned to this issue." },
+  VALIDATION_REQUEST: { icon: "i", tone: "info", category: "general", message: "A civic issue needs your validation." },
+  TICKET_VALIDATED: { icon: "✓", tone: "success", category: "general", message: "Your report reached 3 confirmations." },
+  TICKET_ROUTED_TO_AGENCY: { icon: "✓", tone: "success", category: "general", message: "Your issue has been routed to the responsible agency." },
+  PROJECT_CREATED: { icon: "↓", tone: "info", category: "assignments", message: "An engineer has been assigned." },
   PROJECT_ACTIVE: { icon: "▶", tone: "info", category: "assignments", message: "Work has started on this issue." },
   WORK_STARTED: { icon: "▶", tone: "info", category: "assignments", message: "Work has started on this issue." },
   PROJECT_COMPLETED: { icon: "◆", tone: "warning", category: "completion", message: "Work is complete and awaiting evidence review." },
   WORK_COMPLETED: { icon: "◆", tone: "warning", category: "completion", message: "The agency marked this work complete." },
-  COMPLETION_VERIFICATION_REQUEST: { icon: "◆", tone: "warning", category: "completion", message: "Please review the completed work evidence." },
+  COMPLETION_VERIFICATION_REQUEST: { icon: "◆", tone: "warning", category: "completion", message: "Work completed — verify the resolution." },
   TICKET_RESOLVED: { icon: "✓", tone: "success", category: "completion", message: "This civic issue has been resolved." },
   COMPLETION_VERIFIED: { icon: "✓", tone: "success", category: "completion", message: "Citizens verified the completed work." },
   PROJECT_REWORK_REQUESTED: { icon: "◆", tone: "warning", category: "completion", message: "Citizens requested more work before closure." },
@@ -37,7 +37,7 @@ const presentations: Record<string, NotificationPresentation> = {
   ACTION_ATTENTION: { icon: "!", tone: "danger", category: "assignments", message: "A response deadline needs immediate attention." },
   GRIEVANCE_CREATED: { icon: "!", tone: "danger", category: "grievances", message: "A citizen grievance needs review." },
   GRIEVANCE_ESCALATED: { icon: "!", tone: "danger", category: "grievances", message: "Non-response created an escalated grievance." },
-  GRIEVANCE_UPDATED: { icon: "i", tone: "info", category: "grievances", message: "A grievance status was updated." },
+  GRIEVANCE_UPDATED: { icon: "i", tone: "info", category: "grievances", message: "Your grievance has a new review update." },
 };
 
 const fallback: NotificationPresentation = {

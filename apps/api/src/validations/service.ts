@@ -3,6 +3,11 @@ import { routeValidatedTicket } from "../routing/service";
 import { createNotifications } from "../notifications/service";
 
 const requestType = "VALIDATION_REQUEST";
+const demoValidationQuorum = 3;
+
+function notifyAllCitizensEnabled(): boolean {
+  return process.env.DEMO_NOTIFY_ALL_CITIZENS === "true";
+}
 
 type DatabaseClient = Prisma.TransactionClient;
 
@@ -23,6 +28,10 @@ export function excludeReporter<T extends { citizenId: string }>(candidates: T[]
 
 export function confirmationQuorumReached(confirmationCount: number, quorum: number): boolean {
   return confirmationCount >= quorum;
+}
+
+export function effectiveValidationQuorum(configuredQuorum: number, notifyAllCitizens: boolean): number {
+  return notifyAllCitizens ? demoValidationQuorum : configuredQuorum;
 }
 
 export type ValidationSubmission = {
@@ -47,11 +56,17 @@ async function configNumber(client: DatabaseClient, key: string): Promise<number
   return positiveConfigNumber(config.value, key);
 }
 
+async function validationQuorum(client: DatabaseClient): Promise<number> {
+  const notifyAllCitizens = notifyAllCitizensEnabled();
+  if (notifyAllCitizens) return effectiveValidationQuorum(demoValidationQuorum, true);
+  return effectiveValidationQuorum(await configNumber(client, "verification.quorum"), false);
+}
+
 async function createBatch(
   client: DatabaseClient,
   ticketId: string,
   now: Date,
-  notifyAllCitizens = process.env.DEMO_NOTIFY_ALL_CITIZENS === "true",
+  notifyAllCitizens = notifyAllCitizensEnabled(),
 ): Promise<number> {
   const ticket = await client.ticket.findUnique({
     where: { id: ticketId },
@@ -113,10 +128,6 @@ async function createBatch(
     JOIN "Ticket" t ON t."id" = ${ticketId}::uuid
     WHERE u."role" = ${UserRole.CITIZEN}::"UserRole"
       AND u."phoneVerifiedAt" IS NOT NULL
-      AND EXISTS (
-        SELECT 1 FROM "RefreshSession" session
-        WHERE session."userId" = u."id" AND session."revokedAt" IS NULL AND session."expiresAt" > ${now}
-      )
       AND u."id" <> COALESCE(t."reporterId", '00000000-0000-0000-0000-000000000000'::uuid)
       AND NOT EXISTS (
         SELECT 1 FROM "Validation" v
@@ -167,7 +178,7 @@ export async function enterPendingValidation(
   fromState: TicketState,
   now = new Date(),
   actedById?: string,
-  notifyAllCitizens = process.env.DEMO_NOTIFY_ALL_CITIZENS === "true",
+  notifyAllCitizens = notifyAllCitizensEnabled(),
 ): Promise<number> {
   const transitioned = await client.ticket.updateMany({
     where: { id: ticketId, state: fromState },
@@ -213,7 +224,7 @@ export async function submitValidation(
       where: { ticketId_validatorId: { ticketId, validatorId: citizenId } },
     });
     if (existing) {
-      const quorum = await configNumber(transaction, "verification.quorum");
+      const quorum = await validationQuorum(transaction);
       const confirmationCount = await transaction.validation.count({ where: { ticketId, counted: true, vote: "CONFIRM" } });
       return {
         validationId: existing.id,
@@ -249,12 +260,12 @@ export async function submitValidation(
     await transaction.validationRequest.update({ where: { id: invitation.id }, data: { respondedAt: now } });
 
     if (alreadyResolved) {
-      const quorum = await configNumber(transaction, "verification.quorum");
+      const quorum = await validationQuorum(transaction);
       const confirmationCount = await transaction.validation.count({ where: { ticketId, counted: true, vote: "CONFIRM" } });
       return { validationId: validation.id, counted: false, alreadyResolved: true, state: ticket.state, confirmationCount, quorum };
     }
 
-    const quorum = await configNumber(transaction, "verification.quorum");
+    const quorum = await validationQuorum(transaction);
     const confirmationCount = await transaction.validation.count({ where: { ticketId, counted: true, vote: "CONFIRM" } });
     if (!confirmationQuorumReached(confirmationCount, quorum)) {
       return { validationId: validation.id, counted: true, alreadyResolved: false, state: ticket.state, confirmationCount, quorum };
@@ -269,7 +280,7 @@ export async function submitValidation(
 
 export async function runValidationRebatchJob(
   now = new Date(),
-  notifyAllCitizens = process.env.DEMO_NOTIFY_ALL_CITIZENS === "true",
+  notifyAllCitizens = notifyAllCitizensEnabled(),
 ): Promise<{ ticketsProcessed: number; notificationsCreated: number }> {
   const due = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT t."id"
@@ -290,7 +301,7 @@ export async function runValidationRebatchJob(
       if (locked[0]?.state !== TicketState.PENDING_VALIDATION) return 0;
       const latest = await transaction.validationRequest.aggregate({ where: { ticketId: ticket.id }, _max: { expiresAt: true } });
       if (!latest._max.expiresAt || latest._max.expiresAt > now) return 0;
-      const quorum = await configNumber(transaction, "verification.quorum");
+      const quorum = await validationQuorum(transaction);
       const count = await transaction.validation.count({ where: { ticketId: ticket.id, counted: true, vote: "CONFIRM" } });
       if (count >= quorum) return 0;
       return createBatch(transaction, ticket.id, now, notifyAllCitizens);

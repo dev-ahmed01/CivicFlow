@@ -69,6 +69,7 @@ export function createValidationsRouter(storage: ImageStorage): Router {
           select: {
             id: true,
             title: true,
+            createdAt: true,
             category: { select: { id: true, name: true } },
             address: true,
             validations: { where: { counted: true, vote: "CONFIRM" }, select: { id: true } },
@@ -90,6 +91,7 @@ export function createValidationsRouter(storage: ImageStorage): Router {
     ]);
     if (!dailyCapConfig || typeof dailyCapConfig.value !== "number") throw new Error("Missing required AdminConfig verification.daily_cap");
     if (!quorumConfig || typeof quorumConfig.value !== "number") throw new Error("Missing required AdminConfig verification.quorum");
+    const quorum = process.env.DEMO_NOTIFY_ALL_CITIZENS === "true" ? 3 : quorumConfig.value;
     const dayStart = new Date();
     dayStart.setUTCHours(0, 0, 0, 0);
     const [citizen, dailyCount] = await Promise.all([
@@ -112,7 +114,8 @@ export function createValidationsRouter(storage: ImageStorage): Router {
         distanceMeters: item.distanceMeters,
         expiresAt: item.expiresAt,
         confirmationCount: item.ticket.validations.length,
-        quorum: quorumConfig.value,
+        quorum,
+        reportedAt: item.ticket.createdAt,
       }] : [];
     }) });
   }));
@@ -165,7 +168,17 @@ export function createValidationsRouter(storage: ImageStorage): Router {
             objectKey: true,
             notes: true,
             uploadedAt: true,
-            ticket: { select: { title: true } },
+            project: { select: { agency: { select: { name: true } }, engineerId: true } },
+            ticket: { select: {
+              title: true,
+              address: true,
+              category: { select: { name: true } },
+              observations: {
+                orderBy: { createdAt: "asc" },
+                take: 1,
+                select: { images: { where: { isPrimary: true, uploadedAt: { not: null } }, take: 1, select: { objectKey: true, url: true } } },
+              },
+            } },
           },
         },
       },
@@ -178,6 +191,13 @@ export function createValidationsRouter(storage: ImageStorage): Router {
       photoUrl: storageReadUrl(storage, completionEvidence.objectKey, completionEvidence.photoUrl),
       notes: completionEvidence.notes,
       submittedAt: completionEvidence.uploadedAt,
+      originalPhotoUrl: completionEvidence.ticket.observations[0]?.images[0]
+        ? storageReadUrl(storage, completionEvidence.ticket.observations[0].images[0].objectKey, completionEvidence.ticket.observations[0].images[0].url)
+        : null,
+      address: completionEvidence.ticket.address,
+      categoryName: completionEvidence.ticket.category.name,
+      agencyName: completionEvidence.project.agency.name,
+      engineerLabel: completionEvidence.project.engineerId ? "Executive Engineer" : null,
     })) });
   }));
 

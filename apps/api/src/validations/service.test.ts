@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { confirmationQuorumReached, excludeReporter } from "./service";
+import { confirmationQuorumReached, effectiveValidationQuorum, excludeReporter } from "./service";
 
 describe("hackathon community validation", () => {
   it("all-citizen demo selection excludes the reporter", () => {
@@ -11,5 +11,10 @@ describe("hackathon community validation", () => {
     expect(confirmationQuorumReached(0, 3)).toBe(false);
     expect(confirmationQuorumReached(2, 3)).toBe(false);
     expect(confirmationQuorumReached(3, 3)).toBe(true);
+  });
+
+  it("uses exactly three confirmations in demo broadcast mode", () => {
+    expect(effectiveValidationQuorum(5, true)).toBe(3);
+    expect(effectiveValidationQuorum(5, false)).toBe(5);
   });
 });

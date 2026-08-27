@@ -11,7 +11,7 @@ export type NotificationInput = {
 export type ExpoPushMessage = {
   to: string;
   sound: "default";
-  title: "CivicOS";
+  title: "City Connect";
   body: string;
   data: Record<string, unknown>;
 };
@@ -67,7 +67,7 @@ export function buildExpoPushMessage(input: {
   return {
     to: input.token,
     sound: "default",
-    title: "CivicOS",
+    title: "City Connect",
     body: notificationPresentation(input.notification.type).message,
     data: { notificationId: input.notification.id, type: input.notification.type, ...payload },
   };

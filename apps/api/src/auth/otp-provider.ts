@@ -34,7 +34,7 @@ export class TwilioOtpProvider implements OtpProvider {
     const form = new URLSearchParams({
       To: delivery.phone,
       From: this.fromNumber,
-      Body: `Your CivicOS verification code is ${delivery.code}. It expires in ${delivery.expiresInMinutes} minutes.`,
+      Body: `Your City Connect verification code is ${delivery.code}. It expires in ${delivery.expiresInMinutes} minutes.`,
     });
     const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(this.accountSid)}/Messages.json`, {
       method: "POST",
