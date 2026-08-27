@@ -774,3 +774,6 @@ body:not(:has(.portal-shell, .login-shell)) .cv-primary-button { background: var
   .dependency-flow-card > footer { align-items: flex-start; flex-direction: column; }
   .dependency-flow-actions { justify-content: flex-start; width: 100%; }
 }
+.deadline-overdue { color: var(--cv-danger, #b42318); font-weight: 700; }
+.grievance-indicator { color: var(--cv-danger, #b42318); font-size: .78rem; }
+.grievance-card-escalated { border-color: color-mix(in srgb, var(--cv-danger, #b42318) 45%, var(--cv-border)); }

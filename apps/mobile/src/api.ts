@@ -2,6 +2,8 @@ import type {
   CategorySummary,
   CitizenTicketSummary,
   CitizenTicketTimelineResponse,
+  CitizenGrievanceReason,
+  GrievanceSummary,
   CompletionVerificationDecision,
   DependencyListItem,
   DependencyResponse,
@@ -273,6 +275,23 @@ export async function loadTicket(ticketId: string): Promise<{ ticket: CitizenTic
     apiFetch<CitizenTicketTimelineResponse>(`/tickets/${ticketId}/timeline`),
   ]);
   return { ticket: detail.ticket, ...timeline };
+}
+
+export async function raiseCitizenGrievance(
+  ticketId: string,
+  reason: CitizenGrievanceReason,
+  note?: string,
+  evidence?: LocalImage,
+): Promise<GrievanceSummary> {
+  const result = await apiFetch<{ grievance: GrievanceSummary; upload?: UploadTarget }>(`/tickets/${ticketId}/grievances`, {
+    method: "POST",
+    body: JSON.stringify({ reason, note, ...(evidence ? { evidence: { fileName: evidence.fileName, contentType: evidence.contentType } } : {}) }),
+  });
+  if (evidence && result.upload) {
+    await uploadFile(result.upload, evidence);
+    await apiFetch(`/grievances/${result.grievance.id}/evidence/complete`, { method: "POST" });
+  }
+  return result.grievance;
 }
 
 export async function loadPendingValidations(): Promise<PendingValidation[]> {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { ProjectState, TicketState, UserRole, prisma, type Prisma } from "db";
+import { ProjectState, TicketState, UserRole, WorkflowActionType, prisma, type Prisma } from "db";
 import {
   completionEvidenceRequestSchema,
   createProjectSchema,
@@ -16,6 +16,7 @@ import { storageReadUrl, type ImageStorage } from "../images/storage";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
 import { createNotification, createNotifications } from "../notifications/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
+import { completeWorkflowAction, createWorkflowAction } from "../deadlines/service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -82,13 +83,19 @@ const projectInclude = {
   workNotes: { include: { author: { select: { id: true, email: true } } }, orderBy: { createdAt: "desc" as const } },
   completionEvidence: { where: { uploadedAt: { not: null } }, orderBy: { createdAt: "desc" as const } },
   intervention: { include: { segment: { select: { id: true, roadName: true, wardId: true, surfaceType: true, lastRestorationDate: true, ward: { select: { id: true, name: true } } } } } },
+  workflowActions: { orderBy: { createdAt: "desc" as const }, include: { responsibleUser: { select: { id: true, email: true } } } },
+  grievances: { orderBy: { createdAt: "desc" as const } },
 } satisfies Prisma.ProjectInclude;
 
 type ProjectWithDetails = Prisma.ProjectGetPayload<{ include: typeof projectInclude }>;
 
 function projectForResponse(storage: ImageStorage, project: ProjectWithDetails) {
+  const pendingAction = project.workflowActions.filter((action) => !action.respondedAt).sort((first, second) => first.deadline.getTime() - second.deadline.getTime())[0] ?? null;
   return {
     ...project,
+    dependencyCount: project.dependencies.length,
+    action: pendingAction,
+    grievance: project.grievances[0] ?? null,
     ticket: project.ticket ? {
       ...project.ticket,
       observations: project.ticket.observations.map(({ images, ...observation }) => ({
@@ -203,6 +210,12 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           { ticketId: ticket.id, fromState: TicketState.PROJECT_CREATED, toState: TicketState.ENGINEER_ASSIGNED, reason: "ENGINEER_ASSIGNED", actedById: request.auth!.userId },
         ] });
         await createNotification(transaction, { userId: engineer.id, type: "PROJECT_ASSIGNMENT", payload: { projectId: created.id, ticketId: ticket.id } });
+        await completeWorkflowAction(transaction, `ticket:${ticket.id}:create-project`);
+        await completeWorkflowAction(transaction, `ticket:${ticket.id}:assign-engineer`);
+        await createWorkflowAction(transaction, {
+          dedupeKey: `project:${created.id}:accept`, type: WorkflowActionType.ACCEPT_PROJECT,
+          ticketId: ticket.id, projectId: created.id, responsibleUserId: engineer.id, responsibleAgencyId: agencyId,
+        });
         await notifyProjectStakeholders(transaction, { id: created.id, agencyId, ticketId: ticket.id }, "PROJECT_CREATED", { ticketId: ticket.id });
         const dependencies = await createDependencyRequests(transaction, created.id, agencyId, parsed.data.dependencies ?? [], request.auth!.userId);
         // Delta §4.3 — generic Phase 7 check remains unchanged and runs first.
@@ -287,9 +300,12 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           agency: { select: { id: true, name: true } },
           engineer: { select: { id: true, email: true } },
           ticket: { select: { id: true, title: true, ward: { select: { id: true, name: true } } } },
+          dependencies: { select: { id: true } },
+          workflowActions: { where: { respondedAt: null }, orderBy: { deadline: "asc" }, take: 1, select: { id: true, type: true, deadline: true, responsibleUser: { select: { id: true, email: true } } } },
+          grievances: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, status: true, reason: true, createdAt: true } },
         },
       }), prisma.project.count({ where })]);
-      response.json({ projects: projects.map((project) => ({ ...project, editable: canEngineerEdit(request, project) })), pagination: paginationMeta(pagination.data.page, pagination.data.limit, total) });
+      response.json({ projects: projects.map(({ workflowActions, grievances, dependencies, ...project }) => ({ ...project, dependencyCount: dependencies.length, action: workflowActions[0] ?? null, grievance: grievances[0] ?? null, editable: canEngineerEdit(request, project) })), pagination: paginationMeta(pagination.data.page, pagination.data.limit, total) });
     }),
   );
 
@@ -308,8 +324,17 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         return;
       }
       const updated = await prisma.$transaction(async (transaction) => {
+        const now = new Date();
         await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: project.state, toState: ProjectState.UPTAKEN, reason: "ENGINEER_UPTAKE", actedById: request.auth!.userId } });
-        return transaction.project.update({ where: { id: project.id }, data: { state: ProjectState.UPTAKEN } });
+        const value = await transaction.project.update({ where: { id: project.id }, data: { state: ProjectState.UPTAKEN }, select: { id: true, ticketId: true, agencyId: true, engineerId: true, state: true } });
+        if (value.ticketId && value.engineerId) {
+          await completeWorkflowAction(transaction, `project:${project.id}:accept`, now);
+          await createWorkflowAction(transaction, {
+            dedupeKey: `project:${project.id}:timeline`, type: WorkflowActionType.SET_TIMELINE,
+            ticketId: value.ticketId, projectId: value.id, responsibleUserId: value.engineerId, responsibleAgencyId: value.agencyId,
+          }, now);
+        }
+        return value;
       });
       response.json({ project: updated });
     }),
@@ -371,6 +396,14 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           initialTimeline ? "WORK_STARTED" : "PROJECT_TIMELINE_MODIFIED",
           { conflicts: conflicts.length },
         );
+        if (project.ticketId && project.engineerId) {
+          await completeWorkflowAction(transaction, `project:${project.id}:timeline`);
+          await createWorkflowAction(transaction, {
+            dedupeKey: `project:${project.id}:complete-work`, type: WorkflowActionType.COMPLETE_WORK,
+            ticketId: project.ticketId, projectId: project.id, responsibleUserId: project.engineerId, responsibleAgencyId: project.agencyId,
+            explicitDeadline: new Date(parsed.data.plannedEnd),
+          });
+        }
         return { kind: "updated" as const, conflicts, roadConflicts };
       });
       if (result.kind === "missing") response.status(404).json({ error: "Assigned project not found" });
@@ -419,6 +452,13 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           }
         }
         await notifyProjectStakeholders(transaction, { ...project, agencyId: actorAgency(request) }, "WORK_COMPLETED", {});
+        if (project.ticketId) {
+          await completeWorkflowAction(transaction, `project:${project.id}:complete-work`);
+          await createWorkflowAction(transaction, {
+            dedupeKey: `project:${project.id}:submit-completion`, type: WorkflowActionType.SUBMIT_COMPLETION,
+            ticketId: project.ticketId, projectId: project.id, responsibleUserId: request.auth!.userId, responsibleAgencyId: actorAgency(request),
+          });
+        }
         return { kind: "updated" as const };
       });
       if (result.kind === "missing") response.status(404).json({ error: "Assigned project not found" });
@@ -496,6 +536,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           await transaction.completionVerificationRequest.createMany({ data: validators.map(({ validatorId }) => ({ completionEvidenceId: evidence.id, citizenId: validatorId })) });
           await createNotifications(transaction, validators.map(({ validatorId }) => ({ userId: validatorId, type: "COMPLETION_VERIFICATION_REQUEST", payload: { projectId: project.id, ticketId: evidence.ticketId, evidenceId: evidence.id } })));
         }
+        await completeWorkflowAction(transaction, `project:${project.id}:submit-completion`);
         return { kind: "completed" as const, notified: validators.length };
       });
       if (result.kind === "missing") response.status(404).json({ error: "Completion evidence not found" });

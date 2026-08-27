@@ -17,6 +17,10 @@ describe("direct web agency routing", () => {
       ticketStateTransition: { createMany: vi.fn(async () => ({ count: 1 })) },
       user: { findMany: vi.fn(async () => [{ id: "40000000-0000-4000-8000-000000000003" }]) },
       notification: { createMany: vi.fn(async () => ({ count: 2 })) },
+      workflowAction: {
+        findUnique: vi.fn(async () => null),
+        create: vi.fn(async ({ data }) => ({ id: "40000000-0000-4000-8000-000000000005", ...data })),
+      },
       validationRequest: { createMany: vi.fn() },
     } as unknown as Prisma.TransactionClient;
 

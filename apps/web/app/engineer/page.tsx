@@ -35,7 +35,7 @@ export default function EngineerDashboardPage() {
   const nextProjects = projects
     .filter((project) => !["CLOSED", "CANCELLED"].includes(project.state))
     .sort((first, second) => Number(first.state !== "PENDING_UPTAKE") - Number(second.state !== "PENDING_UPTAKE"))
-    .slice(0, 4);
+    .slice(0, 3);
 
   return <>
     <header className="portal-heading"><div><p className="eyebrow">Field operations overview</p><h1>Engineer Dashboard</h1><p>Your assigned workload from uptake through citizen-verified completion.</p></div><Link className="primary-link" href="/engineer/projects?view=assigned">Review assigned work</Link></header>

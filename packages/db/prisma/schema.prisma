@@ -102,6 +102,32 @@ enum ValidationVote {
   REJECT
 }
 
+enum WorkflowActionType {
+  INSPECT_TICKET
+  CREATE_PROJECT
+  ASSIGN_ENGINEER
+  ACCEPT_PROJECT
+  SET_TIMELINE
+  COMPLETE_WORK
+  SUBMIT_COMPLETION
+  RESPOND_DEPENDENCY
+  FULFILL_DEPENDENCY
+  REVIEW_GRIEVANCE
+}
+
+enum GrievanceSource {
+  AUTO_NON_RESPONSE
+  CITIZEN
+}
+
+enum GrievanceStatus {
+  OPEN
+  UNDER_REVIEW
+  ESCALATED
+  RESOLVED
+  REOPENED
+}
+
 model User {
   id                String    @id @default(uuid()) @db.Uuid
   role              UserRole
@@ -138,6 +164,9 @@ model User {
   completionVerificationRequests CompletionVerificationRequest[]
   completionVerifications CompletionVerification[]
   sequencingRecommendationLogs SequencingRecommendationLog[]
+  responsibleActions WorkflowAction[] @relation("WorkflowActionResponsibleUser")
+  grievancesRaised Grievance[] @relation("GrievanceRaisedBy")
+  responsibleGrievances Grievance[] @relation("GrievanceResponsibleUser")
 
   @@index([agencyId])
   @@index([wardId])
@@ -173,6 +202,8 @@ model Agency {
   conflictingProjectLogs ConflictLog[] @relation("ConflictLogConflictingAgency")
   roadConflictLogs        RoadConflictLog[] @relation("RoadConflictProjectAgency")
   conflictingRoadLogs     RoadConflictLog[] @relation("RoadConflictConflictingAgency")
+  workflowActions         WorkflowAction[]
+  grievances              Grievance[]
 }
 
 model Category {
@@ -234,6 +265,8 @@ model Ticket {
   stateTransitions TicketStateTransition[]
   inspectionReports InspectionReport[]
   completionEvidence CompletionEvidence[]
+  workflowActions WorkflowAction[]
+  grievances Grievance[]
 
   @@index([categoryId])
   @@index([reporterId])
@@ -382,6 +415,8 @@ model Project {
   conflictingLogs   ConflictLog[] @relation("ConflictLogConflictingProject")
   roadConflictLogs       RoadConflictLog[] @relation("RoadConflictProject")
   conflictingRoadLogs   RoadConflictLog[] @relation("RoadConflictConflictingProject")
+  workflowActions       WorkflowAction[]
+  grievances            Grievance[]
 
   @@index([ticketId])
   @@index([agencyId])
@@ -520,6 +555,8 @@ model Dependency {
   respondingAgency Agency  @relation("DependencyRespondingAgency", fields: [respondingAgencyId], references: [id], onDelete: Restrict)
   assignedEngineer User?   @relation("DependencyEngineer", fields: [assignedEngineerId], references: [id], onDelete: SetNull)
   stateTransitions DependencyStateTransition[]
+  workflowActions WorkflowAction[]
+  grievances Grievance[]
 
   @@unique([projectId, respondingAgencyId])
   @@index([projectId])
@@ -696,6 +733,72 @@ model NotificationPushDelivery {
 
   @@unique([notificationId, pushTokenId])
   @@index([status, createdAt])
+}
+
+model WorkflowAction {
+  id                  String             @id @default(uuid()) @db.Uuid
+  dedupeKey           String             @unique @db.VarChar(220)
+  type                WorkflowActionType
+  ticketId            String             @db.Uuid
+  projectId           String?            @db.Uuid
+  dependencyId        String?            @db.Uuid
+  responsibleUserId   String             @db.Uuid
+  responsibleAgencyId String             @db.Uuid
+  deadline            DateTime
+  respondedAt         DateTime?
+  attentionNotifiedAt DateTime?
+  createdAt           DateTime           @default(now())
+
+  ticket            Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  project           Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dependency        Dependency? @relation(fields: [dependencyId], references: [id], onDelete: Cascade)
+  responsibleUser   User        @relation("WorkflowActionResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: Restrict)
+  responsibleAgency Agency      @relation(fields: [responsibleAgencyId], references: [id], onDelete: Restrict)
+  grievance         Grievance?
+
+  @@index([responsibleUserId, respondedAt, deadline])
+  @@index([responsibleAgencyId, respondedAt, deadline])
+  @@index([ticketId])
+  @@index([projectId])
+  @@index([dependencyId])
+}
+
+model Grievance {
+  id                  String          @id @default(uuid()) @db.Uuid
+  ticketId            String          @db.Uuid
+  projectId           String?         @db.Uuid
+  dependencyId        String?         @db.Uuid
+  actionId            String?         @unique @db.Uuid
+  raisedByUserId      String?         @db.Uuid
+  responsibleUserId   String?         @db.Uuid
+  responsibleAgencyId String          @db.Uuid
+  reason              String
+  note                String?
+  evidenceUrl         String?
+  evidenceObjectKey   String?         @unique
+  evidenceContentType String?
+  evidenceUploadedAt  DateTime?
+  source              GrievanceSource
+  status              GrievanceStatus @default(OPEN)
+  createdAt           DateTime        @default(now())
+  escalatedAt         DateTime?
+  resolvedAt          DateTime?
+  resolutionNote      String?
+
+  ticket            Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  project           Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  dependency        Dependency?     @relation(fields: [dependencyId], references: [id], onDelete: SetNull)
+  action            WorkflowAction? @relation(fields: [actionId], references: [id], onDelete: SetNull)
+  raisedByUser      User?           @relation("GrievanceRaisedBy", fields: [raisedByUserId], references: [id], onDelete: SetNull)
+  responsibleUser   User?           @relation("GrievanceResponsibleUser", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  responsibleAgency Agency          @relation(fields: [responsibleAgencyId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, status, createdAt])
+  @@index([projectId, status])
+  @@index([dependencyId, status])
+  @@index([responsibleAgencyId, status, createdAt])
+  @@index([responsibleUserId, status, createdAt])
+  @@index([raisedByUserId, createdAt])
 }
 
 model AdminConfig {

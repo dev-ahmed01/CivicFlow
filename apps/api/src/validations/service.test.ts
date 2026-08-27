@@ -1,0 +1,15 @@
+import { describe, expect, it } from "vitest";
+import { confirmationQuorumReached, excludeReporter } from "./service";
+
+describe("hackathon community validation", () => {
+  it("all-citizen demo selection excludes the reporter", () => {
+    expect(excludeReporter([{ citizenId: "reporter" }, { citizenId: "citizen-2" }, { citizenId: "citizen-3" }], "reporter"))
+      .toEqual([{ citizenId: "citizen-2" }, { citizenId: "citizen-3" }]);
+  });
+
+  it("advances only when the third unique confirmation is recorded", () => {
+    expect(confirmationQuorumReached(0, 3)).toBe(false);
+    expect(confirmationQuorumReached(2, 3)).toBe(false);
+    expect(confirmationQuorumReached(3, 3)).toBe(true);
+  });
+});

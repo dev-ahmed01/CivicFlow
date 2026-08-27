@@ -22,6 +22,7 @@ import { createDependenciesRouter, createDependencyJobsRouter } from "./dependen
 import { createRoadIntelligenceRouter } from "./road-intelligence/router";
 import { createNotificationsRouter } from "./notifications/router";
 import { createAnalyticsRouter } from "./analytics/router";
+import { createDeadlineJobsRouter, createGrievancesRouter } from "./grievances/router";
 
 export interface AppDependencies {
   otpProvider?: OtpProvider;
@@ -63,6 +64,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.use("/auth", createAuthRouter(resolvedDependencies.otpProvider ?? createOtpProvider(env)));
   app.use(createValidationJobsRouter(env.CRON_SECRET));
   app.use(createDependencyJobsRouter(env.CRON_SECRET));
+  app.use(createDeadlineJobsRouter(env.CRON_SECRET));
   const imageStorage = resolvedDependencies.imageStorage ?? new S3CompatibleStorage(env);
   app.use(createTicketsRouter(
     resolvedDependencies.imageRelevance ?? createImageRelevanceService(env),
@@ -75,6 +77,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.use(createDependenciesRouter());
   app.use(createRoadIntelligenceRouter());
   app.use(createNotificationsRouter());
+  app.use(createGrievancesRouter(imageStorage));
   app.use("/admin", createAdminRouter());
 
   // Part III §17.2 — protected routes always authenticate, enforce role, then scope.

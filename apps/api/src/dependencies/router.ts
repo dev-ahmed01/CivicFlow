@@ -100,10 +100,12 @@ export function createDependenciesRouter(): Router {
             },
           },
           assignedEngineer: { select: { id: true, email: true } },
+          workflowActions: { where: { respondedAt: null }, orderBy: { deadline: "asc" }, take: 1, select: { id: true, type: true, deadline: true, responsibleUser: { select: { id: true, email: true } } } },
+          grievances: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, status: true, reason: true, createdAt: true } },
         },
       });
       response.json({
-        dependencies: dependencies.map(({ respondingAgency, ...dependency }) => ({
+        dependencies: dependencies.map(({ respondingAgency, workflowActions, grievances, ...dependency }) => ({
           ...dependency,
           respondingAgency: { id: respondingAgency.id, name: respondingAgency.name, type: respondingAgency.type },
           // Part III §12 — contact details surface only after escalation and only
@@ -111,6 +113,8 @@ export function createDependenciesRouter(): Router {
           contacts: direction.data === "sent" && dependency.state === DependencyState.ESCALATED
             ? respondingAgency.users.flatMap(({ email }) => email ? [{ email }] : [])
             : [],
+          action: workflowActions[0] ?? null,
+          grievance: grievances[0] ?? null,
         })),
       });
     }),

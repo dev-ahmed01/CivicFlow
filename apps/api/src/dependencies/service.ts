@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { DependencyState, Prisma, UserRole, prisma } from "db";
+import { DependencyState, Prisma, UserRole, WorkflowActionType, prisma } from "db";
 import type { CreateDependencyRequests, DependencyResponse, UserRole as SharedUserRole } from "@civicos/shared";
 import { createNotification, createNotifications } from "../notifications/service";
+import { createWorkflowAction, firstResponsibleUser, responseDeadline } from "../deadlines/service";
 
 type DatabaseClient = Prisma.TransactionClient;
 type DependencyInput = CreateDependencyRequests["dependencies"][number];
@@ -11,8 +12,6 @@ export type DependencyActor = {
   role: SharedUserRole;
   agencyId: string | null;
 };
-
-const responseWindowMs = 48 * 60 * 60 * 1000;
 
 export class DependencyActionError extends Error {
   constructor(message: string, readonly status: 403 | 404 | 409 | 422) {
@@ -77,9 +76,8 @@ export async function createDependencyRequests(
     throw new DependencyActionError("This project already has a request for one or more selected agencies", 409);
   }
 
-  const deadline = new Date(now.getTime() + responseWindowMs);
-  const requests = inputs.map((input) => ({ id: randomUUID(), input }));
-  await client.dependency.createMany({ data: requests.map(({ id, input }) => ({
+  const requests = inputs.map((input) => ({ id: randomUUID(), input, deadline: responseDeadline(now, input.deadline ? new Date(input.deadline) : undefined) }));
+  await client.dependency.createMany({ data: requests.map(({ id, input, deadline }) => ({
     id, projectId, requestingAgencyId, respondingAgencyId: input.respondingAgencyId,
     requirement: input.requirement, deadline, state: DependencyState.PENDING_RESPONSE,
   })) });
@@ -93,9 +91,22 @@ export async function createDependencyRequests(
     where: { agencyId: { in: respondingAgencyIds }, role: { in: [UserRole.PROJECT_HEAD, UserRole.ENGINEER] } },
     select: { id: true, agencyId: true },
   });
-  await createNotifications(client, requests.flatMap(({ id, input }) => recipients
+  await createNotifications(client, requests.flatMap(({ id, input, deadline }) => recipients
     .filter((recipient) => recipient.agencyId === input.respondingAgencyId)
     .map(({ id: userId }) => ({ userId, type: "DEPENDENCY_REQUEST", payload: { dependencyId: id, projectId, deadline: deadline.toISOString() } }))));
+  for (const request of requests) {
+    const responsibleUserId = await firstResponsibleUser(client, request.input.respondingAgencyId, [UserRole.PROJECT_HEAD, UserRole.ENGINEER]);
+    if (responsibleUserId) await createWorkflowAction(client, {
+      dedupeKey: `dependency:${request.id}:respond:${request.deadline.toISOString()}`,
+      type: WorkflowActionType.RESPOND_DEPENDENCY,
+      ticketId: (await client.project.findUniqueOrThrow({ where: { id: projectId }, select: { ticketId: true } })).ticketId!,
+      projectId,
+      dependencyId: request.id,
+      responsibleUserId,
+      responsibleAgencyId: request.input.respondingAgencyId,
+      explicitDeadline: request.deadline,
+    }, now);
+  }
   const created = await client.dependency.findMany({ where: { id: { in: requests.map(({ id }) => id) } } });
   const byId = new Map(created.map((dependency) => [dependency.id, dependency]));
   return requests.map(({ id }) => byId.get(id)).filter((dependency): dependency is NonNullable<typeof dependency> => Boolean(dependency));
@@ -121,7 +132,7 @@ export async function respondToDependency(
       if (dependency.state !== DependencyState.DECLINED_UNAVAILABLE) {
         throw new DependencyActionError(`A request cannot be re-sent from ${dependency.state}`, 409);
       }
-      const deadline = new Date(now.getTime() + responseWindowMs);
+      const deadline = responseDeadline(now);
       await transition(transaction, dependency.id, dependency.state, DependencyState.REQUESTED, "REQUEST_RE_SENT", actor.userId);
       await transition(transaction, dependency.id, DependencyState.REQUESTED, DependencyState.PENDING_RESPONSE, "RE_SENT_TO_RESPONDING_AGENCY", actor.userId);
       const updated = await transaction.dependency.update({
@@ -129,6 +140,13 @@ export async function respondToDependency(
         data: { state: DependencyState.PENDING_RESPONSE, deadline, respondedAt: null, escalatedAt: null, assignedEngineerId: null },
       });
       await notifyAgency(transaction, dependency.respondingAgencyId, [UserRole.PROJECT_HEAD, UserRole.ENGINEER], "DEPENDENCY_REQUEST_RE_SENT", { dependencyId, projectId: dependency.projectId, deadline: deadline.toISOString() });
+      const responsibleUserId = await firstResponsibleUser(transaction, dependency.respondingAgencyId, [UserRole.PROJECT_HEAD, UserRole.ENGINEER]);
+      const project = await transaction.project.findUniqueOrThrow({ where: { id: dependency.projectId }, select: { ticketId: true } });
+      if (responsibleUserId && project.ticketId) await createWorkflowAction(transaction, {
+        dedupeKey: `dependency:${dependency.id}:respond:${deadline.toISOString()}`, type: WorkflowActionType.RESPOND_DEPENDENCY,
+        ticketId: project.ticketId, projectId: dependency.projectId, dependencyId: dependency.id,
+        responsibleUserId, responsibleAgencyId: dependency.respondingAgencyId, explicitDeadline: deadline,
+      }, now);
       return updated;
     }
 
@@ -152,6 +170,7 @@ export async function respondToDependency(
         throw new DependencyActionError(`A dependency cannot be fulfilled from ${dependency.state}`, 409);
       }
       const updated = await transaction.dependency.update({ where: { id: dependency.id }, data: { state: DependencyState.FULFILLED, respondedAt: now } });
+      await transaction.workflowAction.updateMany({ where: { dependencyId: dependency.id, type: WorkflowActionType.FULFILL_DEPENDENCY, respondedAt: null }, data: { respondedAt: now } });
       await transition(transaction, dependency.id, dependency.state, DependencyState.FULFILLED, "ASSIGNED_WORK_FULFILLED", actor.userId);
       await notifyAgency(transaction, dependency.requestingAgencyId, [UserRole.PROJECT_HEAD], "DEPENDENCY_FULFILLED", { dependencyId, projectId: dependency.projectId });
       return updated;
@@ -189,9 +208,16 @@ export async function respondToDependency(
       data: { state: toState, assignedEngineerId, respondedAt: now },
     });
     await transition(transaction, dependency.id, dependency.state, toState, reason, actor.userId);
+    await transaction.workflowAction.updateMany({ where: { dependencyId: dependency.id, type: WorkflowActionType.RESPOND_DEPENDENCY, respondedAt: null }, data: { respondedAt: now } });
     await notifyAgency(transaction, dependency.requestingAgencyId, [UserRole.PROJECT_HEAD], "DEPENDENCY_RESPONSE", { dependencyId, projectId: dependency.projectId, state: toState });
     if (assignedEngineerId) {
       await createNotification(transaction, { userId: assignedEngineerId, type: "DEPENDENCY_ASSIGNMENT", payload: { dependencyId, projectId: dependency.projectId } });
+      const project = await transaction.project.findUniqueOrThrow({ where: { id: dependency.projectId }, select: { ticketId: true } });
+      if (project.ticketId) await createWorkflowAction(transaction, {
+        dedupeKey: `dependency:${dependency.id}:fulfill`, type: WorkflowActionType.FULFILL_DEPENDENCY,
+        ticketId: project.ticketId, projectId: dependency.projectId, dependencyId: dependency.id,
+        responsibleUserId: assignedEngineerId, responsibleAgencyId: dependency.respondingAgencyId,
+      }, now);
     }
     return updated;
   });
@@ -215,7 +241,7 @@ export async function runDependencyEscalationJob(now = new Date()): Promise<{ es
         where: { id: item.id },
         data: { state: DependencyState.ESCALATED, escalatedAt: now },
       });
-      await transition(transaction, dependency.id, DependencyState.PENDING_RESPONSE, DependencyState.ESCALATED, "NO_RESPONSE_WITHIN_48_HOURS");
+      await transition(transaction, dependency.id, DependencyState.PENDING_RESPONSE, DependencyState.ESCALATED, "NO_RESPONSE_BY_DEADLINE");
       await notifyAgency(transaction, dependency.requestingAgencyId, [UserRole.PROJECT_HEAD], "DEPENDENCY_ESCALATED", { dependencyId: dependency.id, projectId: dependency.projectId, deadline: dependency.deadline.toISOString() });
       return true;
     });

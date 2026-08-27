@@ -5,6 +5,7 @@ import { getEnv } from "./config/env";
 import { startValidationRebatchScheduler } from "./validations/service";
 import { startDependencyEscalationScheduler } from "./dependencies/service";
 import { ExpoPushGateway, startPushDeliveryScheduler } from "./notifications/service";
+import { startDeadlineEscalationScheduler } from "./deadlines/service";
 
 // Turbo starts this package with apps/api as cwd, while the documented local
 // setup keeps one shared .env at the repository root. Package-local values win.
@@ -20,4 +21,5 @@ app.listen(env.PORT, "0.0.0.0", () => {
 
 startValidationRebatchScheduler(env.VALIDATION_REBATCH_POLL_MINUTES);
 startDependencyEscalationScheduler(env.DEPENDENCY_ESCALATION_POLL_MINUTES);
+startDeadlineEscalationScheduler(env.DEADLINE_ESCALATION_POLL_MINUTES);
 startPushDeliveryScheduler(new ExpoPushGateway(env.EXPO_ACCESS_TOKEN), env.PUSH_DELIVERY_POLL_SECONDS);

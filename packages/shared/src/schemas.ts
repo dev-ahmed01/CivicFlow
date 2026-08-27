@@ -309,6 +309,7 @@ export const createProjectSchema = z.object({
   dependencies: z.array(z.object({
     respondingAgencyId: idSchema,
     requirement: z.string().trim().min(10).max(2000),
+    deadline: z.string().datetime().optional(),
   })).max(20).optional(),
 });
 
@@ -348,6 +349,7 @@ export const createDependencyRequestsSchema = z.object({
   dependencies: z.array(z.object({
     respondingAgencyId: idSchema,
     requirement: z.string().trim().min(10).max(2000),
+    deadline: z.string().datetime().optional(),
   })).min(1).max(20),
 });
 
@@ -414,6 +416,43 @@ export const inspectionReportSummarySchema = z.object({
   uploadedAt: dateSchema.nullable(),
   createdAt: dateSchema,
 });
+export const workflowActionTypeSchema = z.enum(["INSPECT_TICKET", "CREATE_PROJECT", "ASSIGN_ENGINEER", "ACCEPT_PROJECT", "SET_TIMELINE", "COMPLETE_WORK", "SUBMIT_COMPLETION", "RESPOND_DEPENDENCY", "FULFILL_DEPENDENCY", "REVIEW_GRIEVANCE"]);
+export const workflowActionSummarySchema = z.object({
+  id: idSchema,
+  type: workflowActionTypeSchema,
+  deadline: dateSchema,
+  responsibleUser: engineerSummarySchema,
+});
+export const grievanceSourceSchema = z.enum(["AUTO_NON_RESPONSE", "CITIZEN"]);
+export const grievanceStatusSchema = z.enum(["OPEN", "UNDER_REVIEW", "ESCALATED", "RESOLVED", "REOPENED"]);
+export const grievanceSummarySchema = z.object({
+  id: idSchema,
+  ticketId: idSchema,
+  projectId: idSchema.nullable(),
+  dependencyId: idSchema.nullable(),
+  actionId: idSchema.nullable(),
+  reason: z.string(),
+  note: z.string().nullable(),
+  source: grievanceSourceSchema,
+  status: grievanceStatusSchema,
+  createdAt: dateSchema,
+  escalatedAt: dateSchema.nullable(),
+  resolvedAt: dateSchema.nullable(),
+  resolutionNote: z.string().nullable(),
+  evidenceUrl: z.string().url().nullable(),
+});
+export const citizenGrievanceReasonSchema = z.enum(["WORK_INCOMPLETE", "INCORRECT_CLOSURE", "ISSUE_UNRESOLVED", "POOR_EXECUTION_QUALITY"]);
+export const createCitizenGrievanceSchema = z.object({
+  reason: citizenGrievanceReasonSchema,
+  note: z.string().trim().max(2000).optional(),
+  evidence: z.object({ fileName: z.string().trim().min(1).max(200), contentType: uploadContentTypeSchema }).optional(),
+});
+export const updateGrievanceSchema = z.object({
+  status: grievanceStatusSchema,
+  resolutionNote: z.string().trim().max(3000).optional(),
+}).superRefine((value, context) => {
+  if (value.status === "RESOLVED" && !value.resolutionNote) context.addIssue({ code: z.ZodIssueCode.custom, path: ["resolutionNote"], message: "A resolution note is required" });
+});
 export const projectHeadTicketSummarySchema = z.object({
   id: idSchema,
   referenceNumber: z.string().regex(/^\d{9,}$/),
@@ -424,6 +463,9 @@ export const projectHeadTicketSummarySchema = z.object({
   ward: wardSummarySchema,
   validatedAt: dateSchema.nullable(),
   inspectionDue: z.boolean(),
+  assignedAgency: agencySchema.pick({ id: true, name: true }).nullable(),
+  action: workflowActionSummarySchema.nullable(),
+  grievance: grievanceSummarySchema.pick({ id: true, status: true, reason: true, createdAt: true }).nullable(),
 });
 export const projectHeadTicketDetailSchema = citizenTicketSummarySchema.extend({
   internalState: ticketStateSchema,
@@ -449,12 +491,16 @@ export const projectHeadTicketDetailSchema = citizenTicketSummarySchema.extend({
     }).nullable(),
   }).nullable(),
   routingSuggestions: z.array(routingAgencySuggestionSchema),
+  action: workflowActionSummarySchema.nullable(),
+  grievances: z.array(grievanceSummarySchema),
 });
 export const projectHeadDashboardCountsSchema = z.object({
   newValidatedTickets: z.number().int().nonnegative(),
   inspectionsDue: z.number().int().nonnegative(),
   dependencyRequestsPending: z.number().int().nonnegative(),
   activeProjects: z.number().int().nonnegative(),
+  attentionActions: z.number().int().nonnegative(),
+  openGrievances: z.number().int().nonnegative(),
 });
 export const projectListItemSchema = z.object({
   id: idSchema,
@@ -471,6 +517,9 @@ export const projectListItemSchema = z.object({
   agency: agencySchema.pick({ id: true, name: true }),
   engineer: engineerSummarySchema.nullable(),
   ticket: z.object({ id: idSchema, title: z.string(), ward: wardSummarySchema }).nullable(),
+  dependencyCount: z.number().int().nonnegative(),
+  action: workflowActionSummarySchema.nullable(),
+  grievance: grievanceSummarySchema.pick({ id: true, status: true, reason: true, createdAt: true }).nullable(),
 });
 
 export const citizenTicketFilterSchema = z.enum(["ongoing", "past"]);
@@ -484,14 +533,16 @@ export const validationSchema = z.object({
   createdAt: dateSchema,
 });
 
-// Part III §9 — deliberately excludes aggregate vote/count data to prevent anchoring.
 export const pendingValidationSchema = z.object({
   ticketId: idSchema,
   title: z.string().min(1),
   category: categorySummarySchema,
   imageUrl: z.string().url(),
+  address: z.string().min(1),
   distanceMeters: z.number().nonnegative(),
   expiresAt: dateSchema,
+  confirmationCount: z.number().int().nonnegative(),
+  quorum: z.number().int().positive(),
 });
 
 export const submitValidationSchema = z.object({
@@ -505,6 +556,8 @@ export const submitValidationResultSchema = z.object({
   alreadyResolved: z.boolean(),
   status: citizenTicketStateSchema,
   statusLabel: z.string(),
+  confirmationCount: z.number().int().nonnegative(),
+  quorum: z.number().int().positive(),
 });
 
 export const projectSchema = z.object({
@@ -595,6 +648,8 @@ export const dependencyListItemSchema = dependencySchema.extend({
   respondingAgency: agencySchema,
   assignedEngineer: engineerSummarySchema.nullable(),
   contacts: z.array(z.object({ email: z.string().email() })),
+  action: workflowActionSummarySchema.nullable(),
+  grievance: grievanceSummarySchema.pick({ id: true, status: true, reason: true, createdAt: true }).nullable(),
 });
 
 export const engineerProjectDetailSchema = projectListItemSchema.extend({
@@ -829,6 +884,10 @@ export type ProjectHeadTicketSummary = z.infer<typeof projectHeadTicketSummarySc
 export type ProjectHeadTicketDetail = z.infer<typeof projectHeadTicketDetailSchema>;
 export type ProjectHeadDashboardCounts = z.infer<typeof projectHeadDashboardCountsSchema>;
 export type ProjectListItem = z.infer<typeof projectListItemSchema>;
+export type WorkflowActionSummary = z.infer<typeof workflowActionSummarySchema>;
+export type GrievanceSummary = z.infer<typeof grievanceSummarySchema>;
+export type GrievanceStatus = z.infer<typeof grievanceStatusSchema>;
+export type CitizenGrievanceReason = z.infer<typeof citizenGrievanceReasonSchema>;
 export type PaginationMeta = { page: number; limit: number; total: number; totalPages: number };
 export type CitizenTicketTimelineItem = {
   status: CitizenTicketState;
@@ -845,4 +904,6 @@ export type CitizenTicketNote = {
 export type CitizenTicketTimelineResponse = {
   timeline: CitizenTicketTimelineItem[];
   notes: CitizenTicketNote[];
+  grievances: GrievanceSummary[];
+  canRaiseGrievance: boolean;
 };

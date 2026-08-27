@@ -8,7 +8,7 @@ import { getAdminSession, logoutAdmin } from "../_lib/api";
 const links = [
   ["Analytics", "/admin"], ["Categories", "/admin/categories"], ["Routing rules", "/admin/routing-rules"],
   ["Wards", "/admin/wards"], ["Config", "/admin/config"], ["Agencies", "/admin/agencies"],
-  ["Users", "/admin/users"], ["2FA security", "/admin/security"],
+  ["Users", "/admin/users"], ["Grievances", "/admin/grievances"], ["2FA security", "/admin/security"],
 ] as const;
 
 export function AdminShell({ children }: { children: ReactNode }) {

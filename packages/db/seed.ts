@@ -7,6 +7,7 @@ import {
   TicketState,
   UserRole,
   ValidationVote,
+  WorkflowActionType,
 } from "@prisma/client";
 import bcrypt from "bcrypt";
 
@@ -152,10 +153,18 @@ const communityValidators = Array.from({ length: 30 }, (_unused, index) => ({
 
 const engineerDemoProjects = [
   { suffix: "01", title: "Repair failed carriageway near Jayanagar 4th Block", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.ENGINEER_ASSIGNED, projectState: ProjectState.PENDING_UPTAKE, wardId: ids.wards.jayanagar, categoryId: categories[0].id, longitude: 77.5844, latitude: 12.9299, start: null, end: null },
-  { suffix: "02", title: "Restore damaged road shoulder on 11th Main Road", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.WORK_IN_PROGRESS, projectState: ProjectState.ACTIVE, wardId: ids.wards.jayanagar, categoryId: categories[0].id, longitude: 77.5861, latitude: 12.9268, start: new Date("2026-08-20T00:00:00.000Z"), end: new Date("2026-09-03T23:59:59.999Z") },
-  { suffix: "03", title: "Replace leaking distribution valve near Jayanagar 4th T Block", agencyId: ids.agencies.bwssb, engineerId: "40000000-0000-4000-8000-000000000202", ticketState: TicketState.WORK_IN_PROGRESS, projectState: ProjectState.ACTIVE, wardId: ids.wards.jayanagar, categoryId: categories[2].id, longitude: 77.5896, latitude: 12.9208, start: new Date("2026-08-22T00:00:00.000Z"), end: new Date("2026-09-08T23:59:59.999Z") },
   { suffix: "04", title: "Complete pothole patching near South End Circle", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.WORK_COMPLETED, projectState: ProjectState.COMPLETED, wardId: ids.wards.jayanagar, categoryId: categories[0].id, longitude: 77.5802, latitude: 12.9367, start: new Date("2026-08-15T00:00:00.000Z"), end: new Date("2026-08-22T23:59:59.999Z") },
 ] as const;
+
+const retiredEngineerDemoSuffixes = ["02", "03"] as const;
+
+async function cleanupRetiredDemoFixtures(): Promise<void> {
+  const projectIds = retiredEngineerDemoSuffixes.map((suffix) => `70000000-0000-4000-8000-${suffix.padStart(12, "0")}`);
+  const ticketIds = retiredEngineerDemoSuffixes.map((suffix) => `50000000-0000-4000-8000-${suffix.padStart(12, "0")}`);
+  // Exact deterministic fixture IDs only; runtime and user-created records are never matched.
+  await prisma.project.deleteMany({ where: { id: { in: projectIds } } });
+  await prisma.ticket.deleteMany({ where: { id: { in: ticketIds } } });
+}
 
 async function seedWards(): Promise<void> {
   for (const ward of wards) {
@@ -203,6 +212,20 @@ async function seedEngineerWorkflowDemo(): Promise<void> {
       update: { agencyId: item.agencyId, engineerId: item.engineerId, state: item.projectState, plannedStart: item.start, plannedEnd: item.end, workDescription: item.start ? "Execute the inspected scope with field safety controls and restore the public area." : null, dependencyFlags: item.agencyId === ids.agencies.pwd ? ["Traffic coordination"] : ["Road restoration coordination"] },
       create: { id: projectId, ticketId, agencyId: item.agencyId, engineerId: item.engineerId, state: item.projectState, plannedStart: item.start, plannedEnd: item.end, workDescription: item.start ? "Execute the inspected scope with field safety controls and restore the public area." : null, dependencyFlags: item.agencyId === ids.agencies.pwd ? ["Traffic coordination"] : ["Road restoration coordination"] },
     });
+    const actionType = item.projectState === ProjectState.PENDING_UPTAKE ? WorkflowActionType.ACCEPT_PROJECT : WorkflowActionType.SUBMIT_COMPLETION;
+    await prisma.workflowAction.upsert({
+      where: { dedupeKey: item.projectState === ProjectState.PENDING_UPTAKE ? `project:${projectId}:accept` : `project:${projectId}:submit-completion` },
+      update: { type: actionType, ticketId, projectId, responsibleUserId: item.engineerId, responsibleAgencyId: item.agencyId, deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), respondedAt: null, attentionNotifiedAt: null },
+      create: { dedupeKey: item.projectState === ProjectState.PENDING_UPTAKE ? `project:${projectId}:accept` : `project:${projectId}:submit-completion`, type: actionType, ticketId, projectId, responsibleUserId: item.engineerId, responsibleAgencyId: item.agencyId, deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) },
+    });
+    if (item.suffix === "01") {
+      const dependencyId = "72000000-0000-4000-8000-000000000001";
+      await prisma.dependency.upsert({
+        where: { id: dependencyId },
+        update: { projectId, requestingAgencyId: ids.agencies.pwd, respondingAgencyId: ids.agencies.traffic, assignedEngineerId: null, state: DependencyState.PENDING_RESPONSE, requirement: "Coordinate a temporary traffic diversion before carriageway repair begins.", deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), respondedAt: null, escalatedAt: null },
+        create: { id: dependencyId, projectId, requestingAgencyId: ids.agencies.pwd, respondingAgencyId: ids.agencies.traffic, state: DependencyState.PENDING_RESPONSE, requirement: "Coordinate a temporary traffic diversion before carriageway repair begins.", deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) },
+      });
+    }
     const transitionId = `71000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`;
     await prisma.projectStateTransition.upsert({
       where: { id: transitionId },
@@ -517,6 +540,11 @@ async function seedRoadCuttingDemo(): Promise<void> {
       update: { agencyId: item.agencyId, engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title },
       create: { id: projectId, ticketId, agencyId: item.agencyId, engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title },
     });
+    await prisma.workflowAction.upsert({
+      where: { dedupeKey: `project:${projectId}:complete-work` },
+      update: { type: WorkflowActionType.COMPLETE_WORK, ticketId, projectId, responsibleUserId: item.engineerId, responsibleAgencyId: item.agencyId, deadline: item.end, respondedAt: null, attentionNotifiedAt: null },
+      create: { dedupeKey: `project:${projectId}:complete-work`, type: WorkflowActionType.COMPLETE_WORK, ticketId, projectId, responsibleUserId: item.engineerId, responsibleAgencyId: item.agencyId, deadline: item.end },
+    });
     await prisma.intervention.upsert({
       where: { projectId },
       update: { segmentId: ids.roadSegments.flagship, requestingAgencyId: item.agencyId, purpose: item.purpose, plannedStart: item.start, plannedEnd: item.end, startOffsetM: item.offset, affectedLengthM: item.length, dependencyRefs: [...item.refs] },
@@ -537,6 +565,7 @@ async function main(): Promise<void> {
     }
   }
   await seedWards();
+  await cleanupRetiredDemoFixtures();
 
   for (const agency of agencies) {
     await prisma.agency.upsert({

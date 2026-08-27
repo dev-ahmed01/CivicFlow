@@ -27,6 +27,7 @@ const filters: Array<{ id: NotificationFilter; label: string }> = [
   { id: "assignments", label: "Assignments" },
   { id: "conflicts", label: "Conflicts" },
   { id: "completion", label: "Completion" },
+  { id: "grievances", label: "Grievances" },
 ];
 
 function consecutiveRuns(items: ClientNotification[]): NotificationRun[] {
@@ -44,6 +45,7 @@ function payloadContext(payload: Record<string, unknown>): string {
     ["Ticket", payload.ticketId],
     ["Project", payload.projectId],
     ["Dependency", payload.dependencyId],
+    ["Grievance", payload.grievanceId],
   ].flatMap(([label, identifier]) => typeof identifier === "string" ? [`${label} ${identifier}`] : []);
   return identifiers.join(" · ") || "Civic work update";
 }

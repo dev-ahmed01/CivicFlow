@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { DependencyState, ProjectState, TicketState, UserRole, prisma } from "db";
+import { DependencyState, GrievanceStatus, ProjectState, TicketState, UserRole, WorkflowActionType, prisma } from "db";
 import {
   agencyOriginatedTicketRequestSchema,
   inspectionReportRequestSchema,
@@ -13,6 +13,7 @@ import { checkProjectConflicts } from "../conflicts/service";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
 import { buildProjectHeadPerformance } from "../analytics/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
+import { completeWorkflowAction, createWorkflowAction } from "../deadlines/service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -51,7 +52,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
     requirePasswordResetComplete,
     asyncRoute(async (request, response) => {
       const agencyId = projectHeadAgency(request);
-      const [agency, newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects, analytics] = await Promise.all([
+      const [agency, newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects, analytics, attentionActions, openGrievances] = await Promise.all([
         prisma.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { id: true, name: true } }),
         prisma.ticket.count({ where: { assignedAgencyId: agencyId, state: TicketState.ROUTED_TO_AGENCY } }),
         prisma.ticket.count({ where: { assignedAgencyId: agencyId, state: TicketState.INSPECTION_DUE } }),
@@ -65,10 +66,12 @@ export function createAgencyRouter(storage: ImageStorage): Router {
           where: { agencyId, state: { notIn: [ProjectState.CLOSED, ProjectState.CANCELLED] } },
         }),
         buildProjectHeadPerformance(agencyId),
+        prisma.workflowAction.count({ where: { responsibleAgencyId: agencyId, respondedAt: null, deadline: { lte: new Date(Date.now() + 24 * 60 * 60 * 1000) } } }),
+        prisma.grievance.count({ where: { responsibleAgencyId: agencyId, status: { in: [GrievanceStatus.OPEN, GrievanceStatus.UNDER_REVIEW, GrievanceStatus.ESCALATED, GrievanceStatus.REOPENED] } } }),
       ]);
       response.json({
         agency,
-        counts: { newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects },
+        counts: { newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects, attentionActions, openGrievances },
         performance: {
           ...analytics,
         },
@@ -149,13 +152,18 @@ export function createAgencyRouter(storage: ImageStorage): Router {
             take: 1,
             select: { createdAt: true },
           },
+          workflowActions: { where: { respondedAt: null }, orderBy: { deadline: "asc" }, take: 1, select: { id: true, type: true, deadline: true, responsibleUser: { select: { id: true, email: true } } } },
+          grievances: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, status: true, reason: true, createdAt: true } },
+          assignedAgency: { select: { id: true, name: true } },
         },
       }), prisma.ticket.count({ where })]);
       response.json({
-        tickets: tickets.map(({ stateTransitions, ...ticket }) => ({
+        tickets: tickets.map(({ stateTransitions, workflowActions, grievances, ...ticket }) => ({
           ...ticket,
           validatedAt: stateTransitions[0]?.createdAt ?? null,
           inspectionDue: ticket.state === TicketState.INSPECTION_DUE,
+          action: workflowActions[0] ?? null,
+          grievance: grievances[0] ?? null,
         })),
         pagination: paginationMeta(pagination.data.page, pagination.data.limit, total),
       });
@@ -279,7 +287,13 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         await transaction.ticketStateTransition.create({
           data: { ticketId, fromState: null, toState: TicketState.ROUTED_TO_AGENCY, reason: "AGENCY_ORIGINATED", actedById: request.auth!.userId },
         });
-        if (!input.intervention) return { projectId: null, conflicts: [], roadConflicts: [] };
+        if (!input.intervention) {
+          await createWorkflowAction(transaction, {
+            dedupeKey: `ticket:${ticketId}:inspect`, type: WorkflowActionType.INSPECT_TICKET, ticketId,
+            responsibleUserId: request.auth!.userId, responsibleAgencyId: agencyId,
+          });
+          return { projectId: null, conflicts: [], roadConflicts: [] };
+        }
 
         const intervention = input.intervention;
         const project = await transaction.project.create({
@@ -304,6 +318,10 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         });
         await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.PROJECT_CREATED, roadSegmentId: intervention.segmentId } });
         await transaction.ticketStateTransition.create({ data: { ticketId, fromState: TicketState.ROUTED_TO_AGENCY, toState: TicketState.PROJECT_CREATED, reason: "PLANNED_INTERVENTION_CREATED", actedById: request.auth!.userId } });
+        await createWorkflowAction(transaction, {
+          dedupeKey: `ticket:${ticketId}:assign-engineer`, type: WorkflowActionType.ASSIGN_ENGINEER, ticketId, projectId: project.id,
+          responsibleUserId: request.auth!.userId, responsibleAgencyId: agencyId,
+        });
         // Delta §4.3 — the unchanged Phase 7 engine runs before road-specific checks.
         const conflicts = await checkProjectConflicts(transaction, project.id);
         const roadConflicts = await checkRoadConflicts(transaction, project.id);
@@ -379,13 +397,19 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         response.status(409).json({ error: `Inspection cannot be completed from ${ticket.state}` });
         return;
       }
-      await prisma.$transaction([
-        prisma.inspectionReport.update({ where: { id: report.id }, data: { uploadedAt: new Date() } }),
-        prisma.ticket.update({ where: { id: ticketId }, data: { state: TicketState.INSPECTION_COMPLETE } }),
-        prisma.ticketStateTransition.create({
+      await prisma.$transaction(async (transaction) => {
+        const now = new Date();
+        await transaction.inspectionReport.update({ where: { id: report.id }, data: { uploadedAt: now } });
+        await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.INSPECTION_COMPLETE } });
+        await transaction.ticketStateTransition.create({
           data: { ticketId, fromState: TicketState.INSPECTION_DUE, toState: TicketState.INSPECTION_COMPLETE, reason: "INSPECTION_COMPLETE", actedById: request.auth!.userId },
-        }),
-      ]);
+        });
+        await completeWorkflowAction(transaction, `ticket:${ticketId}:inspect`, now);
+        await createWorkflowAction(transaction, {
+          dedupeKey: `ticket:${ticketId}:create-project`, type: WorkflowActionType.CREATE_PROJECT, ticketId,
+          responsibleUserId: request.auth!.userId, responsibleAgencyId: projectHeadAgency(request),
+        }, now);
+      });
       response.json({ reportId: report.id, ticketId, state: TicketState.INSPECTION_COMPLETE });
     }),
   );

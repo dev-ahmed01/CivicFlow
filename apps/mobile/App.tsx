@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CategorySummary, CitizenTicketSummary, CitizenTicketTimelineResponse, CompletionVerificationDecision, PendingCompletionVerification, PendingValidation, ValidationVote } from "@civicos/shared";
+import type { CategorySummary, CitizenGrievanceReason, CitizenTicketSummary, CitizenTicketTimelineResponse, CompletionVerificationDecision, PendingCompletionVerification, PendingValidation, ValidationVote } from "@civicos/shared";
 import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, logoutSession, submitReport, updateCitizenLocation, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
+import { loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, logoutSession, raiseCitizenGrievance, submitReport, updateCitizenLocation, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
 import { EngineerLoginScreen, EngineerProjectsApp } from "./src/engineer-projects";
-import { CategoryScreen, CitizenLoginScreen, CitizenProfileScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type ConfirmedLocation } from "./src/screens";
+import { CategoryScreen, CitizenLoginScreen, CitizenProfileScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, GrievanceScreen, HomeScreen, LocationScreen, RetakeScreen, Shell, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type ConfirmedLocation } from "./src/screens";
 import { colors } from "./src/theme";
 import { NotificationsScreen } from "./src/notifications";
 import { registerForPushNotifications, subscribeToPushNavigation } from "./src/push-notifications";
 import { DesignSystemProvider, MobileTabBar, type MobileTab } from "./src/components";
 
-type Screen = "home" | "citizen-login" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "profile" | "engineer-login";
+type Screen = "home" | "citizen-login" | "category" | "evidence" | "location" | "feedback" | "confirmation" | "detail" | "grievance" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "profile" | "engineer-login";
 
 export default function App() {
   const [viewerRole, setViewerRole] = useState<"ENGINEER" | "OTHER" | "LOADING">("LOADING");
@@ -45,6 +45,7 @@ export default function App() {
   const [completionLoading, setCompletionLoading] = useState(false);
   const [completionError, setCompletionError] = useState<string>();
   const [completionSubmitting, setCompletionSubmitting] = useState(false);
+  const [grievanceSubmitting, setGrievanceSubmitting] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -82,7 +83,7 @@ export default function App() {
       if (data.type === "COMPLETION_VERIFICATION_REQUEST") { setScreen("completion-validations"); return; }
       if (typeof data.ticketId !== "string") return;
       setTicketDetailLoading(true); setTicketDetailError(undefined);
-      void loadTicket(data.ticketId).then((result) => { setSubmitted(result.ticket); setTicketTimeline({ timeline: result.timeline, notes: result.notes }); setScreen("detail"); }).catch((error: unknown) => { const message = error instanceof Error ? error.message : "Could not open this ticket"; setTicketDetailError(message); Alert.alert("Couldn't open update", message); }).finally(() => setTicketDetailLoading(false));
+      void loadTicket(data.ticketId).then((result) => { setSubmitted(result.ticket); setTicketTimeline({ timeline: result.timeline, notes: result.notes, grievances: result.grievances, canRaiseGrievance: result.canRaiseGrievance }); setScreen("detail"); }).catch((error: unknown) => { const message = error instanceof Error ? error.message : "Could not open this ticket"; setTicketDetailError(message); Alert.alert("Couldn't open update", message); }).finally(() => setTicketDetailLoading(false));
     });
   }, [citizenAuth, viewerRole]);
 
@@ -103,7 +104,7 @@ export default function App() {
   };
   const refreshTicket = async (ticketId: string) => {
     setTicketDetailLoading(true); setTicketDetailError(undefined);
-    try { const result = await loadTicket(ticketId); setSubmitted(result.ticket); setTicketTimeline({ timeline: result.timeline, notes: result.notes }); }
+    try { const result = await loadTicket(ticketId); setSubmitted(result.ticket); setTicketTimeline({ timeline: result.timeline, notes: result.notes, grievances: result.grievances, canRaiseGrievance: result.canRaiseGrievance }); }
     catch (error) { setTicketDetailError(error instanceof Error ? error.message : "Could not refresh this ticket"); }
     finally { setTicketDetailLoading(false); }
   };
@@ -118,7 +119,7 @@ export default function App() {
     if (notification.type === "VALIDATION_REQUEST") { openValidations(); return; }
     if (notification.type === "COMPLETION_VERIFICATION_REQUEST") { openCompletionValidations(); return; }
     const ticketId = typeof notification.payload.ticketId === "string" ? notification.payload.ticketId : undefined;
-    if (ticketId) { setTicketDetailLoading(true); setTicketDetailError(undefined); void loadTicket(ticketId).then((result) => { setSubmitted(result.ticket); setTicketTimeline({ timeline: result.timeline, notes: result.notes }); setScreen("detail"); }).catch((error: unknown) => { const message = error instanceof Error ? error.message : "Could not open this ticket"; setTicketDetailError(message); Alert.alert("Couldn't open update", message); }).finally(() => setTicketDetailLoading(false)); return; }
+    if (ticketId) { setTicketDetailLoading(true); setTicketDetailError(undefined); void loadTicket(ticketId).then((result) => { setSubmitted(result.ticket); setTicketTimeline({ timeline: result.timeline, notes: result.notes, grievances: result.grievances, canRaiseGrievance: result.canRaiseGrievance }); setScreen("detail"); }).catch((error: unknown) => { const message = error instanceof Error ? error.message : "Could not open this ticket"; setTicketDetailError(message); Alert.alert("Couldn't open update", message); }).finally(() => setTicketDetailLoading(false)); return; }
     openTickets(notification.type === "TICKET_RESOLVED" ? "past" : "ongoing");
   };
   const submitValidationVote = async (vote: ValidationVote) => {
@@ -126,7 +127,7 @@ export default function App() {
     setValidationSubmitting(true);
     try {
       const result = await validateTicket(selectedValidation.ticketId, vote);
-      Alert.alert(result.alreadyResolved ? "Already reviewed" : "Thanks for checking", result.alreadyResolved ? "This request was already resolved. Your response was still recorded." : "Your response has been recorded.");
+      Alert.alert(result.alreadyResolved ? "Already reviewed" : "Thanks for checking", result.alreadyResolved ? "This request was already resolved. Your response was still recorded." : `${result.confirmationCount}/${result.quorum} confirmations recorded.`);
       setValidations((current) => current.filter((item) => item.ticketId !== selectedValidation.ticketId));
       setSelectedValidation(undefined); setScreen("validations");
     } catch (error) { Alert.alert("Couldn’t record response", error instanceof Error ? error.message : "Please try again."); }
@@ -154,6 +155,17 @@ export default function App() {
     } catch (error) { Alert.alert("Couldn’t submit report", error instanceof Error ? error.message : "Please try again."); }
     finally { setSubmitting(false); }
   };
+  const submitGrievance = async (reason: CitizenGrievanceReason, note?: string, evidence?: LocalImage) => {
+    if (!submitted) return;
+    setGrievanceSubmitting(true);
+    try {
+      await raiseCitizenGrievance(submitted.id, reason, note, evidence);
+      await refreshTicket(submitted.id);
+      Alert.alert("Grievance submitted", "The responsible authority can now review its tracked status in CivicFlow.");
+      setScreen("detail");
+    } catch (error) { Alert.alert("Couldn’t submit grievance", error instanceof Error ? error.message : "Please try again."); }
+    finally { setGrievanceSubmitting(false); }
+  };
 
   let content;
   if (submitting) content = <Shell><View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loadingText}>Sending your report…</Text></View></Shell>;
@@ -162,7 +174,8 @@ export default function App() {
   else if (screen === "location") content = <LocationScreen value={location} onChange={updateLocation} onBack={() => setScreen("evidence")} onNext={() => void completeSubmission()} />;
   else if (screen === "feedback") content = <RetakeScreen {...feedback} onRetake={() => { setImages([]); setScreen("evidence"); }} />;
   else if (screen === "confirmation" && submitted) content = <ConfirmationScreen ticket={submitted} onView={() => openTicket(submitted)} onDone={reset} />;
-  else if (screen === "detail" && submitted) content = <TicketDetailScreen ticket={submitted} timeline={ticketTimeline} loading={ticketDetailLoading} error={ticketDetailError} onRefresh={() => void refreshTicket(submitted.id)} onDone={reset} />;
+  else if (screen === "detail" && submitted) content = <TicketDetailScreen ticket={submitted} timeline={ticketTimeline} loading={ticketDetailLoading} error={ticketDetailError} onRefresh={() => void refreshTicket(submitted.id)} onDone={reset} onRaiseGrievance={() => setScreen("grievance")} />;
+  else if (screen === "grievance" && submitted) content = <GrievanceScreen submitting={grievanceSubmitting} onBack={() => setScreen("detail")} onSubmit={(reason, note, evidence) => void submitGrievance(reason, note, evidence)} />;
   else if (screen === "tickets") content = <TicketsScreen filter={ticketFilter} tickets={tickets} loading={ticketsLoading} error={ticketsError} onBack={() => setScreen("home")} onOpen={openTicket} />;
   else if (screen === "validations") content = <VerificationListScreen validations={validations} loading={validationsLoading} error={validationsError} onBack={() => setScreen("home")} onOpen={(validation) => { setSelectedValidation(validation); setScreen("verification"); }} />;
   else if (screen === "verification" && selectedValidation) content = <VerificationRequestScreen validation={selectedValidation} submitting={validationSubmitting} onBack={() => setScreen("validations")} onSubmit={(vote) => void submitValidationVote(vote)} />;
@@ -181,7 +194,7 @@ export default function App() {
     { id: "notifications", label: notificationUnread ? `Updates ${notificationUnread}` : "Updates", icon: "◇" },
     { id: "profile", label: "Profile", icon: "○" },
   ];
-  const activeTab = screen === "home" ? "home" : ["category", "evidence", "location", "feedback", "confirmation"].includes(screen) ? "report" : ["tickets", "detail"].includes(screen) ? "tickets" : ["validations", "verification", "completion-validations", "completion-verification", "notifications"].includes(screen) ? "notifications" : screen === "profile" ? "profile" : "home";
+  const activeTab = screen === "home" ? "home" : ["category", "evidence", "location", "feedback", "confirmation"].includes(screen) ? "report" : ["tickets", "detail", "grievance"].includes(screen) ? "tickets" : ["validations", "verification", "completion-validations", "completion-verification", "notifications"].includes(screen) ? "notifications" : screen === "profile" ? "profile" : "home";
   const selectTab = (id: string) => {
     if (id === "home") setScreen("home");
     else if (id === "profile") setScreen("profile");

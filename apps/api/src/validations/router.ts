@@ -70,6 +70,8 @@ export function createValidationsRouter(storage: ImageStorage): Router {
             id: true,
             title: true,
             category: { select: { id: true, name: true } },
+            address: true,
+            validations: { where: { counted: true, vote: "CONFIRM" }, select: { id: true } },
             observations: {
               orderBy: { createdAt: "asc" },
               take: 1,
@@ -82,15 +84,19 @@ export function createValidationsRouter(storage: ImageStorage): Router {
     });
     // Part III §9.2 — eligibility can change after notification, so cap and phone
     // verification are rechecked without exposing any other citizens' responses.
-    const config = await prisma.adminConfig.findUnique({ where: { key: "verification.daily_cap" } });
-    if (!config || typeof config.value !== "number") throw new Error("Missing required AdminConfig verification.daily_cap");
+    const [dailyCapConfig, quorumConfig] = await Promise.all([
+      prisma.adminConfig.findUnique({ where: { key: "verification.daily_cap" } }),
+      prisma.adminConfig.findUnique({ where: { key: "verification.quorum" } }),
+    ]);
+    if (!dailyCapConfig || typeof dailyCapConfig.value !== "number") throw new Error("Missing required AdminConfig verification.daily_cap");
+    if (!quorumConfig || typeof quorumConfig.value !== "number") throw new Error("Missing required AdminConfig verification.quorum");
     const dayStart = new Date();
     dayStart.setUTCHours(0, 0, 0, 0);
     const [citizen, dailyCount] = await Promise.all([
       prisma.user.findUnique({ where: { id: citizenId }, select: { phoneVerifiedAt: true } }),
       prisma.validation.count({ where: { validatorId: citizenId, createdAt: { gte: dayStart } } }),
     ]);
-    if (!citizen?.phoneVerifiedAt || dailyCount >= config.value) {
+    if (!citizen?.phoneVerifiedAt || dailyCount >= dailyCapConfig.value) {
       response.json({ validations: [] });
       return;
     }
@@ -102,8 +108,11 @@ export function createValidationsRouter(storage: ImageStorage): Router {
         title: item.ticket.title,
         category: item.ticket.category,
         imageUrl,
+        address: item.ticket.address,
         distanceMeters: item.distanceMeters,
         expiresAt: item.expiresAt,
+        confirmationCount: item.ticket.validations.length,
+        quorum: quorumConfig.value,
       }] : [];
     }) });
   }));
@@ -125,6 +134,8 @@ export function createValidationsRouter(storage: ImageStorage): Router {
         recorded: true,
         counted: result.counted,
         alreadyResolved: result.alreadyResolved,
+        confirmationCount: result.confirmationCount,
+        quorum: result.quorum,
         ...status(result.state),
       });
     } catch (error) {

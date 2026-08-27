@@ -30,6 +30,8 @@ const baseEnvSchema = z.object({
   CRON_SECRET: z.string().min(32).optional(),
   VALIDATION_REBATCH_POLL_MINUTES: z.coerce.number().int().positive().default(15),
   DEPENDENCY_ESCALATION_POLL_MINUTES: z.coerce.number().int().positive().default(15),
+  DEADLINE_ESCALATION_POLL_MINUTES: z.coerce.number().int().positive().default(15),
+  DEMO_NOTIFY_ALL_CITIZENS: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   PUSH_DELIVERY_POLL_SECONDS: z.coerce.number().int().positive().default(15),
   EXPO_ACCESS_TOKEN: z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional()),
   CORS_ORIGINS: z.string().min(1).optional(),

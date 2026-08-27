@@ -1,7 +1,7 @@
 import type { Notification, UserRole } from "./schemas";
 
 export type NotificationTone = "info" | "success" | "warning" | "danger";
-export type NotificationFilter = "all" | "dependencies" | "assignments" | "conflicts" | "completion";
+export type NotificationFilter = "all" | "dependencies" | "assignments" | "conflicts" | "completion" | "grievances";
 
 export type NotificationPresentation = {
   icon: string;
@@ -11,7 +11,7 @@ export type NotificationPresentation = {
 };
 
 const presentations: Record<string, NotificationPresentation> = {
-  VALIDATION_REQUEST: { icon: "i", tone: "info", category: "general", message: "A nearby issue needs your verification." },
+  VALIDATION_REQUEST: { icon: "i", tone: "info", category: "general", message: "A community issue needs your validation." },
   TICKET_VALIDATED: { icon: "✓", tone: "success", category: "general", message: "Community verification validated your report." },
   TICKET_ROUTED_TO_AGENCY: { icon: "✓", tone: "success", category: "general", message: "The responsible agency received your report." },
   PROJECT_CREATED: { icon: "↓", tone: "info", category: "assignments", message: "An engineer has been assigned to this issue." },
@@ -34,6 +34,10 @@ const presentations: Record<string, NotificationPresentation> = {
   CONFLICT_DETECTED: { icon: "⚠", tone: "warning", category: "conflicts", message: "A non-blocking project conflict needs review." },
   ROAD_CONFLICT_DETECTED: { icon: "⚠", tone: "warning", category: "conflicts", message: "A non-blocking road conflict needs review." },
   SEQUENCING_RECOMMENDATION: { icon: "⚠", tone: "warning", category: "conflicts", message: "A new advisory sequencing recommendation is ready." },
+  ACTION_ATTENTION: { icon: "!", tone: "danger", category: "assignments", message: "A response deadline needs immediate attention." },
+  GRIEVANCE_CREATED: { icon: "!", tone: "danger", category: "grievances", message: "A citizen grievance needs review." },
+  GRIEVANCE_ESCALATED: { icon: "!", tone: "danger", category: "grievances", message: "Non-response created an escalated grievance." },
+  GRIEVANCE_UPDATED: { icon: "i", tone: "info", category: "grievances", message: "A grievance status was updated." },
 };
 
 const fallback: NotificationPresentation = {
@@ -60,6 +64,11 @@ export function notificationDestination(notification: Pick<Notification, "type" 
   const dependencyId = value(notification.payload, "dependencyId");
   const projectId = value(notification.payload, "projectId");
   const ticketId = value(notification.payload, "ticketId");
+  const grievanceId = value(notification.payload, "grievanceId");
+  if (grievanceId) {
+    if (role === "PROJECT_HEAD") return `/project-head/grievances?grievance=${grievanceId}`;
+    if (role === "ADMIN") return `/admin/grievances?grievance=${grievanceId}`;
+  }
   if (dependencyId) {
     if (role === "PROJECT_HEAD") return "/project-head/dependencies/inbox";
     if (role === "ENGINEER") return "/engineer/dependencies";

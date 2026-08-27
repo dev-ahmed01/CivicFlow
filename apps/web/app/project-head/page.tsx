@@ -53,6 +53,8 @@ export default function ProjectHeadDashboardPage() {
     { label: "Pending dependencies", action: "Review Dependency", value: data.counts.dependencyRequestsPending, href: "/project-head/dependencies" },
     { label: "Coordination warnings", action: "Review Coordination", value: data.performance.roadConflicts, href: "/project-head/projects" },
     { label: "Awaiting verification", action: "Track Closure", value: workflowCounts.awaitingVerification, href: "/project-head/projects?status=AWAITING_VERIFICATION" },
+    { label: "Deadline attention", action: "Respond Now", value: data.counts.attentionActions, href: "/project-head/notifications" },
+    { label: "Open grievances", action: "Review Grievance", value: data.counts.openGrievances, href: "/project-head/grievances" },
   ] : [];
 
   return <>

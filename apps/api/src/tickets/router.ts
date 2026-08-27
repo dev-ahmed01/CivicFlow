@@ -488,6 +488,8 @@ export function createTicketsRouter(
           select: { id: true, fileUrl: true, objectKey: true, contentType: true, notes: true, uploadedAt: true, createdAt: true },
         },
         project: { select: { id: true, state: true, engineerId: true, plannedStart: true, plannedEnd: true, intervention: true } },
+        workflowActions: { where: { respondedAt: null }, orderBy: { deadline: "asc" }, take: 1, include: { responsibleUser: { select: { id: true, email: true } } } },
+        grievances: { orderBy: { createdAt: "desc" } },
       },
     });
     // Part III §7 — dependency agencies are advisory pre-suggestions only.
@@ -507,6 +509,11 @@ export function createTicketsRouter(
             : [],
         } : null } : null,
         routingSuggestions: internal.category.routingRules.map((rule) => rule.dependencyAgency),
+        action: internal.workflowActions[0] ?? null,
+        grievances: internal.grievances.map(({ evidenceObjectKey, ...grievance }) => ({
+          ...grievance,
+          evidenceUrl: evidenceObjectKey && grievance.evidenceUrl ? storageReadUrl(storage, evidenceObjectKey, grievance.evidenceUrl) : grievance.evidenceUrl,
+        })),
       },
     });
   }));
@@ -517,7 +524,7 @@ export function createTicketsRouter(
       response.status(404).json({ error: "Ticket not found" });
       return;
     }
-    const [transitions, ticketNotes] = await Promise.all([
+    const [transitions, ticketNotes, grievances] = await Promise.all([
       prisma.ticketStateTransition.findMany({
         where: { ticketId },
         orderBy: { createdAt: "asc" },
@@ -527,6 +534,7 @@ export function createTicketsRouter(
         where: { id: ticketId },
         select: {
           createdAt: true,
+          state: true,
           inspectionReports: {
             where: { uploadedAt: { not: null } },
             orderBy: { createdAt: "asc" },
@@ -544,6 +552,7 @@ export function createTicketsRouter(
           },
         },
       }),
+      prisma.grievance.findMany({ where: { ticketId }, orderBy: { createdAt: "desc" } }),
     ]);
     const timeline = transitions.reduce<CitizenTicketTimelineItem[]>((events, transition) => {
       const status = toCitizenTicketState(transition.toState as SharedTicketState);
@@ -573,7 +582,15 @@ export function createTicketsRouter(
         at: evidence.uploadedAt ?? evidence.createdAt,
       })),
     ].sort((first, second) => first.at.getTime() - second.at.getTime()) satisfies CitizenTicketNote[];
-    response.json({ timeline, notes });
+    response.json({
+      timeline,
+      notes,
+      grievances: grievances.map(({ evidenceObjectKey, ...grievance }) => ({
+        ...grievance,
+        evidenceUrl: evidenceObjectKey && grievance.evidenceUrl ? storageReadUrl(storage, evidenceObjectKey, grievance.evidenceUrl) : grievance.evidenceUrl,
+      })),
+      canRaiseGrievance: ticketNotes ? ([TicketState.WORK_COMPLETED, TicketState.AWAITING_CITIZEN_VERIFICATION, TicketState.RESOLVED, TicketState.CLOSED] as TicketState[]).includes(ticketNotes.state) : false,
+    });
   }));
 
   router.get("/citizens/me/tickets", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {

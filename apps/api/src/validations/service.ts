@@ -17,11 +17,21 @@ type LockedTicket = {
   reporterId: string | null;
 };
 
+export function excludeReporter<T extends { citizenId: string }>(candidates: T[], reporterId: string | null): T[] {
+  return candidates.filter((candidate) => candidate.citizenId !== reporterId);
+}
+
+export function confirmationQuorumReached(confirmationCount: number, quorum: number): boolean {
+  return confirmationCount >= quorum;
+}
+
 export type ValidationSubmission = {
   validationId: string;
   counted: boolean;
   alreadyResolved: boolean;
   state: TicketState;
+  confirmationCount: number;
+  quorum: number;
 };
 
 function positiveConfigNumber(value: Prisma.JsonValue, key: string): number {
@@ -37,7 +47,12 @@ async function configNumber(client: DatabaseClient, key: string): Promise<number
   return positiveConfigNumber(config.value, key);
 }
 
-async function createBatch(client: DatabaseClient, ticketId: string, now: Date): Promise<number> {
+async function createBatch(
+  client: DatabaseClient,
+  ticketId: string,
+  now: Date,
+  notifyAllCitizens = process.env.DEMO_NOTIFY_ALL_CITIZENS === "true",
+): Promise<number> {
   const ticket = await client.ticket.findUnique({
     where: { id: ticketId },
     select: {
@@ -60,7 +75,7 @@ async function createBatch(client: DatabaseClient, ticketId: string, now: Date):
 
   // Part III §9.2–§9.3 — PostGIS is authoritative and every eligibility rule is
   // applied before proximity ordering. Prior batches are permanently excluded.
-  const candidates = await client.$queryRaw<Candidate[]>`
+  const nearbyCandidates = () => client.$queryRaw<Candidate[]>`
     SELECT u."id" AS "citizenId",
       ST_Distance(u."lastKnownCoordinates"::geography, t."coordinates"::geography) AS "distanceMeters"
     FROM "User" u
@@ -87,6 +102,39 @@ async function createBatch(client: DatabaseClient, ticketId: string, now: Date):
     ORDER BY "distanceMeters" ASC, u."id" ASC
     LIMIT ${recipientCount}
   `;
+  // Hackathon demo mode deliberately removes only the proximity constraint. All
+  // other Part III §9.2 eligibility, self-vote, repeat-vote, and cap rules remain.
+  const allCitizenCandidates = () => client.$queryRaw<Candidate[]>`
+    SELECT u."id" AS "citizenId",
+      CASE WHEN u."lastKnownCoordinates" IS NULL THEN 0
+        ELSE ST_Distance(u."lastKnownCoordinates"::geography, t."coordinates"::geography)
+      END AS "distanceMeters"
+    FROM "User" u
+    JOIN "Ticket" t ON t."id" = ${ticketId}::uuid
+    WHERE u."role" = ${UserRole.CITIZEN}::"UserRole"
+      AND u."phoneVerifiedAt" IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM "RefreshSession" session
+        WHERE session."userId" = u."id" AND session."revokedAt" IS NULL AND session."expiresAt" > ${now}
+      )
+      AND u."id" <> COALESCE(t."reporterId", '00000000-0000-0000-0000-000000000000'::uuid)
+      AND NOT EXISTS (
+        SELECT 1 FROM "Validation" v
+        WHERE v."ticketId" = t."id" AND v."validatorId" = u."id"
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM "ValidationRequest" vr
+        WHERE vr."ticketId" = t."id" AND vr."citizenId" = u."id"
+      )
+      AND (
+        SELECT COUNT(*) FROM "Validation" daily
+        WHERE daily."validatorId" = u."id"
+          AND daily."createdAt" >= date_trunc('day', ${now}::timestamp)
+          AND daily."createdAt" < date_trunc('day', ${now}::timestamp) + INTERVAL '1 day'
+      ) < ${dailyCap}
+    ORDER BY u."id" ASC
+  `;
+  const candidates = excludeReporter(notifyAllCitizens ? await allCitizenCandidates() : await nearbyCandidates(), ticket.reporterId);
   if (candidates.length === 0) return 0;
 
   const expiresAt = new Date(now.getTime() + responseHours * 60 * 60 * 1000);
@@ -119,6 +167,7 @@ export async function enterPendingValidation(
   fromState: TicketState,
   now = new Date(),
   actedById?: string,
+  notifyAllCitizens = process.env.DEMO_NOTIFY_ALL_CITIZENS === "true",
 ): Promise<number> {
   const transitioned = await client.ticket.updateMany({
     where: { id: ticketId, state: fromState },
@@ -134,7 +183,7 @@ export async function enterPendingValidation(
       actedById,
     },
   });
-  return createBatch(client, ticketId, now);
+  return createBatch(client, ticketId, now, notifyAllCitizens);
 }
 
 export async function submitValidation(
@@ -164,11 +213,15 @@ export async function submitValidation(
       where: { ticketId_validatorId: { ticketId, validatorId: citizenId } },
     });
     if (existing) {
+      const quorum = await configNumber(transaction, "verification.quorum");
+      const confirmationCount = await transaction.validation.count({ where: { ticketId, counted: true, vote: "CONFIRM" } });
       return {
         validationId: existing.id,
         counted: existing.counted,
         alreadyResolved: !existing.counted || ticket.state !== TicketState.PENDING_VALIDATION,
         state: ticket.state,
+        confirmationCount,
+        quorum,
       };
     }
 
@@ -196,23 +249,28 @@ export async function submitValidation(
     await transaction.validationRequest.update({ where: { id: invitation.id }, data: { respondedAt: now } });
 
     if (alreadyResolved) {
-      return { validationId: validation.id, counted: false, alreadyResolved: true, state: ticket.state };
+      const quorum = await configNumber(transaction, "verification.quorum");
+      const confirmationCount = await transaction.validation.count({ where: { ticketId, counted: true, vote: "CONFIRM" } });
+      return { validationId: validation.id, counted: false, alreadyResolved: true, state: ticket.state, confirmationCount, quorum };
     }
 
     const quorum = await configNumber(transaction, "verification.quorum");
-    const counted = await transaction.validation.count({ where: { ticketId, counted: true } });
-    if (counted < quorum) {
-      return { validationId: validation.id, counted: true, alreadyResolved: false, state: ticket.state };
+    const confirmationCount = await transaction.validation.count({ where: { ticketId, counted: true, vote: "CONFIRM" } });
+    if (!confirmationQuorumReached(confirmationCount, quorum)) {
+      return { validationId: validation.id, counted: true, alreadyResolved: false, state: ticket.state, confirmationCount, quorum };
     }
 
     // Part III §§7, 10.2–10.3 — validation and table-driven assignment commit
     // atomically, so an agency queue never observes a half-routed ticket.
     await routeValidatedTicket(transaction, ticketId, citizenId);
-    return { validationId: validation.id, counted: true, alreadyResolved: false, state: TicketState.ROUTED_TO_AGENCY };
+    return { validationId: validation.id, counted: true, alreadyResolved: false, state: TicketState.ROUTED_TO_AGENCY, confirmationCount, quorum };
   });
 }
 
-export async function runValidationRebatchJob(now = new Date()): Promise<{ ticketsProcessed: number; notificationsCreated: number }> {
+export async function runValidationRebatchJob(
+  now = new Date(),
+  notifyAllCitizens = process.env.DEMO_NOTIFY_ALL_CITIZENS === "true",
+): Promise<{ ticketsProcessed: number; notificationsCreated: number }> {
   const due = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT t."id"
     FROM "Ticket" t
@@ -233,9 +291,9 @@ export async function runValidationRebatchJob(now = new Date()): Promise<{ ticke
       const latest = await transaction.validationRequest.aggregate({ where: { ticketId: ticket.id }, _max: { expiresAt: true } });
       if (!latest._max.expiresAt || latest._max.expiresAt > now) return 0;
       const quorum = await configNumber(transaction, "verification.quorum");
-      const count = await transaction.validation.count({ where: { ticketId: ticket.id, counted: true } });
+      const count = await transaction.validation.count({ where: { ticketId: ticket.id, counted: true, vote: "CONFIRM" } });
       if (count >= quorum) return 0;
-      return createBatch(transaction, ticket.id, now);
+      return createBatch(transaction, ticket.id, now, notifyAllCitizens);
     });
     if (created > 0) {
       ticketsProcessed += 1;

@@ -1,5 +1,6 @@
-import { Prisma, TicketState, UserRole } from "db";
+import { Prisma, TicketState, UserRole, WorkflowActionType } from "db";
 import { createNotifications } from "../notifications/service";
+import { createWorkflowAction } from "../deadlines/service";
 
 type DatabaseClient = Prisma.TransactionClient;
 
@@ -45,6 +46,7 @@ async function routeTicketToConfiguredAgency(
   });
   const projectHeads = await client.user.findMany({
     where: { agencyId, role: UserRole.PROJECT_HEAD },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true },
   });
   const citizenIds = [...new Set(ticket.observations.map(({ submitterId }) => submitterId))];
@@ -55,6 +57,16 @@ async function routeTicketToConfiguredAgency(
     ]),
     ...projectHeads.map(({ id }) => ({ userId: id, type: "TICKET_ROUTED_TO_AGENCY", payload: { ticketId, agencyId } })),
   ]);
+  const responsibleProjectHead = projectHeads[0];
+  if (responsibleProjectHead) {
+    await createWorkflowAction(client, {
+      dedupeKey: `ticket:${ticketId}:inspect`,
+      type: WorkflowActionType.INSPECT_TICKET,
+      ticketId,
+      responsibleUserId: responsibleProjectHead.id,
+      responsibleAgencyId: agencyId,
+    });
+  }
   return agencyId;
 }
 

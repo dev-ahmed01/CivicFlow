@@ -5,6 +5,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { PortalStatePill } from "./ui";
 
+function deadlineText(deadline: string | Date): string {
+  const difference = new Date(deadline).getTime() - Date.now();
+  const days = Math.max(1, Math.ceil(Math.abs(difference) / 86_400_000));
+  return difference >= 0 ? `${days} ${days === 1 ? "day" : "days"} left` : `Overdue by ${days} ${days === 1 ? "day" : "days"}`;
+}
+
 export function NextActionButton({ children, href, onClick, busy = false, secondary = false }: {
   children: ReactNode;
   href?: string;
@@ -24,8 +30,8 @@ export function ProjectActionCard({ project, action, children }: {
 }) {
   return <article className="project-action-card">
     <header><div><p className="eyebrow">Project {project.id.slice(0, 8)}</p><h2>{project.ticket?.title ?? "Standalone project"}</h2></div><PortalStatePill state={project.state} /></header>
-    <dl><div><dt>Agency</dt><dd>{project.agency.name}</dd></div><div><dt>Ward</dt><dd>{project.ticket?.ward.name ?? "—"}</dd></div><div><dt>Engineer</dt><dd>{project.engineer?.email ?? "Not assigned"}</dd></div></dl>
-    <footer><div className="project-next-actions">{action}{children}</div><span>{project.plannedEnd ? `Due ${new Date(project.plannedEnd).toLocaleDateString("en-IN")}` : "Timeline pending"}</span></footer>
+    <dl><div><dt>Agency</dt><dd>{project.agency.name}</dd></div><div><dt>Responsible</dt><dd>{project.action?.responsibleUser.email ?? project.engineer?.email ?? "Not assigned"}</dd></div><div><dt>Ward</dt><dd>{project.ticket?.ward.name ?? "—"}</dd></div><div><dt>Dependencies</dt><dd>{project.dependencyCount > 0 ? `${project.dependencyCount} linked` : "None"}</dd></div><div><dt>Grievance</dt><dd>{project.grievance ? project.grievance.status.replaceAll("_", " ") : "None"}</dd></div></dl>
+    <footer><div className="project-next-actions">{action}{children}</div><span suppressHydrationWarning className={project.action && new Date(project.action.deadline).getTime() < Date.now() ? "deadline-overdue" : ""}>{project.action ? deadlineText(project.action.deadline) : project.plannedEnd ? `Execution due ${new Date(project.plannedEnd).toLocaleDateString("en-IN")}` : "Timeline pending"}</span></footer>
   </article>;
 }
 
@@ -47,7 +53,7 @@ export function DependencyFlowCard({ dependency, direction, projectHref, childre
       <div><small>Primary agency</small><strong>{dependency.requestingAgency.name}</strong></div><span aria-hidden="true">↔</span><div><small>Dependency agency</small><strong>{dependency.respondingAgency.name}</strong></div>
     </div>
     <p className="dependency-requirement"><strong>Requirement</strong>{dependency.requirement}</p>
-    <dl className="dependency-flow-meta"><div><dt>Connected agency</dt><dd>{connectedAgency.name}</dd></div><div><dt>Deadline</dt><dd>{new Date(dependency.deadline).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</dd></div><div><dt>Assigned engineer</dt><dd>{dependency.assignedEngineer?.email ?? "Awaiting assignment"}</dd></div><div><dt>Escalation</dt><dd>{dependency.escalatedAt ? `Escalated ${new Date(dependency.escalatedAt).toLocaleDateString("en-IN")}` : "Not escalated"}</dd></div></dl>
+    <dl className="dependency-flow-meta"><div><dt>Connected agency</dt><dd>{connectedAgency.name}</dd></div><div><dt>Deadline</dt><dd suppressHydrationWarning>{deadlineText(dependency.deadline)}</dd></div><div><dt>Assigned engineer</dt><dd>{dependency.assignedEngineer?.email ?? dependency.action?.responsibleUser.email ?? "Awaiting assignment"}</dd></div><div><dt>Grievance</dt><dd>{dependency.grievance ? dependency.grievance.status.replaceAll("_", " ") : dependency.escalatedAt ? `Escalated ${new Date(dependency.escalatedAt).toLocaleDateString("en-IN")}` : "None"}</dd></div></dl>
     <details className="connected-agency-details"><summary>View Connected Agency</summary><p><strong>{connectedAgency.name}</strong><span>{connectedAgency.type}</span></p></details>
     <footer>{projectHref ? <Link className="connected-project-link" href={projectHref}>View connected project →</Link> : <span className="connected-project-reference">Project {dependency.project.id.slice(0, 8)}</span>}{children ? <div className="dependency-flow-actions">{children}</div> : null}</footer>
   </article>;
