@@ -547,7 +547,7 @@ export function createTicketsRouter(
     ]);
     const timeline = transitions.reduce<CitizenTicketTimelineItem[]>((events, transition) => {
       const status = toCitizenTicketState(transition.toState as SharedTicketState);
-      if (events.at(-1)?.status !== status) events.push({ status, label: citizenTicketStateLabels[status], at: transition.createdAt });
+      if (events[events.length - 1]?.status !== status) events.push({ status, label: citizenTicketStateLabels[status], at: transition.createdAt });
       return events;
     }, ticketNotes ? [{ status: "REPORT_RECEIVED", label: "Submitted", at: ticketNotes.createdAt }] : []);
     const notes = [
@@ -592,7 +592,7 @@ export function createTicketsRouter(
         where,
         select: { id: true, referenceNumber: true, title: true, address: true, state: true, createdAt: true, updatedAt: true, category: { select: { id: true, name: true } }, _count: { select: { observations: true } } },
         orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-        skip: pagination.data.skip,
+        skip: (pagination.data.page - 1) * pagination.data.limit,
         take: pagination.data.limit,
       }),
       prisma.ticket.count({ where }),
