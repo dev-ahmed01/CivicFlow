@@ -52,10 +52,11 @@ services:
         sync: false
       - key: S3_PUBLIC_BASE_URL
         sync: false
-      # Explicitly simulated, deterministic relevance for the $0 showcase.
-      # Set hosted + URL/token instead to call a compatible free/local endpoint.
+      # Keyless, local quantized CLIP inference; no paid inference account.
       - key: CLIP_MODE
-        value: demo_deterministic
+        value: local_clip
+      - key: CLIP_LOCAL_MODEL
+        value: Xenova/clip-vit-base-patch32
       - key: CLIP_TIMEOUT_MS
         value: 8000
       - key: DEMO_SEED_MODE

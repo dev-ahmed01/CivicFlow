@@ -399,6 +399,7 @@ export const updateRoutingRulesSchema = z.object({ dependencyAgencyIds: z.array(
 
 export const adminCategoryInputSchema = z.object({
   name: z.string().trim().min(2).max(120),
+  relevancePrompt: z.string().trim().min(10).max(500),
   primaryAgencyId: idSchema,
   adminEditable: z.boolean().default(true),
 });

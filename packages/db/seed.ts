@@ -92,18 +92,18 @@ const agencies = [
 ] as const;
 
 const categories = [
-  { id: "30000000-0000-4000-8000-000000000001", name: "Road Damage", primaryAgencyId: ids.agencies.pwd },
-  { id: "30000000-0000-4000-8000-000000000002", name: "Streetlight", primaryAgencyId: ids.agencies.bescom },
-  { id: "30000000-0000-4000-8000-000000000003", name: "Water Supply", primaryAgencyId: ids.agencies.bwssb },
-  { id: "30000000-0000-4000-8000-000000000004", name: "Drainage/Sewage", primaryAgencyId: ids.agencies.bwssb },
-  { id: "30000000-0000-4000-8000-000000000005", name: "Garbage/Waste", primaryAgencyId: ids.agencies.waste },
-  { id: "30000000-0000-4000-8000-000000000006", name: "Electrical Hazard", primaryAgencyId: ids.agencies.bescom },
-  { id: "30000000-0000-4000-8000-000000000007", name: "Public Toilet", primaryAgencyId: ids.agencies.publicAmenities },
-  { id: "30000000-0000-4000-8000-000000000008", name: "Parks & Trees", primaryAgencyId: ids.agencies.parks },
-  { id: "30000000-0000-4000-8000-000000000009", name: "Stray Animals", primaryAgencyId: ids.agencies.animalHusbandry },
-  { id: "30000000-0000-4000-8000-000000000010", name: "Illegal Construction", primaryAgencyId: ids.agencies.planning },
-  { id: "30000000-0000-4000-8000-000000000011", name: "Traffic & Signage", primaryAgencyId: ids.agencies.traffic },
-  { id: "30000000-0000-4000-8000-000000000012", name: "Other", primaryAgencyId: ids.agencies.publicAmenities },
+  { id: "30000000-0000-4000-8000-000000000001", name: "Road Damage", relevancePrompt: "a pothole, damaged road, cracked pavement, or broken asphalt", primaryAgencyId: ids.agencies.pwd },
+  { id: "30000000-0000-4000-8000-000000000002", name: "Streetlight", relevancePrompt: "a damaged, broken, leaning, or non-working street light", primaryAgencyId: ids.agencies.bescom },
+  { id: "30000000-0000-4000-8000-000000000003", name: "Water Supply", relevancePrompt: "water leakage, a broken water pipe, flooding, or standing water", primaryAgencyId: ids.agencies.bwssb },
+  { id: "30000000-0000-4000-8000-000000000004", name: "Drainage/Sewage", relevancePrompt: "an overflowing drain, blocked storm drain, open sewer, or sewage spill", primaryAgencyId: ids.agencies.bwssb },
+  { id: "30000000-0000-4000-8000-000000000005", name: "Garbage/Waste", relevancePrompt: "dumped garbage, litter, an overflowing trash bin, or solid waste", primaryAgencyId: ids.agencies.waste },
+  { id: "30000000-0000-4000-8000-000000000006", name: "Electrical Hazard", relevancePrompt: "exposed electrical wires, a fallen power line, sparking equipment, or an electrical hazard", primaryAgencyId: ids.agencies.bescom },
+  { id: "30000000-0000-4000-8000-000000000007", name: "Public Toilet", relevancePrompt: "a damaged, dirty, blocked, or unusable public toilet", primaryAgencyId: ids.agencies.publicAmenities },
+  { id: "30000000-0000-4000-8000-000000000008", name: "Parks & Trees", relevancePrompt: "a fallen or hazardous tree, damaged park equipment, or neglected public park", primaryAgencyId: ids.agencies.parks },
+  { id: "30000000-0000-4000-8000-000000000009", name: "Stray Animals", relevancePrompt: "stray dogs, cattle, or other unattended animals in a public place", primaryAgencyId: ids.agencies.animalHusbandry },
+  { id: "30000000-0000-4000-8000-000000000010", name: "Illegal Construction", relevancePrompt: "unauthorized construction, building work obstructing a public area, or construction debris", primaryAgencyId: ids.agencies.planning },
+  { id: "30000000-0000-4000-8000-000000000011", name: "Traffic & Signage", relevancePrompt: "a damaged traffic sign, broken signal, missing road sign, or traffic obstruction", primaryAgencyId: ids.agencies.traffic },
+  { id: "30000000-0000-4000-8000-000000000012", name: "Other", relevancePrompt: "a visible civic infrastructure problem in a public place", primaryAgencyId: ids.agencies.publicAmenities },
 ] as const;
 
 const routingRules = [

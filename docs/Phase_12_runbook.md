@@ -83,10 +83,13 @@ Twilio classes and credentials remain untouched for the production profile. Sett
 The unattended $0 Blueprint sets:
 
 ```text
-CLIP_MODE=demo_deterministic
+CLIP_MODE=local_clip
+CLIP_LOCAL_MODEL=Xenova/clip-vit-base-patch32
 ```
 
-This uses the existing deterministic relevance adapter. It is explicitly a **simulated demo aid, not measured CLIP inference**, and its result must be described that way. It keeps the photo/retry/manual-review flow clickable when no inference host is available.
+This runs a quantized CLIP model inside the API process. It downloads the public model from Hugging Face on first use, decodes the uploaded image, and compares its pixels against the admin-configured category prompts and unrelated-content prompts. It needs no API token or payment card. The first relevance request after a cold deployment is slower while model files are downloaded and cached.
+
+`CLIP_MODE=demo_deterministic` is retained only as a fail-closed legacy setting: every result is `LOW_CONFIDENCE`; it never accepts an image without inspecting pixels.
 
 For a real CLIP demonstration at $0, run a compatible CLIP service locally or on a free inference host, expose its HTTPS endpoint to Render, and instead set:
 

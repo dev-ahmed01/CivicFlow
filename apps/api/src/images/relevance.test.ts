@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseEnv } from "../config/env";
-import { cosineSimilarity, createImageRelevanceService, decideImageRelevance, DevelopmentRelevanceService, HostedClipRelevanceService } from "./relevance";
+import {
+  cosineSimilarity,
+  createImageRelevanceService,
+  decideImageRelevance,
+  DevelopmentRelevanceService,
+  HostedClipRelevanceService,
+  type ClipContentAnalyzer,
+  type CategoryRelevancePrompt,
+  UnavailableRelevanceService,
+} from "./relevance";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -12,7 +21,38 @@ describe("cosineSimilarity", () => {
 });
 
 describe("free-demo relevance", () => {
-  it("only enables deterministic relevance through an explicit free-demo profile", () => {
+  const roadDamage = "30000000-0000-4000-8000-000000000001";
+  const garbage = "30000000-0000-4000-8000-000000000005";
+  const categories: CategoryRelevancePrompt[] = [
+    { id: roadDamage, name: "Road Damage", relevancePrompt: "a pothole, damaged road, cracked pavement, or broken asphalt" },
+    { id: garbage, name: "Garbage/Waste", relevancePrompt: "dumped garbage, litter, an overflowing trash bin, or solid waste" },
+  ];
+
+  function testAnalyzer(): ClipContentAnalyzer {
+    return {
+      async analyze(image, prompts) {
+        const pixels = await image.text();
+        const winningPrompt = pixels.includes("pothole") ? 0
+          : pixels.includes("garbage") ? 1
+            : pixels.includes("wall") ? 2
+              : 3;
+        return {
+          scores: prompts.map((_prompt, index) => index === winningPrompt ? 0.82 : 0.03),
+          embedding: pixels.includes("pothole") ? [1, 0] : [0, 1],
+        };
+      },
+    };
+  }
+
+  function serviceForPixels(pixels: string): DevelopmentRelevanceService {
+    return new DevelopmentRelevanceService({
+      analyzer: testAnalyzer(),
+      categoryPrompts: async () => categories,
+      download: async () => new Blob([pixels], { type: "image/jpeg" }),
+    });
+  }
+
+  it("enables local CLIP through the explicit free-demo profile", () => {
     const env = parseEnv({
       NODE_ENV: "production",
       DEPLOYMENT_PROFILE: "free_demo",
@@ -28,39 +68,66 @@ describe("free-demo relevance", () => {
       S3_ACCESS_KEY_ID: "r2-access-key",
       S3_SECRET_ACCESS_KEY: "r2-secret-key",
       S3_PUBLIC_BASE_URL: "https://pub-demo.r2.dev",
-      CLIP_MODE: "demo_deterministic",
+      CLIP_MODE: "local_clip",
       CORS_ORIGINS: "https://civicos-demo.vercel.app",
     });
     expect(createImageRelevanceService(env)).toBeInstanceOf(DevelopmentRelevanceService);
   });
 
-  const service = new DevelopmentRelevanceService();
-  const roadDamage = "30000000-0000-4000-8000-000000000001";
-  const waterSupply = "30000000-0000-4000-8000-000000000003";
-  const garbage = "30000000-0000-4000-8000-000000000005";
-
-  it.each([
-    ["pothole-road-damage.jpg", roadDamage],
-    ["overflowing-garbage-bin.jpg", garbage],
-    ["water-leak-burst-pipe.jpg", waterSupply],
-  ])("accepts descriptive seeded-category evidence: %s", async (fileName, categoryId) => {
-    expect(await service.checkImageRelevance(`https://images.example.com/${fileName}`, categoryId))
-      .toMatchObject({ pass: true, score: 1, reason: "MATCH" });
+  it("accepts pothole pixels for the pothole/road-damage category", async () => {
+    const service = serviceForPixels("decoded pixels of a pothole from a distant camera angle");
+    const result = await service.checkImageRelevance("https://images.example.com/IMG_1234.jpg", roadDamage);
+    expect(decideImageRelevance(result, 0.6)).toMatchObject({ relevant: true, reason: "MATCH" });
+    await expect(service.getImageEmbedding("https://images.example.com/IMG_1234.jpg")).resolves.toEqual([1, 0]);
   });
 
-  it.each(["selfie.jpg", "portrait.png", "food.jpg", "reaction-meme.webp", "random-screenshot.png", "blank-image.jpg"])("rejects explicitly unrelated evidence: %s", async (fileName) => {
-    expect(await service.checkImageRelevance(`https://images.example.com/${fileName}`, roadDamage))
-      .toMatchObject({ pass: false, reason: "UNRELATED_CONTENT" });
+  it("rejects wall pixels for the pothole/road-damage category", async () => {
+    const result = await serviceForPixels("decoded pixels of a plain indoor wall")
+      .checkImageRelevance("https://images.example.com/IMG_1234.jpg", roadDamage);
+    expect(result).toMatchObject({ pass: false, reason: "UNRELATED_CONTENT" });
   });
 
-  it("does not enforce filename-based category matching in demo mode", async () => {
-    expect(await service.checkImageRelevance("https://images.example.com/garbage-pile.jpg", roadDamage))
-      .toMatchObject({ pass: true, reason: "MATCH" });
+  it("accepts garbage pixels for the garbage category", async () => {
+    const result = await serviceForPixels("decoded pixels of dumped garbage and an overflowing bin")
+      .checkImageRelevance("https://images.example.com/camera_001.jpg", garbage);
+    expect(decideImageRelevance(result, 0.6)).toMatchObject({ relevant: true, reason: "MATCH" });
   });
 
-  it.each(["IMG_1234.jpg", "DSC_1234.jpg", "PXL_20260828.jpg", "camera_001.jpg", "gallery-image-42.jpg"])("accepts an ordinary camera/gallery filename: %s", async (fileName) => {
-    const result = await service.checkImageRelevance(`https://images.example.com/${fileName}`, roadDamage);
-    expect(decideImageRelevance(result, 0.6)).toEqual({ relevant: true, confidence: 1, reason: "MATCH" });
+  it("rejects selfie pixels for the garbage category", async () => {
+    const result = await serviceForPixels("decoded pixels of a selfie portrait")
+      .checkImageRelevance("https://images.example.com/garbage-evidence.jpg", garbage);
+    expect(result).toMatchObject({ pass: false, reason: "UNRELATED_CONTENT" });
+  });
+
+  it("returns a category mismatch when another configured civic category wins", async () => {
+    const result = await serviceForPixels("decoded pixels of dumped garbage")
+      .checkImageRelevance("https://images.example.com/IMG_9999.jpg", roadDamage);
+    expect(result).toMatchObject({ pass: false, reason: "CATEGORY_MISMATCH" });
+  });
+
+  it("never uses a generic camera filename as the decision signal", async () => {
+    const pothole = await serviceForPixels("decoded pixels of a pothole")
+      .checkImageRelevance("https://images.example.com/IMG_0001.jpg", roadDamage);
+    const wall = await serviceForPixels("decoded pixels of a plain indoor wall")
+      .checkImageRelevance("https://images.example.com/IMG_0001.jpg", roadDamage);
+    expect(pothole.reason).toBe("MATCH");
+    expect(wall.reason).toBe("UNRELATED_CONTENT");
+  });
+
+  it("fails closed with low confidence when no real model is configured", async () => {
+    const service = new UnavailableRelevanceService();
+    await expect(service.checkImageRelevance("https://images.example.com/IMG_0001.jpg", roadDamage))
+      .resolves.toEqual({ score: 0, pass: false, reason: "LOW_CONFIDENCE" });
+  });
+
+  it("fails closed when local model inference cannot run", async () => {
+    const service = new DevelopmentRelevanceService({
+      analyzer: { async analyze() { throw new Error("model unavailable"); } },
+      categoryPrompts: async () => categories,
+      download: async () => new Blob(["pixels"], { type: "image/jpeg" }),
+    });
+    await expect(service.checkImageRelevance("https://images.example.com/IMG_0001.jpg", roadDamage))
+      .resolves.toEqual({ score: 0, pass: false, reason: "LOW_CONFIDENCE" });
   });
 });
 

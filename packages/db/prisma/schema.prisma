@@ -209,6 +209,7 @@ model Agency {
 model Category {
   id              String  @id @default(uuid()) @db.Uuid
   name            String  @unique
+  relevancePrompt String
   primaryAgencyId String  @db.Uuid
   adminEditable   Boolean @default(true)
 

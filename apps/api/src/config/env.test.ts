@@ -69,7 +69,7 @@ describe("free-demo environment", () => {
     S3_ENDPOINT: "https://account-id.r2.cloudflarestorage.com",
     S3_REGION: "auto",
     S3_PUBLIC_BASE_URL: "https://pub-demo.r2.dev",
-    CLIP_MODE: "demo_deterministic",
+    CLIP_MODE: "local_clip",
     CLIP_INFERENCE_URL: undefined,
     CLIP_INFERENCE_TOKEN: undefined,
   } satisfies NodeJS.ProcessEnv;
@@ -78,7 +78,8 @@ describe("free-demo environment", () => {
     const parsed = parseEnv(freeDemoEnv);
     expect(parsed.DEPLOYMENT_PROFILE).toBe("free_demo");
     expect(parsed.DEMO_AUTH_MODE).toBe("fixed_otp");
-    expect(parsed.CLIP_MODE).toBe("demo_deterministic");
+    expect(parsed.CLIP_MODE).toBe("local_clip");
+    expect(parsed.CLIP_LOCAL_MODEL).toBe("Xenova/clip-vit-base-patch32");
   });
 
   it("does not infer demo authentication from a demo provider alone", () => {
