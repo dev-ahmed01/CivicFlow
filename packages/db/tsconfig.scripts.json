@@ -1,0 +1,10 @@
+{
+  "extends": "@civicos/config/tsconfig.node.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false,
+    "outDir": ".scripts-dist",
+    "rootDir": "."
+  },
+  "include": ["scripts/**/*.ts", "src/demo-wards.ts"]
+}

@@ -10,6 +10,7 @@ import {
   WorkflowActionType,
 } from "@prisma/client";
 import bcrypt from "bcrypt";
+import { DEMO_WARD_SRID, demoWardBoundaryWkt, demoWardIds, demoWards } from "./src/demo-wards";
 
 const prisma = new PrismaClient();
 const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
@@ -25,10 +26,7 @@ if (process.env.NODE_ENV === "production" && demoInternalPassword === "CivicOS@1
 
 const ids = {
   wards: {
-    koramangala: "10000000-0000-4000-8000-000000000001",
-    indiranagar: "10000000-0000-4000-8000-000000000002",
-    hsrLayout: "10000000-0000-4000-8000-000000000003",
-    jayanagar: "10000000-0000-4000-8000-000000000004",
+    ...demoWardIds,
   },
   agencies: {
     bwssb: "20000000-0000-4000-8000-000000000001",
@@ -55,29 +53,6 @@ const ids = {
     completionEvidence: "90000000-0000-4000-8000-000000000008",
   },
 } as const;
-
-const wards = [
-  {
-    id: ids.wards.koramangala,
-    name: "Koramangala",
-    boundary: "POLYGON((77.6100 12.9250,77.6350 12.9250,77.6350 12.9500,77.6100 12.9500,77.6100 12.9250))",
-  },
-  {
-    id: ids.wards.indiranagar,
-    name: "Indiranagar",
-    boundary: "POLYGON((77.6250 12.9650,77.6550 12.9650,77.6550 12.9900,77.6250 12.9900,77.6250 12.9650))",
-  },
-  {
-    id: ids.wards.hsrLayout,
-    name: "HSR Layout",
-    boundary: "POLYGON((77.6250 12.8950,77.6550 12.8950,77.6550 12.9250,77.6250 12.9250,77.6250 12.8950))",
-  },
-  {
-    id: ids.wards.jayanagar,
-    name: "Jayanagar",
-    boundary: "POLYGON((77.5650 12.9150,77.6000 12.9150,77.6000 12.9450,77.5650 12.9450,77.5650 12.9150))",
-  },
-] as const;
 
 const agencies = [
   { id: ids.agencies.bwssb, name: "BWSSB", type: "Water Board" },
@@ -167,10 +142,11 @@ async function cleanupRetiredDemoFixtures(): Promise<void> {
 }
 
 async function seedWards(): Promise<void> {
-  for (const ward of wards) {
+  for (const ward of demoWards) {
+    const boundary = demoWardBoundaryWkt(ward);
     await prisma.$executeRaw`
       INSERT INTO "Ward" ("id", "name", "boundary", "verificationRadiusOverrideMeters")
-      VALUES (${ward.id}::uuid, ${ward.name}, ST_GeomFromText(${ward.boundary}, 4326), NULL)
+      VALUES (${ward.id}::uuid, ${ward.name}, ST_GeomFromText(${boundary}, ${DEMO_WARD_SRID}::integer), NULL)
       ON CONFLICT ("id") DO UPDATE SET
         "name" = EXCLUDED."name",
         "boundary" = EXCLUDED."boundary"
@@ -554,6 +530,9 @@ async function seedRoadCuttingDemo(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Ward defaults must still be reconciled when startup seeding skips the
+  // destructive demo-fixture reset on an already populated database.
+  await seedWards();
   if (demoSeedMode === "if_empty") {
     const [generalTicket, flagshipSegment] = await Promise.all([
       prisma.ticket.findUnique({ where: { id: ids.generalDemo.ticket }, select: { id: true } }),
@@ -564,7 +543,6 @@ async function main(): Promise<void> {
       return;
     }
   }
-  await seedWards();
   await cleanupRetiredDemoFixtures();
 
   for (const agency of agencies) {
@@ -640,7 +618,7 @@ async function main(): Promise<void> {
   await seedGeneralEndToEndDemo();
   await seedRoadCuttingDemo();
 
-  console.log(`Seeded ${wards.length} wards, ${agencies.length} agencies, ${categories.length} categories, and ${users.length} users.`);
+  console.log(`Seeded ${demoWards.length} wards, ${agencies.length} agencies, ${categories.length} categories, and ${users.length} users.`);
   console.log(`Seeded ${engineerDemoProjects.length} Executive Engineer demo projects.`);
   console.log("Seeded the Part I §31 closed streetlight lifecycle with validation, dependency, execution, and citizen verification history.");
   console.log("Seeded Segment X flagship road-cutting scenario (PWD, BWSSB, BESCOM).");
