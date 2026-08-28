@@ -2,15 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 import type { CategorySummary, CitizenGrievanceReason, CitizenTicketDetail, CitizenTicketSummary, CitizenTicketTimelineResponse, CompletionVerificationDecision, PendingCompletionVerification, PendingValidation, ValidationVote } from "@civicos/shared";
 import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, logoutSession, raiseCitizenGrievance, submitReport, updateCitizenLocation, validateReportImage, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
 import { EngineerLoginScreen, EngineerProjectsApp } from "./src/engineer-projects";
 import { CategoryScreen, CitizenLoginScreen, CitizenProfileScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, GrievanceScreen, HomeScreen, LocationConfirmScreen, LocationDetectScreen, RetakeScreen, ReviewReportScreen, Shell, SplashScreen, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, WelcomeScreen, type CitizenHomeSummary, type ConfirmedLocation } from "./src/screens";
 import { NotificationsScreen } from "./src/notifications";
-import { registerForPushNotifications, subscribeToPushNavigation } from "./src/push-notifications";
+import { registerForPushNotifications, subscribeToPushNavigation, subscribeToPushReceipt } from "./src/push-notifications";
 import { DesignSystemProvider, MobileTabBar, type MobileTab } from "./src/components";
 import { colors } from "./src/theme";
+import { nextScreenAfterPhotoCheck, photoRejectionMessage } from "./src/photo-flow";
 
 type Viewer = "LOADING" | "SIGNED_OUT" | "CITIZEN" | "ENGINEER";
 type Screen = "welcome" | "citizen-login" | "engineer-login" | "home" | "category" | "evidence" | "location-detect" | "location-confirm" | "review" | "feedback" | "confirmation" | "detail" | "grievance" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "profile";
@@ -102,6 +103,32 @@ function AppContent() {
     const timer = setInterval(poll, 30_000);
     return () => { active = false; clearInterval(timer); };
   }, [citizenAuth, refreshHome]);
+
+  useEffect(() => {
+    if (!citizenAuth || viewer !== "CITIZEN") return;
+    const refreshPending = () => {
+      void Promise.all([loadPendingValidations(), loadPendingCompletionVerifications(), loadNotifications(true)])
+        .then(([pendingValidations, pendingCompletions, notifications]) => {
+          setValidations(pendingValidations);
+          setCompletionValidations(pendingCompletions);
+          setHomeSummary((current) => ({
+            ...current,
+            pendingValidations: pendingValidations.length,
+            pendingCompletions: pendingCompletions.length,
+          }));
+          setNotificationUnread(notifications.unreadCount);
+        })
+        .catch(() => undefined);
+    };
+    const unsubscribePush = subscribeToPushReceipt(refreshPending);
+    const appState = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshPending();
+    });
+    return () => {
+      unsubscribePush();
+      appState.remove();
+    };
+  }, [citizenAuth, viewer]);
 
   const openTicketById = useCallback(async (ticketId: string) => {
     setScreen("detail"); setTicketDetailLoading(true); setTicketDetailError(undefined);
@@ -202,11 +229,11 @@ function AppContent() {
     setImageChecking(true); setImageCheckError(undefined); setPhotoAttempt(nextAttempt);
     try {
       const result = await validateReportImage(selectedCategory.id, images[0], nextAttempt);
-      if (result.relevant && result.validationToken) {
+      if (nextScreenAfterPhotoCheck(result) === "location-detect" && result.validationToken) {
         setImageValidationToken(result.validationToken); setScreen("location-detect");
       } else {
         setImageValidationToken(undefined);
-        setFeedback({ message: "This photo doesn’t appear to match the selected issue.", attemptsRemaining: result.attemptsRemaining });
+        setFeedback({ message: photoRejectionMessage(result.reason), attemptsRemaining: result.attemptsRemaining });
         setScreen("feedback");
       }
     } catch (error) {
@@ -241,7 +268,7 @@ function AppContent() {
   else if (screen === "location-detect") content = <LocationDetectScreen onBack={() => setScreen("evidence")} onDetected={(next) => { setLocation(next); setScreen("location-confirm"); }} />;
   else if (screen === "location-confirm" && location) content = <LocationConfirmScreen value={location} onChange={setLocation} onBack={() => setScreen("evidence")} onRetry={() => setScreen("location-detect")} onNext={() => setScreen("review")} />;
   else if (screen === "review" && selectedCategory && images[0] && location) content = <ReviewReportScreen category={selectedCategory} image={images[0]} location={location} submitting={submitting} onBack={() => setScreen("location-confirm")} onSubmit={() => void completeSubmission()} />;
-  else if (screen === "feedback") content = <RetakeScreen attemptsRemaining={feedback.attemptsRemaining} onSelected={(image) => { setImages([image]); setImageValidationToken(undefined); setImageCheckError(undefined); setScreen("evidence"); }} />;
+  else if (screen === "feedback") content = <RetakeScreen attemptsRemaining={feedback.attemptsRemaining} reason={feedback.message || "Please upload a real photo of the civic issue."} onSelected={(image) => { setImages((current) => [image, ...current.slice(1)]); setImageValidationToken(undefined); setImageCheckError(undefined); setScreen("evidence"); }} />;
   else if (screen === "confirmation" && submitted && images[0] && location) content = <ConfirmationScreen ticket={submitted} image={images[0]} location={location} onView={() => void openTicketById(submitted.id)} onDone={resetReport} />;
   else if (screen === "detail" && ticketDetail) content = <TicketDetailScreen ticket={ticketDetail} timeline={ticketTimeline} loading={ticketDetailLoading} error={ticketDetailError} onRefresh={() => void refreshTicket()} onDone={() => openTickets("ongoing")} onRaiseGrievance={() => setScreen("grievance")} />;
   else if (screen === "detail") content = <Shell><View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>{ticketDetailError ?? "Loading ticket details…"}</Text></View></Shell>;

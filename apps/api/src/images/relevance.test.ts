@@ -45,26 +45,38 @@ describe("free-demo relevance", () => {
     ["water-leak-burst-pipe.jpg", waterSupply],
   ])("accepts descriptive seeded-category evidence: %s", async (fileName, categoryId) => {
     expect(await service.checkImageRelevance(`https://images.example.com/${fileName}`, categoryId))
-      .toMatchObject({ pass: true, score: 0.93, reason: "MATCH" });
+      .toMatchObject({ pass: true, score: 1, reason: "MATCH" });
   });
 
-  it.each(["selfie.jpg", "indoor-room.png", "food-and-pet.jpg", "random-screenshot.png"])("rejects unrelated evidence: %s", async (fileName) => {
+  it.each(["selfie.jpg", "portrait.png", "food.jpg", "reaction-meme.webp", "random-screenshot.png", "blank-image.jpg"])("rejects explicitly unrelated evidence: %s", async (fileName) => {
     expect(await service.checkImageRelevance(`https://images.example.com/${fileName}`, roadDamage))
       .toMatchObject({ pass: false, reason: "UNRELATED_CONTENT" });
   });
 
-  it("rejects a relevant civic image filed under the wrong category", async () => {
+  it("does not enforce filename-based category matching in demo mode", async () => {
     expect(await service.checkImageRelevance("https://images.example.com/garbage-pile.jpg", roadDamage))
-      .toMatchObject({ pass: false, reason: "CATEGORY_MISMATCH" });
+      .toMatchObject({ pass: true, reason: "MATCH" });
   });
 
-  it("sends unknown camera filenames to a recoverable low-confidence retake", async () => {
-    const result = await service.checkImageRelevance("https://images.example.com/IMG_2048.jpg", roadDamage);
-    expect(decideImageRelevance(result, 0.6)).toEqual({ relevant: false, confidence: 0.42, reason: "LOW_CONFIDENCE" });
+  it.each(["IMG_1234.jpg", "DSC_1234.jpg", "PXL_20260828.jpg", "camera_001.jpg", "gallery-image-42.jpg"])("accepts an ordinary camera/gallery filename: %s", async (fileName) => {
+    const result = await service.checkImageRelevance(`https://images.example.com/${fileName}`, roadDamage);
+    expect(decideImageRelevance(result, 0.6)).toEqual({ relevant: true, confidence: 1, reason: "MATCH" });
   });
 });
 
 describe("hosted relevance reliability", () => {
+  it("preserves hosted content-analysis decisions and category context", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ pass: false, score: 0.18, reason: "CATEGORY_MISMATCH", embedding: [0.2, 0.8] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new HostedClipRelevanceService("https://clip.example.com/infer", "hosted-token", 5000);
+    await expect(service.checkImageRelevance("https://images.example.com/IMG_1234.jpg", "category-1"))
+      .resolves.toEqual({ pass: false, score: 0.18, reason: "CATEGORY_MISMATCH" });
+    expect(fetchMock).toHaveBeenCalledWith("https://clip.example.com/infer", expect.objectContaining({
+      body: JSON.stringify({ imageUrl: "https://images.example.com/IMG_1234.jpg", categoryId: "category-1" }),
+    }));
+    await expect(service.getImageEmbedding("https://images.example.com/IMG_1234.jpg")).resolves.toEqual([0.2, 0.8]);
+  });
+
   it("aborts an inference request at the configured deadline", async () => {
     vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));

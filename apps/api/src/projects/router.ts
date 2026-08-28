@@ -14,7 +14,7 @@ import { checkProjectConflicts } from "../conflicts/service";
 import { createDependencyRequests, DependencyActionError } from "../dependencies/service";
 import { storageReadUrl, type ImageStorage } from "../images/storage";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
-import { createNotification, createNotifications } from "../notifications/service";
+import { createNotification, createNotifications, requestPushDelivery } from "../notifications/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
 import { completeWorkflowAction, createWorkflowAction } from "../deadlines/service";
 
@@ -234,7 +234,10 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       else if (result.kind === "not-road") response.status(422).json({ error: "Interventions are only available for the configured Road Damage category" });
       else if (result.kind === "segment") response.status(422).json({ error: "Choose a road segment in the ticket ward" });
       else if (result.kind === "refs") response.status(422).json({ error: "Every intervention dependency must reference work on the same road segment" });
-      else response.status(201).json({ project: result.project, dependencies: result.dependencies, conflicts: result.conflicts, roadConflicts: result.roadConflicts });
+      else {
+        requestPushDelivery();
+        response.status(201).json({ project: result.project, dependencies: result.dependencies, conflicts: result.conflicts, roadConflicts: result.roadConflicts });
+      }
     }),
   );
 
@@ -541,7 +544,10 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       });
       if (result.kind === "missing") response.status(404).json({ error: "Completion evidence not found" });
       else if (result.kind === "state") response.status(409).json({ error: `Completion handoff requires COMPLETED/WORK_COMPLETED, found ${result.projectState}/${result.ticketState}` });
-      else response.json({ evidenceId, projectState: ProjectState.AWAITING_VERIFICATION, ticketState: TicketState.AWAITING_CITIZEN_VERIFICATION, validatorsNotified: result.notified });
+      else {
+        requestPushDelivery();
+        response.json({ evidenceId, projectState: ProjectState.AWAITING_VERIFICATION, ticketState: TicketState.AWAITING_CITIZEN_VERIFICATION, validatorsNotified: result.notified });
+      }
     }),
   );
 

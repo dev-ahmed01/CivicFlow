@@ -30,6 +30,100 @@ function encodePath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
 }
 
+function ascii(bytes: Uint8Array, start: number, end: number): string {
+  return String.fromCharCode(...bytes.slice(start, end));
+}
+
+function uint16BigEndian(bytes: Uint8Array, offset: number): number {
+  return ((bytes[offset] ?? 0) << 8) | (bytes[offset + 1] ?? 0);
+}
+
+function uint32BigEndian(bytes: Uint8Array, offset: number): number {
+  return (((bytes[offset] ?? 0) * 0x1000000) + ((bytes[offset + 1] ?? 0) << 16) + ((bytes[offset + 2] ?? 0) << 8) + (bytes[offset + 3] ?? 0)) >>> 0;
+}
+
+function reasonableDimensions(width: number, height: number): boolean {
+  return width >= 160 && height >= 120 && width <= 20_000 && height <= 20_000 && width * height <= 100_000_000;
+}
+
+function jpegDimensions(bytes: Uint8Array): [number, number] | undefined {
+  if (bytes.length < 6 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return undefined;
+  let hasEndMarker = false;
+  for (let offset = Math.max(2, bytes.length - 4096); offset + 1 < bytes.length; offset += 1) {
+    if (bytes[offset] === 0xff && bytes[offset + 1] === 0xd9) { hasEndMarker = true; break; }
+  }
+  if (!hasEndMarker) return undefined;
+  const startOfFrame = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+  let offset = 2;
+  while (offset + 4 <= bytes.length) {
+    if (bytes[offset] !== 0xff) { offset += 1; continue; }
+    while (bytes[offset] === 0xff) offset += 1;
+    const marker = bytes[offset++];
+    if (marker === undefined || marker === 0xd9 || marker === 0xda) break;
+    if (marker === 0x01 || marker >= 0xd0 && marker <= 0xd7) continue;
+    const length = uint16BigEndian(bytes, offset);
+    if (length < 2 || offset + length > bytes.length) return undefined;
+    if (startOfFrame.has(marker) && length >= 7) return [uint16BigEndian(bytes, offset + 5), uint16BigEndian(bytes, offset + 3)];
+    offset += length;
+  }
+  return undefined;
+}
+
+function pngDimensions(bytes: Uint8Array): [number, number] | undefined {
+  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (bytes.length < 33 || !signature.every((byte, index) => bytes[index] === byte)) return undefined;
+  if (uint32BigEndian(bytes, 8) !== 13 || ascii(bytes, 12, 16) !== "IHDR") return undefined;
+  const dimensions: [number, number] = [uint32BigEndian(bytes, 16), uint32BigEndian(bytes, 20)];
+  let offset = 8;
+  let ended = false;
+  while (offset + 12 <= bytes.length) {
+    const length = uint32BigEndian(bytes, offset);
+    const end = offset + 12 + length;
+    if (end > bytes.length) return undefined;
+    const type = ascii(bytes, offset + 4, offset + 8);
+    offset = end;
+    if (type === "IEND") { ended = length === 0; break; }
+  }
+  return ended && offset === bytes.length ? dimensions : undefined;
+}
+
+function webpDimensions(bytes: Uint8Array): [number, number] | undefined {
+  if (bytes.length < 30 || ascii(bytes, 0, 4) !== "RIFF" || ascii(bytes, 8, 12) !== "WEBP") return undefined;
+  const declaredSize = (bytes[4] ?? 0) | (bytes[5] ?? 0) << 8 | (bytes[6] ?? 0) << 16 | (bytes[7] ?? 0) << 24;
+  if ((declaredSize >>> 0) + 8 !== bytes.length) return undefined;
+  const kind = ascii(bytes, 12, 16);
+  if (kind === "VP8X") {
+    const width = 1 + (bytes[24] ?? 0) + ((bytes[25] ?? 0) << 8) + ((bytes[26] ?? 0) << 16);
+    const height = 1 + (bytes[27] ?? 0) + ((bytes[28] ?? 0) << 8) + ((bytes[29] ?? 0) << 16);
+    return [width, height];
+  }
+  if (kind === "VP8L" && bytes[20] === 0x2f) {
+    const bits = (bytes[21] ?? 0) | ((bytes[22] ?? 0) << 8) | ((bytes[23] ?? 0) << 16) | ((bytes[24] ?? 0) << 24);
+    return [(bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1];
+  }
+  if (kind === "VP8 " && bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a) {
+    return [((bytes[26] ?? 0) | (bytes[27] ?? 0) << 8) & 0x3fff, ((bytes[28] ?? 0) | (bytes[29] ?? 0) << 8) & 0x3fff];
+  }
+  return undefined;
+}
+
+function heicDimensions(bytes: Uint8Array): [number, number] | undefined {
+  if (bytes.length < 24 || ascii(bytes, 4, 8) !== "ftyp" || !["heic", "heix", "hevc", "mif1", "msf1"].includes(ascii(bytes, 8, 12))) return undefined;
+  for (let offset = 4; offset + 16 <= bytes.length; offset += 1) {
+    if (ascii(bytes, offset, offset + 4) === "ispe") return [uint32BigEndian(bytes, offset + 8), uint32BigEndian(bytes, offset + 12)];
+  }
+  return undefined;
+}
+
+export function inspectImageBytes(bytes: Uint8Array, contentType: string): boolean {
+  let dimensions: [number, number] | undefined;
+  if (contentType === "image/jpeg") dimensions = jpegDimensions(bytes);
+  else if (contentType === "image/png") dimensions = pngDimensions(bytes);
+  else if (contentType === "image/webp") dimensions = webpDimensions(bytes);
+  else if (contentType === "image/heic") dimensions = heicDimensions(bytes);
+  return Boolean(dimensions && reasonableDimensions(dimensions[0], dimensions[1]));
+}
+
 function hasExpectedSignature(bytes: Uint8Array, contentType: string): boolean {
   const ascii = (start: number, end: number) => String.fromCharCode(...bytes.slice(start, end));
   if (contentType === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
@@ -38,6 +132,16 @@ function hasExpectedSignature(bytes: Uint8Array, contentType: string): boolean {
   if (contentType === "image/heic") return ascii(4, 8) === "ftyp" && ["heic", "heix", "hevc", "mif1", "msf1"].includes(ascii(8, 12));
   if (contentType === "application/pdf") return ascii(0, 5) === "%PDF-";
   return false;
+}
+
+export function inspectUploadBytes(bytes: Uint8Array, contentType: string): boolean {
+  const normalizedType = contentType.toLowerCase();
+  if (!hasExpectedSignature(bytes, normalizedType)) return false;
+  if (normalizedType === "application/pdf") {
+    const tailStart = Math.max(0, bytes.length - 4096);
+    return ascii(bytes, tailStart, bytes.length).includes("%%EOF");
+  }
+  return inspectImageBytes(bytes, normalizedType);
 }
 
 export class S3CompatibleStorage implements ImageStorage {
@@ -98,9 +202,10 @@ export class S3CompatibleStorage implements ImageStorage {
         && length > 0
         && length <= 20 * 1024 * 1024;
       if (!metadataValid) return false;
-      const sample = await this.request(this.sign("GET", objectKey), { headers: { Range: "bytes=0-15" } });
-      if (!sample.ok) return false;
-      return hasExpectedSignature(new Uint8Array(await sample.arrayBuffer()), contentType.toLowerCase());
+      const image = await this.request(this.sign("GET", objectKey));
+      if (!image.ok) return false;
+      const bytes = new Uint8Array(await image.arrayBuffer());
+      return bytes.length === length && inspectUploadBytes(bytes, contentType);
     } catch {
       return false;
     }

@@ -94,12 +94,16 @@ export async function createDependencyRequests(
   await createNotifications(client, requests.flatMap(({ id, input, deadline }) => recipients
     .filter((recipient) => recipient.agencyId === input.respondingAgencyId)
     .map(({ id: userId }) => ({ userId, type: "DEPENDENCY_REQUEST", payload: { dependencyId: id, projectId, deadline: deadline.toISOString() } }))));
+  const project = await client.project.findUniqueOrThrow({ where: { id: projectId }, select: { ticketId: true } });
   for (const request of requests) {
     const responsibleUserId = await firstResponsibleUser(client, request.input.respondingAgencyId, [UserRole.PROJECT_HEAD, UserRole.ENGINEER]);
-    if (responsibleUserId) await createWorkflowAction(client, {
+    // Standalone coordination projects have no Ticket relation. Their
+    // dependency deadline/escalation remains authoritative, while the generic
+    // WorkflowAction ledger is created only for ticket-backed work.
+    if (responsibleUserId && project.ticketId) await createWorkflowAction(client, {
       dedupeKey: `dependency:${request.id}:respond:${request.deadline.toISOString()}`,
       type: WorkflowActionType.RESPOND_DEPENDENCY,
-      ticketId: (await client.project.findUniqueOrThrow({ where: { id: projectId }, select: { ticketId: true } })).ticketId!,
+      ticketId: project.ticketId,
       projectId,
       dependencyId: request.id,
       responsibleUserId,

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { notificationPresentation } from "@civicos/shared";
 import { prisma, UserRole } from "db";
-import { createNotifications, runPushDeliveryJob, type ExpoPushMessage, type PushGateway } from "../src/notifications/service";
+import { createNotifications, startPushDeliveryScheduler, stopPushDeliveryScheduler, type ExpoPushMessage, type PushGateway } from "../src/notifications/service";
 
 const marker = { phase9Acceptance: true };
-const citizenToken = "ExpoPushToken[phase9-citizen-device]";
-const engineerToken = "ExpoPushToken[phase9-engineer-device]";
+const citizenTokens = ["ExpoPushToken[phase9-citizen-device-1]", "ExpoPushToken[phase9-citizen-device-2]"];
+const engineerTokens = ["ExpoPushToken[phase9-engineer-device-1]", "ExpoPushToken[phase9-engineer-device-2]"];
+const allTokens = [...citizenTokens, ...engineerTokens];
 
 class RecordingGateway implements PushGateway {
   readonly messages: ExpoPushMessage[] = [];
@@ -22,13 +23,17 @@ async function main() {
     prisma.user.findFirstOrThrow({ where: { role: UserRole.PROJECT_HEAD }, select: { id: true } }),
   ]);
   await prisma.notification.deleteMany({ where: { payload: { path: ["phase9Acceptance"], equals: true } } });
-  await prisma.pushToken.deleteMany({ where: { token: { in: [citizenToken, engineerToken] } } });
+  await prisma.pushToken.deleteMany({ where: { token: { in: allTokens } } });
 
+  let scheduler: NodeJS.Timeout | undefined;
   try {
     await prisma.pushToken.createMany({ data: [
-      { userId: citizen.id, token: citizenToken, platform: "android" },
-      { userId: engineer.id, token: engineerToken, platform: "android" },
+      ...citizenTokens.map((token) => ({ userId: citizen.id, token, platform: "android" })),
+      ...engineerTokens.map((token) => ({ userId: engineer.id, token, platform: "android" })),
     ] });
+    const gateway = new RecordingGateway();
+    scheduler = startPushDeliveryScheduler(gateway, 3_600);
+    const dispatchStartedAt = Date.now();
     await createNotifications(prisma, [
       { userId: citizen.id, type: "VALIDATION_REQUEST", payload: { ...marker, ticketId: crypto.randomUUID() } },
       { userId: projectHead.id, type: "DEPENDENCY_ESCALATED", payload: { ...marker, dependencyId: crypto.randomUUID(), projectId: crypto.randomUUID() } },
@@ -37,8 +42,15 @@ async function main() {
       { userId: citizen.id, type: "COMPLETION_VERIFICATION_REQUEST", payload: { ...marker, ticketId: crypto.randomUUID(), projectId: crypto.randomUUID(), evidenceId: crypto.randomUUID() } },
     ]);
 
-    const gateway = new RecordingGateway();
-    const delivery = await runPushDeliveryJob(gateway);
+    let deliveredMarkerCount = 0;
+    while (Date.now() - dispatchStartedAt < 2_000) {
+      deliveredMarkerCount = await prisma.notificationPushDelivery.count({
+        where: { status: "DELIVERED", notification: { payload: { path: ["phase9Acceptance"], equals: true } } },
+      });
+      if (deliveredMarkerCount === 8) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const dispatchLatencyMs = Date.now() - dispatchStartedAt;
     const rows = await prisma.notification.findMany({
       where: { payload: { path: ["phase9Acceptance"], equals: true } },
       include: { user: { select: { role: true } }, pushDeliveries: true },
@@ -46,8 +58,12 @@ async function main() {
     });
     assert.equal(rows.length, 5);
     assert.equal(rows.filter((item) => item.user.role === UserRole.PROJECT_HEAD && item.pushDeliveries.length === 0).length, 1, "Project Head delivery is in-app only");
-    assert.equal(rows.filter((item) => (item.user.role === UserRole.CITIZEN || item.user.role === UserRole.ENGINEER) && item.pushDeliveries[0]?.status === "DELIVERED").length, 4);
-    assert.equal(gateway.messages.filter((item) => item.data.phase9Acceptance === true).length, 4);
+    const mobileRows = rows.filter((item) => item.user.role === UserRole.CITIZEN || item.user.role === UserRole.ENGINEER);
+    assert.equal(mobileRows.length, 4);
+    assert.equal(mobileRows.every((item) => item.pushDeliveries.length === 2 && item.pushDeliveries.every((delivery) => delivery.status === "DELIVERED")), true, "Every active device token must receive each user notification");
+    assert.equal(gateway.messages.filter((item) => item.data.phase9Acceptance === true).length, 8);
+    assert.equal(deliveredMarkerCount, 8);
+    assert.equal(dispatchLatencyMs < 2_000, true, "Committed mobile notifications must wake delivery without waiting for the safety poll");
     assert.equal(notificationPresentation("CONFLICT_DETECTED").tone, "warning", "Conflict notification must remain amber");
 
     const unreadBefore = await prisma.notification.count({ where: { userId: citizen.id, read: false, payload: { path: ["phase9Acceptance"], equals: true } } });
@@ -55,10 +71,12 @@ async function main() {
     await prisma.notification.updateMany({ where: { userId: citizen.id, payload: { path: ["phase9Acceptance"], equals: true } }, data: { read: true } });
     const unreadAfter = await prisma.notification.count({ where: { userId: citizen.id, read: false, payload: { path: ["phase9Acceptance"], equals: true } } });
     assert.equal(unreadAfter, 0);
-    console.log(`Phase 9 acceptance verified: 5 event types, ${delivery.delivered} Expo deliveries, Project Head in-app delivery, amber conflicts, and authoritative unread clearing.`);
+    console.log(`Phase 9 acceptance verified: 5 event types, 8 Expo deliveries to two devices per mobile user dispatched in ${dispatchLatencyMs}ms, Project Head in-app delivery, amber conflicts, and authoritative unread clearing.`);
   } finally {
+    if (scheduler) stopPushDeliveryScheduler(scheduler);
+    await new Promise((resolve) => setTimeout(resolve, 100));
     await prisma.notification.deleteMany({ where: { payload: { path: ["phase9Acceptance"], equals: true } } });
-    await prisma.pushToken.deleteMany({ where: { token: { in: [citizenToken, engineerToken] } } });
+    await prisma.pushToken.deleteMany({ where: { token: { in: allTokens } } });
     await prisma.$disconnect();
   }
 }

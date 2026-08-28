@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { EngineerProjectDetail, ProjectConflict, ProjectListItem, ProjectState } from "@civicos/shared";
 import * as ImagePicker from "expo-image-picker";
-import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   internalLogin,
   loadAgencies,
@@ -20,9 +20,10 @@ import {
 import { MobileTabBar, PrimaryButton, ScreenHeader, SecondaryButton, TicketCard, type MobileTab } from "./components";
 import { EngineerDependenciesApp } from "./engineer-dependencies";
 import { Shell } from "./screens";
+import { useResponsiveMetrics } from "./screen-shell";
 import { internal as colors } from "./theme";
 import { NotificationsScreen } from "./notifications";
-import { registerForPushNotifications, subscribeToPushNavigation } from "./push-notifications";
+import { registerForPushNotifications, subscribeToPushNavigation, subscribeToPushReceipt } from "./push-notifications";
 
 type EngineerScreen = "dashboard" | "mine" | "assigned" | "detail" | "timeline" | "geographic" | "completion" | "dependencies" | "notifications" | "profile";
 
@@ -50,6 +51,7 @@ export function EngineerLoginScreen({ onLogin, onCancel }: { onLogin: (auth: Cur
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const { horizontalPadding } = useResponsiveMetrics();
   const submit = async () => {
     setBusy(true);
     setError(undefined);
@@ -68,7 +70,7 @@ export function EngineerLoginScreen({ onLogin, onCancel }: { onLogin: (auth: Cur
     catch (caught) { setError(errorMessage(caught)); }
     finally { setBusy(false); }
   };
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow="Executive Engineer" title={resetRequired ? "Choose a new password" : "Sign in to field operations"} onBack={resetRequired ? () => setResetRequired(false) : onCancel} /><Text style={styles.intro}>{resetRequired ? "This account uses a temporary password. Set a new password before continuing." : "Your role and agency scope are detected from your account after sign-in."}</Text>{resetRequired ? <><TextInput accessibilityLabel="New password" secureTextEntry value={newPassword} onChangeText={setNewPassword} placeholder="At least 12 characters" placeholderTextColor={colors.muted} style={styles.input} /><TextInput accessibilityLabel="Confirm new password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm new password" placeholderTextColor={colors.muted} style={styles.input} /></> : <><TextInput accessibilityLabel="Work email" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} placeholder="Work email" placeholderTextColor={colors.muted} style={styles.input} /><TextInput accessibilityLabel="Password" secureTextEntry value={password} onChangeText={setPassword} placeholder="Password" placeholderTextColor={colors.muted} style={styles.input} /></>}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (resetRequired ? newPassword.length < 12 || confirmPassword.length < 12 : !email || !password)} onPress={() => void (resetRequired ? reset() : submit())}>{busy ? "Please wait…" : resetRequired ? "Set new password" : "Sign in"}</PrimaryButton></ScrollView></Shell>;
+  return <Shell includeBottom><ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: horizontalPadding }]} keyboardShouldPersistTaps="handled"><ScreenHeader eyebrow="Executive Engineer" title={resetRequired ? "Choose a new password" : "Sign in to field operations"} onBack={resetRequired ? () => setResetRequired(false) : onCancel} /><Text style={styles.intro}>{resetRequired ? "This account uses a temporary password. Set a new password before continuing." : "Your role and agency scope are detected from your account after sign-in."}</Text>{resetRequired ? <><TextInput accessibilityLabel="New password" secureTextEntry value={newPassword} onChangeText={setNewPassword} placeholder="At least 12 characters" placeholderTextColor={colors.muted} style={styles.input} /><TextInput accessibilityLabel="Confirm new password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm new password" placeholderTextColor={colors.muted} style={styles.input} /></> : <><TextInput accessibilityLabel="Work email" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} placeholder="Work email" placeholderTextColor={colors.muted} style={styles.input} /><TextInput accessibilityLabel="Password" secureTextEntry value={password} onChangeText={setPassword} placeholder="Password" placeholderTextColor={colors.muted} style={styles.input} /></>}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (resetRequired ? newPassword.length < 12 || confirmPassword.length < 12 : !email || !password)} onPress={() => void (resetRequired ? reset() : submit())}>{busy ? "Please wait…" : resetRequired ? "Set new password" : "Sign in"}</PrimaryButton></ScrollView></Shell>;
 }
 
 function ProjectCard({ project, canEdit, onOpen, onAccept }: { project: ProjectListItem; canEdit: boolean; onOpen: () => void; onAccept?: () => void }) {
@@ -126,13 +128,13 @@ function CompletionScreen({ projectId, onBack, onSubmitted }: { projectId: strin
   const [busy, setBusy] = useState(false);
   const pick = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) { Alert.alert("Camera permission needed", "Enable camera access in Android settings to add completion evidence."); return; }
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.85 });
     if (!result.canceled) {
       const asset = result.assets[0];
       if (!asset) return;
       const extension = asset.uri.split(".").pop()?.toLowerCase();
-      const contentType: LocalImage["contentType"] = asset.mimeType === "image/png" || extension === "png" ? "image/png" : asset.mimeType === "image/webp" || extension === "webp" ? "image/webp" : asset.mimeType === "image/heic" || extension === "heic" ? "image/heic" : "image/jpeg";
+      const contentType: LocalImage["contentType"] = asset.mimeType === "image/png" || extension === "png" ? "image/png" : asset.mimeType === "image/webp" || extension === "webp" ? "image/webp" : asset.mimeType === "image/heic" || asset.mimeType === "image/heif" || extension === "heic" || extension === "heif" ? "image/heic" : "image/jpeg";
       setImage({ uri: asset.uri, fileName: asset.fileName ?? `completion-${Date.now()}.${extension ?? "jpg"}`, contentType });
     }
   };
@@ -157,7 +159,7 @@ function ProjectDetailScreen({ projectId, onBack, onTimeline, onCompletion }: { 
   const update = async (complete = false) => { try { await updateProjectStatus(projectId, { state: complete ? "COMPLETED" : undefined, note: note.trim() || undefined }); setNote(""); await refresh(); } catch (caught) { Alert.alert("Couldn't update project", errorMessage(caught)); } };
   if (loading && !project) return <Shell><ActivityIndicator style={styles.loader} color={colors.primary} /></Shell>;
   if (!project) return <Shell><View style={styles.content}><ScreenHeader title="Project" onBack={onBack} /><Text style={styles.error}>{error}</Text></View></Shell>;
-  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow={project.editable ? "Owned project" : "Geographic project · Read-only"} title={project.ticket?.title ?? "Project detail"} onBack={onBack} /><Text style={styles.chip}>{stateLabel(project.state)}</Text><View style={styles.card}><Text style={styles.kicker}>Ticket context</Text><Text style={styles.cardTitle}>{project.ticket?.category.name ?? "Category unavailable"}</Text><Text style={styles.meta}>{project.ticket?.address}</Text><Text style={styles.meta}>{project.ticket?.ward.name} · {project.agency.name}</Text></View><View style={styles.card}><Text style={styles.kicker}>Inspection report</Text>{project.ticket?.inspectionReports.length ? project.ticket.inspectionReports.map((report) => <View key={report.id}><Text style={styles.bodyText}>{report.notes}</Text><Text style={styles.meta}>{report.contentType}</Text></View>) : <Text style={styles.meta}>No uploaded inspection report.</Text>}</View><View style={styles.card}><Text style={styles.kicker}>Dependencies</Text>{project.dependencies.length ? project.dependencies.map((dependency) => <Text key={dependency.id} style={styles.bodyText}>{dependency.respondingAgency.name}: {dependency.requirement} ({stateLabel(dependency.state as ProjectState)})</Text>) : <Text style={styles.meta}>No dependencies recorded.</Text>}</View>{project.workDescription ? <View style={styles.card}><Text style={styles.kicker}>Execution</Text><Text style={styles.bodyText}>{project.workDescription}</Text><Text style={styles.meta}>{project.plannedStart ? new Date(project.plannedStart).toLocaleDateString() : "—"} – {project.plannedEnd ? new Date(project.plannedEnd).toLocaleDateString() : "—"}</Text></View> : null}{project.editable && project.state === "PENDING_UPTAKE" ? <PrimaryButton onPress={() => void accept()}>Accept / Uptake</PrimaryButton> : null}{project.editable && ["UPTAKEN", "ACTIVE", "MODIFIED"].includes(project.state) ? <SecondaryButton onPress={() => onTimeline(project)}>Edit timeline</SecondaryButton> : null}{project.editable && project.state === "ACTIVE" ? <><TextInput accessibilityLabel="Work note" multiline value={note} onChangeText={setNote} placeholder="Add a field update" placeholderTextColor={colors.muted} style={[styles.input, styles.textarea]}><Text /></TextInput><SecondaryButton onPress={() => void update(false)}>Add work note</SecondaryButton><PrimaryButton onPress={() => void update(true)}>Mark work completed</PrimaryButton></> : null}{project.editable && project.state === "COMPLETED" ? <PrimaryButton onPress={onCompletion}>Add completion evidence</PrimaryButton> : null}{!project.editable ? <Text style={styles.readOnly}>You can view this area project, but only its assigned engineer may edit it.</Text> : null}</ScrollView></Shell>;
+  return <Shell><ScrollView contentContainerStyle={styles.content}><ScreenHeader eyebrow={project.editable ? "Owned project" : "Geographic project · Read-only"} title={project.ticket?.title ?? "Project detail"} onBack={onBack} /><Text style={styles.chip}>{stateLabel(project.state)}</Text><View style={styles.card}><Text style={styles.kicker}>Ticket context</Text><Text style={styles.cardTitle}>{project.ticket?.category.name ?? "Category unavailable"}</Text><Text style={styles.meta}>{project.ticket?.address}</Text><Text style={styles.meta}>{project.ticket?.ward.name} · {project.agency.name}</Text></View><View style={styles.card}><Text style={styles.kicker}>Inspection report</Text>{project.ticket?.inspectionReports.length ? project.ticket.inspectionReports.map((report) => <View key={report.id}><Text style={styles.bodyText}>{report.notes}</Text><Text style={styles.meta}>{report.contentType}</Text></View>) : <Text style={styles.meta}>No uploaded inspection report.</Text>}</View><View style={styles.card}><Text style={styles.kicker}>Dependencies</Text>{project.dependencies.length ? project.dependencies.map((dependency) => <Text key={dependency.id} style={styles.bodyText}>{dependency.respondingAgency.name}: {dependency.requirement} ({stateLabel(dependency.state as ProjectState)})</Text>) : <Text style={styles.meta}>No dependencies recorded.</Text>}</View>{project.workDescription ? <View style={styles.card}><Text style={styles.kicker}>Execution</Text><Text style={styles.bodyText}>{project.workDescription}</Text><Text style={styles.meta}>{project.plannedStart ? new Date(project.plannedStart).toLocaleDateString() : "—"} – {project.plannedEnd ? new Date(project.plannedEnd).toLocaleDateString() : "—"}</Text></View> : null}{project.editable && project.state === "PENDING_UPTAKE" ? <PrimaryButton onPress={() => void accept()}>Accept / Uptake</PrimaryButton> : null}{project.editable && ["UPTAKEN", "ACTIVE", "MODIFIED"].includes(project.state) ? <SecondaryButton onPress={() => onTimeline(project)}>Edit timeline</SecondaryButton> : null}{project.editable && project.state === "ACTIVE" ? <><TextInput accessibilityLabel="Work note" multiline value={note} onChangeText={setNote} placeholder="Add a field update" placeholderTextColor={colors.muted} style={[styles.input, styles.textarea]} /><SecondaryButton onPress={() => void update(false)}>Add work note</SecondaryButton><PrimaryButton onPress={() => void update(true)}>Mark work completed</PrimaryButton></> : null}{project.editable && project.state === "COMPLETED" ? <PrimaryButton onPress={onCompletion}>Add completion evidence</PrimaryButton> : null}{!project.editable ? <Text style={styles.readOnly}>You can view this area project, but only its assigned engineer may edit it.</Text> : null}</ScrollView></Shell>;
 }
 
 function EngineerProfileScreen({ auth, onLogout }: { auth: CurrentAuth; onLogout: () => void }) {
@@ -165,6 +167,7 @@ function EngineerProfileScreen({ auth, onLogout }: { auth: CurrentAuth; onLogout
 }
 
 export function EngineerProjectsApp({ auth, onLogout }: { auth: CurrentAuth; onLogout: () => void }) {
+  const { narrow } = useResponsiveMetrics();
   const [screen, setScreen] = useState<EngineerScreen>("dashboard");
   const [projectId, setProjectId] = useState<string>();
   const [timelineProject, setTimelineProject] = useState<EngineerProjectDetail>();
@@ -176,6 +179,19 @@ export function EngineerProjectsApp({ auth, onLogout }: { auth: CurrentAuth; onL
     poll();
     const timer = setInterval(poll, 30_000);
     return () => { active = false; clearInterval(timer); };
+  }, [auth.userId]);
+  useEffect(() => {
+    const refreshUnread = () => {
+      void loadNotifications(true).then((result) => setNotificationUnread(result.unreadCount)).catch(() => undefined);
+    };
+    const unsubscribePush = subscribeToPushReceipt(refreshUnread);
+    const appState = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshUnread();
+    });
+    return () => {
+      unsubscribePush();
+      appState.remove();
+    };
   }, [auth.userId]);
   const openProject = (id: string) => { setProjectId(id); setScreen("detail"); };
   const openNotification = (notification: MobileNotification) => {
@@ -198,11 +214,11 @@ export function EngineerProjectsApp({ auth, onLogout }: { auth: CurrentAuth; onL
   if (screen === "detail" && projectId) return withNavigation(<ProjectDetailScreen projectId={projectId} onBack={() => setScreen("dashboard")} onTimeline={(project) => { setTimelineProject(project); setScreen("timeline"); }} onCompletion={() => setScreen("completion")} />);
   if (screen === "timeline" && timelineProject) return withNavigation(<TimelineScreen project={timelineProject} onBack={() => setScreen("detail")} onSaved={() => setScreen("detail")} />);
   if (screen === "completion" && projectId) return withNavigation(<CompletionScreen projectId={projectId} onBack={() => setScreen("detail")} onSubmitted={() => { Alert.alert("Submitted", "The original citizen validators have been notified."); setScreen("detail"); }} />);
-  return withNavigation(<Shell><ScrollView contentContainerStyle={styles.content}><View style={styles.headerRow}><View><Text style={styles.kicker}>Executive Engineer</Text><Text style={styles.heading}>Field operations</Text></View><Pressable onPress={onLogout}><Text style={styles.logout}>Sign out</Text></Pressable></View><Text style={styles.intro}>Accept assigned work, set execution timelines, coordinate dependencies, and submit completion evidence.</Text><View style={styles.dashboardGrid}><Pressable onPress={() => setScreen("mine")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>◷</Text><Text style={styles.cardTitle}>My projects</Text><Text style={styles.meta}>Ongoing work and updates</Text></Pressable><Pressable onPress={() => setScreen("assigned")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>↓</Text><Text style={styles.cardTitle}>Assigned work</Text><Text style={styles.meta}>Uptake queue</Text></Pressable><Pressable onPress={() => setScreen("geographic")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>⌖</Text><Text style={styles.cardTitle}>Area projects</Text><Text style={styles.meta}>Filterable list view</Text></Pressable><Pressable onPress={() => setScreen("dependencies")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>↔</Text><Text style={styles.cardTitle}>Dependencies</Text><Text style={styles.meta}>Agency coordination</Text></Pressable><Pressable onPress={() => setScreen("notifications")} style={styles.dashboardCard}><Text style={styles.dashboardIcon}>♢</Text><Text style={styles.cardTitle}>Notifications{notificationUnread > 0 ? ` (${notificationUnread})` : ""}</Text><Text style={styles.meta}>Assignments, conflicts, and completion</Text></Pressable></View></ScrollView></Shell>);
+  return withNavigation(<Shell><ScrollView contentContainerStyle={styles.content}><View style={styles.headerRow}><View><Text style={styles.kicker}>Executive Engineer</Text><Text style={styles.heading}>Field operations</Text></View><Pressable onPress={onLogout}><Text style={styles.logout}>Sign out</Text></Pressable></View><Text style={styles.intro}>Accept assigned work, set execution timelines, coordinate dependencies, and submit completion evidence.</Text><View style={styles.dashboardGrid}><Pressable onPress={() => setScreen("mine")} style={[styles.dashboardCard, narrow && styles.dashboardCardNarrow]}><Text style={styles.dashboardIcon}>◷</Text><Text style={styles.cardTitle}>My projects</Text><Text style={styles.meta}>Ongoing work and updates</Text></Pressable><Pressable onPress={() => setScreen("assigned")} style={[styles.dashboardCard, narrow && styles.dashboardCardNarrow]}><Text style={styles.dashboardIcon}>↓</Text><Text style={styles.cardTitle}>Assigned work</Text><Text style={styles.meta}>Uptake queue</Text></Pressable><Pressable onPress={() => setScreen("geographic")} style={[styles.dashboardCard, narrow && styles.dashboardCardNarrow]}><Text style={styles.dashboardIcon}>⌖</Text><Text style={styles.cardTitle}>Area projects</Text><Text style={styles.meta}>Filterable list view</Text></Pressable><Pressable onPress={() => setScreen("dependencies")} style={[styles.dashboardCard, narrow && styles.dashboardCardNarrow]}><Text style={styles.dashboardIcon}>↔</Text><Text style={styles.cardTitle}>Dependencies</Text><Text style={styles.meta}>Agency coordination</Text></Pressable><Pressable onPress={() => setScreen("notifications")} style={[styles.dashboardCard, narrow && styles.dashboardCardNarrow]}><Text style={styles.dashboardIcon}>♢</Text><Text style={styles.cardTitle}>Notifications{notificationUnread > 0 ? ` (${notificationUnread})` : ""}</Text><Text style={styles.meta}>Assignments, conflicts, and completion</Text></Pressable></View></ScrollView></Shell>);
 }
 
 const styles = StyleSheet.create({
-  app: { backgroundColor: colors.canvas, flex: 1 }, stage: { flex: 1 }, tabInset: { backgroundColor: colors.canvas, paddingBottom: 8, paddingHorizontal: 12 },
+  app: { backgroundColor: colors.canvas, flex: 1 }, stage: { flex: 1, minWidth: 0 }, tabInset: { backgroundColor: colors.canvas },
   screen: { flex: 1, gap: 12, padding: 20, paddingTop: 28 },
   content: { flexGrow: 1, gap: 16, padding: 22, paddingTop: 30 },
   loader: { flex: 1 },
@@ -212,7 +228,8 @@ const styles = StyleSheet.create({
   intro: { color: colors.muted, fontSize: 16, lineHeight: 23 },
   logout: { color: colors.primary, fontWeight: "500" },
   dashboardGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  dashboardCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 12, borderWidth: 1, gap: 7, minHeight: 140, padding: 17, width: "47%" },
+  dashboardCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 12, borderWidth: 1, flexGrow: 1, gap: 7, minHeight: 140, minWidth: 145, padding: 17, width: "47%" },
+  dashboardCardNarrow: { minHeight: 110, width: "100%" },
   dashboardIcon: { color: colors.primary, fontSize: 22, fontWeight: "500" },
   list: { gap: 12, paddingBottom: 36 },
   card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 12, borderWidth: 1, gap: 12, padding: 17 },
@@ -235,7 +252,7 @@ const styles = StyleSheet.create({
   label: { color: colors.ink, fontSize: 14, fontWeight: "500", marginBottom: -10 },
   error: { color: colors.danger, fontSize: 14 },
   demo: { color: colors.muted, fontSize: 12, textAlign: "center" },
-  photo: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderStyle: "dashed", borderWidth: 2, height: 280, justifyContent: "center", overflow: "hidden" },
+  photo: { alignItems: "center", aspectRatio: 4 / 3, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderStyle: "dashed", borderWidth: 2, justifyContent: "center", maxHeight: 280, overflow: "hidden", width: "100%" },
   photoImage: { height: "100%", width: "100%" },
   photoPrompt: { color: colors.primary, fontSize: 16, fontWeight: "500" },
   conflictBackdrop: { backgroundColor: colors.overlay, flex: 1, justifyContent: "flex-end" },

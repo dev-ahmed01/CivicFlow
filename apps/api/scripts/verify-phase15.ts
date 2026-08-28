@@ -9,6 +9,7 @@ process.env.NODE_ENV = "test";
 process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
 process.env.JWT_ACCESS_SECRET ??= "test-access-secret-that-is-at-least-32-characters";
 process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret-that-is-at-least-32-characters";
+process.env.DEMO_NOTIFY_ALL_CITIZENS = "true";
 
 const titlePrefix = "[Phase 15 multi-user]";
 const password = "CivicOS@123";
@@ -125,6 +126,19 @@ async function main(): Promise<void> {
     const reporter = await citizenLogin(app, reporterId);
     sessionUserIds.add(reporter.userId);
 
+    const imagePresign = await request(app)
+      .post("/tickets/image-relevance")
+      .set("Authorization", bearer(reporter))
+      .send({ action: "presign", categoryId: streetlightCategoryId, fileName: "dark-streetlight.jpg", contentType: "image/jpeg" })
+      .expect(201);
+    const imageCheck = await request(app)
+      .post("/tickets/image-relevance")
+      .set("Authorization", bearer(reporter))
+      .send({ action: "complete", categoryId: streetlightCategoryId, objectKey: imagePresign.body.objectKey, fileName: "dark-streetlight.jpg", contentType: "image/jpeg", attempt: 1 })
+      .expect(200);
+    assert.equal(imageCheck.body.relevant, true);
+    assert.equal(typeof imageCheck.body.validationToken, "string");
+
     const created = await request(app)
       .post("/tickets")
       .set("Authorization", bearer(reporter))
@@ -136,7 +150,7 @@ async function main(): Promise<void> {
         longitude: 77.5844,
         channel: "MOBILE",
         note: "The streetlight is dark and creates a safety risk after sunset.",
-        primaryImage: { fileName: "dark-streetlight.jpg", contentType: "image/jpeg" },
+        primaryImage: { validationToken: imageCheck.body.validationToken },
       })
       .expect(201);
     const draftTicketId = created.body.ticketId as string;
@@ -157,6 +171,18 @@ async function main(): Promise<void> {
     assert.equal(persistedSubmission.state, TicketState.PENDING_VALIDATION);
     assert.equal(persistedSubmission.observations[0]?.images[0]?.uploadedAt instanceof Date, true);
 
+    const eligibleCitizenCount = await prisma.user.count({
+      where: { role: UserRole.CITIZEN, phoneVerifiedAt: { not: null }, id: { not: reporter.userId } },
+    });
+    const [demoInvitationCount, demoNotificationCount, reporterInvitationCount] = await Promise.all([
+      prisma.validationRequest.count({ where: { ticketId } }),
+      prisma.notification.count({ where: { type: "VALIDATION_REQUEST", payload: { path: ["ticketId"], equals: ticketId } } }),
+      prisma.validationRequest.count({ where: { ticketId, citizenId: reporter.userId } }),
+    ]);
+    assert.equal(demoInvitationCount, eligibleCitizenCount, "Demo-wide validation must invite every eligible phone-verified citizen");
+    assert.equal(demoNotificationCount, eligibleCitizenCount, "Every demo-wide invitation must have a notification");
+    assert.equal(reporterInvitationCount, 0, "The reporter must never receive a validation invitation");
+
     const reporterOngoing = await request(app)
       .get("/citizens/me/tickets?filter=ongoing&limit=50")
       .set("Authorization", bearer(reporter))
@@ -164,7 +190,7 @@ async function main(): Promise<void> {
     assert.equal(reporterOngoing.body.tickets.some((ticket: { id: string }) => ticket.id === ticketId), true);
 
     const invitations = await prisma.validationRequest.findMany({
-      where: { ticketId },
+      where: { ticketId, citizen: { passwordHash: { not: null } } },
       orderBy: [{ distanceMeters: "asc" }, { citizenId: "asc" }],
       take: 3,
       select: { citizenId: true },
@@ -334,7 +360,7 @@ async function main(): Promise<void> {
     assert.equal(validators.some(({ userId }) => ticketActors.has(userId)), true);
 
     console.log(
-      "Phase 15 acceptance verified: six real authenticated users, citizen submission, concurrent validator quorum, agency routing, Project Head inspection/assignment, engineer execution, citizen completion verification, persistent notifications, authoritative My Tickets updates, and actor-attributed state history.",
+      `Phase 15 acceptance verified: ${demoInvitationCount} demo-wide citizen invitations, six real authenticated users, relevance-gated submission, concurrent validator quorum, agency routing, Project Head inspection/assignment, engineer execution, citizen completion verification, persistent notifications, authoritative My Tickets updates, and actor-attributed state history.`,
     );
   } finally {
     for (const userId of sessionUserIds) {

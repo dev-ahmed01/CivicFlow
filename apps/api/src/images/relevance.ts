@@ -58,40 +58,18 @@ export class HostedClipRelevanceService implements ImageRelevanceService {
   }
 }
 
-const demoCategoryPatterns: Record<string, RegExp> = {
-  "0001": /pothole|road[-_ ]?damage|damaged[-_ ]?road|broken[-_ ]?road|road[-_ ]?crack|asphalt/,
-  "0002": /street[-_ ]?light|streetlight|lamp[-_ ]?post|light[-_ ]?pole/,
-  "0003": /water[-_ ]?(leak|leakage|supply)|leaking[-_ ]?pipe|burst[-_ ]?pipe|water[-_ ]?infrastructure/,
-  "0004": /drain(age)?|sewage|sewer|manhole/,
-  "0005": /garbage|waste|trash|litter|overflowing[-_ ]?bin|dump/,
-  "0006": /electrical[-_ ]?hazard|exposed[-_ ]?wire|fallen[-_ ]?wire|sparking/,
-  "0007": /public[-_ ]?toilet|toilet|restroom/,
-  "0008": /park|fallen[-_ ]?tree|broken[-_ ]?tree|tree[-_ ]?hazard/,
-  "0009": /stray[-_ ]?(dog|animal|cattle)|street[-_ ]?dog/,
-  "0010": /illegal[-_ ]?construction|unauthorized[-_ ]?building|encroachment/,
-  "0011": /traffic[-_ ]?sign|road[-_ ]?sign|signal|signage/,
-  "0012": /other[-_ ]?civic[-_ ]?issue/,
-};
-const clearlyUnrelated = /selfie|portrait|indoor|bedroom|living[-_ ]?room|food|meal|pet|cat|screenshot|screen[-_ ]?shot|vacation/;
+const clearlyUnrelated = /(?:^|[/_. -])(selfie|portrait|meme|screen[-_ ]?shot|screenshot|food|meal|blank|empty)(?:[/_. -]|$)/;
 
-function categorySuffix(categoryId: string): string {
-  return categoryId.slice(-4);
-}
-
-// Free-demo mode is intentionally filename-driven and deterministic. Curated
-// demo evidence must use descriptive filenames; unknown camera filenames are
-// sent to retake instead of being falsely treated as measured visual AI.
+// Part III §8.1 — free-demo mode is a conservative, deterministic gate after
+// storage integrity validation. It never claims to inspect image pixels or
+// infer a civic category from a filename. Ordinary camera/gallery names pass;
+// only filenames that explicitly identify clearly unsuitable evidence fail.
 export class DevelopmentRelevanceService implements ImageRelevanceService {
   async checkImageRelevance(imageUrl: string, categoryId: string): Promise<ImageRelevanceResult> {
+    void categoryId; // Category matching is intentionally disabled in free-demo mode.
     const normalized = decodeURIComponent(imageUrl).toLowerCase();
     if (clearlyUnrelated.test(normalized)) return { score: 0.04, pass: false, reason: "UNRELATED_CONTENT" };
-    const selected = categorySuffix(categoryId);
-    const selectedPattern = demoCategoryPatterns[selected];
-    if (selectedPattern?.test(normalized)) return { score: 0.93, pass: true, reason: "MATCH" };
-    const otherCategoryMatched = Object.entries(demoCategoryPatterns)
-      .some(([suffix, pattern]) => suffix !== selected && pattern.test(normalized));
-    if (otherCategoryMatched) return { score: 0.12, pass: false, reason: "CATEGORY_MISMATCH" };
-    return { score: 0.42, pass: false, reason: "LOW_CONFIDENCE" };
+    return { score: 1, pass: true, reason: "MATCH" };
   }
 
   async getImageEmbedding(imageUrl: string): Promise<number[]> {

@@ -11,6 +11,8 @@ export type NotificationInput = {
 export type ExpoPushMessage = {
   to: string;
   sound: "default";
+  channelId: "city-connect-updates";
+  priority: "high";
   title: "City Connect";
   body: string;
   data: Record<string, unknown>;
@@ -22,6 +24,22 @@ export type ExpoPushResult =
 
 export interface PushGateway {
   send(messages: ExpoPushMessage[]): Promise<ExpoPushResult[]>;
+}
+
+let wakePushDelivery: (() => void) | undefined;
+let cancelPushDeliveryWake: (() => void) | undefined;
+
+// Notifications are persisted transactionally first. The server scheduler
+// installs this wake-up hook so committed rows do not wait for the safety poll.
+export function requestPushDelivery(): void {
+  wakePushDelivery?.();
+}
+
+export function stopPushDeliveryScheduler(timer: NodeJS.Timeout): void {
+  clearInterval(timer);
+  cancelPushDeliveryWake?.();
+  cancelPushDeliveryWake = undefined;
+  wakePushDelivery = undefined;
 }
 
 export class ExpoPushGateway implements PushGateway {
@@ -50,6 +68,7 @@ export class ExpoPushGateway implements PushGateway {
 export async function createNotifications(client: NotificationClient, inputs: NotificationInput[]): Promise<number> {
   if (inputs.length === 0) return 0;
   const result = await client.notification.createMany({ data: inputs });
+  requestPushDelivery();
   return result.count;
 }
 
@@ -67,6 +86,8 @@ export function buildExpoPushMessage(input: {
   return {
     to: input.token,
     sound: "default",
+    channelId: "city-connect-updates",
+    priority: "high",
     title: "City Connect",
     body: notificationPresentation(input.notification.type).message,
     data: { notificationId: input.notification.id, type: input.notification.type, ...payload },
@@ -159,12 +180,41 @@ export async function runPushDeliveryJob(
 
 export function startPushDeliveryScheduler(gateway: PushGateway, intervalSeconds: number): NodeJS.Timeout {
   let running = false;
+  let wakeTimer: NodeJS.Timeout | undefined;
+  let rerunRequested = false;
+  let stopped = false;
   const run = () => {
-    if (running) return;
+    if (stopped) return;
+    if (running) {
+      rerunRequested = true;
+      return;
+    }
     running = true;
     void runPushDeliveryJob(gateway)
       .catch((error: unknown) => console.error("Push delivery job failed", error))
-      .finally(() => { running = false; });
+      .finally(() => {
+        running = false;
+        if (rerunRequested) {
+          rerunRequested = false;
+          wakePushDelivery?.();
+        }
+      });
+  };
+  wakePushDelivery = () => {
+    if (stopped || wakeTimer) return;
+    // Let the surrounding Prisma transaction commit and collapse one recipient
+    // batch into one Expo request.
+    wakeTimer = setTimeout(() => {
+      wakeTimer = undefined;
+      run();
+    }, 100);
+    wakeTimer.unref();
+  };
+  cancelPushDeliveryWake = () => {
+    stopped = true;
+    rerunRequested = false;
+    if (wakeTimer) clearTimeout(wakeTimer);
+    wakeTimer = undefined;
   };
   run();
   const timer = setInterval(run, intervalSeconds * 1000);

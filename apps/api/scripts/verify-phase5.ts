@@ -4,6 +4,7 @@ import request from "supertest";
 import { DependencyState, ProjectState, prisma } from "db";
 import { createApp } from "../src/app";
 import { runDependencyEscalationJob } from "../src/dependencies/service";
+import { DEFAULT_RESPONSE_WINDOW_MS } from "../src/deadlines/service";
 import type { ImageStorage } from "../src/images/storage";
 
 process.env.NODE_ENV = "test";
@@ -51,7 +52,7 @@ async function createDependency(app: ReturnType<typeof createApp>, pwdToken: str
   const dependency = response.body.dependencies[0] as { id: string; state: string; createdAt: string; deadline: string };
   assert.equal(dependency.state, DependencyState.PENDING_RESPONSE);
   const responseWindow = new Date(dependency.deadline).getTime() - new Date(dependency.createdAt).getTime();
-  assert.ok(Math.abs(responseWindow - 48 * 60 * 60 * 1000) < 2_000);
+  assert.ok(Math.abs(responseWindow - DEFAULT_RESPONSE_WINDOW_MS) < 2_000);
   const transitions = await prisma.dependencyStateTransition.findMany({ where: { dependencyId: dependency.id }, orderBy: { createdAt: "asc" } });
   assert.deepEqual(transitions.map(({ toState }) => toState), [DependencyState.REQUESTED, DependencyState.PENDING_RESPONSE]);
   return { id: dependency.id, projectId };
@@ -120,7 +121,7 @@ async function main(): Promise<void> {
     await request(app).post(`/dependencies/${overdue.id}/respond`).set("Authorization", `Bearer ${pwdToken}`).send({ action: "MARK_ASSIGNED_OUT_OF_BAND" }).expect(200);
     assert.equal((await prisma.dependency.findUniqueOrThrow({ where: { id: overdue.id } })).state, DependencyState.ASSIGNED);
 
-    console.log("Phase 5 acceptance verified: agency-scoped inbox/outbox, roster assignment reflected in the Engineer portal, assignment notification, all three responses, re-send, Engineer fulfillment, 48-hour escalation with contact details, out-of-band resolution, and terminal not-concerned behavior.");
+    console.log("Phase 5 acceptance verified: agency-scoped inbox/outbox, roster assignment reflected in the Engineer portal, assignment notification, all three responses, re-send, Engineer fulfillment, deadline escalation with contact details, out-of-band resolution, and terminal not-concerned behavior.");
   } finally {
     await cleanup();
     await prisma.$disconnect();

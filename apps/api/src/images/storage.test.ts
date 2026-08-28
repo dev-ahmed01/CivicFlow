@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseEnv } from "../config/env";
-import { S3CompatibleStorage } from "./storage";
+import { inspectImageBytes, inspectUploadBytes, S3CompatibleStorage } from "./storage";
+
+function validJpeg(width = 640, height = 480): Uint8Array {
+  return new Uint8Array([
+    0xff, 0xd8,
+    0xff, 0xc0, 0x00, 0x11, 0x08,
+    height >> 8, height & 0xff, width >> 8, width & 0xff,
+    0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00,
+    0xff, 0xd9,
+  ]);
+}
 
 describe("Cloudflare R2 compatibility", () => {
   it("signs an R2 path-style PUT without changing the storage contract", () => {
@@ -55,15 +65,46 @@ describe("Cloudflare R2 compatibility", () => {
       CLIP_MODE: "demo_deterministic",
       CORS_ORIGINS: "https://civicos-demo.vercel.app",
     });
+    const jpeg = validJpeg();
     const request = vi.fn()
-      .mockResolvedValueOnce(new Response(null, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": "1024" } }))
-      .mockResolvedValueOnce(new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), { status: 206 }))
-      .mockResolvedValueOnce(new Response(null, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": "1024" } }));
+      .mockResolvedValueOnce(new Response(null, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }))
+      .mockResolvedValueOnce(new Response(jpeg.buffer as ArrayBuffer, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }));
     const storage = new S3CompatibleStorage(env, () => new Date("2026-08-24T10:00:00.000Z"), request);
 
     await expect(storage.verifyUpload("tickets/example/photo.jpg", "image/jpeg")).resolves.toBe(true);
     await expect(storage.verifyUpload("tickets/example/photo.jpg", "image/png")).resolves.toBe(false);
     expect(request).toHaveBeenCalledWith(expect.stringContaining("X-Amz-Signature="), { method: "HEAD" });
-    expect(request).toHaveBeenCalledWith(expect.stringContaining("X-Amz-Signature="), { headers: { Range: "bytes=0-15" } });
+    expect(request).toHaveBeenCalledWith(expect.stringContaining("X-Amz-Signature="));
+  });
+});
+
+describe("uploaded image integrity", () => {
+  it("accepts a structurally complete image with reasonable dimensions", () => {
+    expect(inspectImageBytes(validJpeg(), "image/jpeg")).toBe(true);
+  });
+
+  it("rejects a corrupted image", () => {
+    expect(inspectImageBytes(validJpeg().slice(0, -2), "image/jpeg")).toBe(false);
+  });
+
+  it("rejects an empty file", () => {
+    expect(inspectImageBytes(new Uint8Array(), "image/jpeg")).toBe(false);
+  });
+
+  it("rejects an unsupported MIME type", () => {
+    expect(inspectImageBytes(validJpeg(), "image/gif")).toBe(false);
+  });
+});
+
+describe("shared upload integrity", () => {
+  it("preserves structurally complete Project Head PDF uploads", () => {
+    const pdf = new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n");
+    expect(inspectUploadBytes(pdf, "application/pdf")).toBe(true);
+  });
+
+  it("rejects a truncated PDF", () => {
+    const pdf = new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<<>>");
+    expect(inspectUploadBytes(pdf, "application/pdf")).toBe(false);
   });
 });

@@ -44,3 +44,10 @@ export function subscribeToPushNavigation(onOpen: (data: PushNavigationData) => 
   void Notifications.getLastNotificationResponseAsync().then((response) => { if (response) handle(response); });
   return () => subscription.remove();
 }
+
+export function subscribeToPushReceipt(onReceive: (data: PushNavigationData) => void): () => void {
+  const subscription = Notifications.addNotificationReceivedListener((notification) => {
+    onReceive(notification.request.content.data as PushNavigationData);
+  });
+  return () => subscription.remove();
+}

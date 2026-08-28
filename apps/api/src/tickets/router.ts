@@ -20,6 +20,7 @@ import { issueValidatedImageToken, verifyValidatedImageToken } from "../images/v
 import { enterPendingValidation } from "../validations/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
 import { routeRelevantWebTicket } from "../routing/service";
+import { requestPushDelivery } from "../notifications/service";
 import { imageCompletionDecision, webAutoRoutingEnabled, type DeploymentProfile } from "./web-routing-policy";
 
 const terminalStates: TicketState[] = [TicketState.RESOLVED, TicketState.CLOSED, TicketState.REJECTED, TicketState.CANCELLED];
@@ -335,7 +336,7 @@ export function createTicketsRouter(
     }
     const expectedPrefix = `preflight/${request.auth!.userId}/`;
     if (!input.objectKey.startsWith(expectedPrefix) || !(await storage.verifyUpload(input.objectKey, input.contentType))) {
-      response.status(422).json({ error: "The uploaded image is missing, empty, too large, or has an unexpected file type." });
+      response.status(422).json({ error: "The image could not be read. Choose a valid photo and try again." });
       return;
     }
     let check;
@@ -603,6 +604,8 @@ export function createTicketsRouter(
       completionDecision,
       request.auth!.userId,
     );
+    // Invitation notifications are committed by finalizeNewTicket at this point.
+    requestPushDelivery();
     const row = await getTicketRow(final.ticketId);
     if (!row) throw new Error("Finalized ticket could not be loaded");
     response.json({ ticket: serializeTicket(row), needsRetake: false });

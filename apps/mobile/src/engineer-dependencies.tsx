@@ -3,6 +3,7 @@ import type { DependencyListItem, DependencyResponse } from "@civicos/shared";
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { loadDependencies, respondToDependency } from "./api";
 import { Shell } from "./screens";
+import { useResponsiveMetrics } from "./screen-shell";
 import { internal as colors } from "./theme";
 
 type Direction = "received" | "sent";
@@ -55,6 +56,7 @@ export function EngineerDependenciesApp({ currentUserId, onBack }: { currentUser
   const [error, setError] = useState<string>();
   const [busyId, setBusyId] = useState<string>();
   const [now, setNow] = useState(Date.now());
+  const { horizontalPadding } = useResponsiveMetrics();
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -83,7 +85,7 @@ export function EngineerDependenciesApp({ currentUserId, onBack }: { currentUser
     } finally { setBusyId(undefined); }
   };
 
-  return <Shell><View style={styles.screen}>
+  return <Shell><View style={[styles.screen, { paddingHorizontal: horizontalPadding }]}>
     <View style={styles.header}>{onBack ? <Pressable accessibilityRole="button" onPress={onBack}><Text style={styles.back}>‹ Back</Text></Pressable> : null}<Text style={styles.eyebrow}>Executive Engineer</Text><Text style={styles.heading}>Dependencies</Text><Text style={styles.intro}>Coordinate work requested by your agency and partner agencies.</Text></View>
     <View style={styles.tabs}>
       {(["received", "sent"] as const).map((item) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: direction === item }} key={item} onPress={() => setDirection(item)} style={[styles.tab, direction === item && styles.tabActive]}><Text style={[styles.tabLabel, direction === item && styles.tabLabelActive]}>{item === "received" ? "Inbox" : "Outbox"}{direction === item ? ` (${visibleCount})` : ""}</Text></Pressable>)}
@@ -107,7 +109,7 @@ const styles = StyleSheet.create({
   tabLabelActive: { color: "white" },
   list: { gap: 12, paddingBottom: 36 },
   card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 12, borderWidth: 1, gap: 12, padding: 17 },
-  cardTop: { alignItems: "flex-start", flexDirection: "row", gap: 10, justifyContent: "space-between" },
+  cardTop: { alignItems: "flex-start", flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "space-between" },
   cardHeading: { flex: 1, gap: 3 },
   ticket: { color: colors.primary, fontSize: 12, fontWeight: "500" },
   title: { color: colors.ink, fontSize: 16, fontWeight: "500" },
