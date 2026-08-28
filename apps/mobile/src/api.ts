@@ -41,7 +41,7 @@ let hydration: Promise<void> | undefined;
 let refreshInFlight: Promise<TokenResponse> | undefined;
 
 type LocalImage = { uri: string; fileName: string; contentType: "image/jpeg" | "image/png" | "image/webp" | "image/heic" };
-type UploadTarget = { uploadUrl: string; headers: { "Content-Type": string } };
+type UploadTarget = { uploadUrl: string; headers: { "Content-Type": string }; diagnostic?: "free_demo" };
 type PhotoFailureStage =
   | "STAGE_PRESIGN"
   | `STAGE_PRESIGN_${number}`
@@ -59,6 +59,31 @@ function uploadHost(uploadUrl: string): string {
 }
 
 type ApiErrorBody = { error?: string; code?: string; diagnostic?: "free_demo" };
+type SafeStorageError = { code: string; message: string };
+
+const safeStorageErrors: Record<string, string> = {
+  SignatureDoesNotMatch: "The storage signature did not match",
+  InvalidSignature: "The storage signature was invalid",
+  InvalidAccessKeyId: "The storage access key was not recognized",
+  AccessDenied: "Storage denied the upload",
+  AuthorizationQueryParametersError: "The storage authorization query was invalid",
+  ExpiredToken: "The storage upload authorization expired",
+  InvalidRequest: "Storage rejected the upload request",
+};
+
+function safeStorageErrorFromBody(body: string): SafeStorageError | undefined {
+  let candidate = /<Code>\s*([A-Za-z0-9]+)\s*<\/Code>/i.exec(body)?.[1];
+  if (!candidate) {
+    try {
+      const parsed = JSON.parse(body) as Record<string, unknown>;
+      const value = parsed.Code ?? parsed.code ?? parsed.error;
+      if (typeof value === "string") candidate = value;
+    } catch { /* Supabase normally returns XML for S3 protocol errors. */ }
+  }
+  if (!candidate) return undefined;
+  const message = safeStorageErrors[candidate];
+  return message ? { code: candidate, message } : undefined;
+}
 
 class ApiHttpError extends Error {
   constructor(
@@ -76,13 +101,15 @@ function photoFailure(stage: PhotoFailureStage, detail?: string): Error {
   return new Error(`Photo upload failed [${stage}]${detail ? ` ${detail}` : ""}`);
 }
 
-function logUploadFailure(target: UploadTarget, stage: PhotoFailureStage, status: number | null): void {
+function logUploadFailure(target: UploadTarget, stage: PhotoFailureStage, status: number | null, storageError?: SafeStorageError): void {
   // Deliberately exclude the signed URL, query string, local URI, and native error.
   console.warn("[City Connect] Photo upload failed", {
     status,
     contentType: target.headers["Content-Type"],
     host: uploadHost(target.uploadUrl),
     stage,
+    storageCode: storageError?.code ?? null,
+    storageMessage: storageError?.message ?? null,
   });
 }
 
@@ -319,6 +346,7 @@ export async function uploadFile(target: UploadTarget, image: LocalImage): Promi
   let stagedUri: string | undefined;
   let stage: PhotoFailureStage = "STAGE_LOCAL_FILE_READ";
   let failure: Error | undefined;
+  let storageError: SafeStorageError | undefined;
   try {
     if (signedContentType.toLowerCase() !== image.contentType.toLowerCase()) {
       stage = "STAGE_CONTENT_TYPE";
@@ -349,11 +377,12 @@ export async function uploadFile(target: UploadTarget, image: LocalImage): Promi
     });
     if (result.status < 200 || result.status >= 300) {
       stage = `STAGE_PUT_${result.status}`;
+      if (target.diagnostic === "free_demo") storageError = safeStorageErrorFromBody(result.body);
       throw new Error("The storage service rejected the photo");
     }
   } catch {
-    logUploadFailure(target, stage, stage.startsWith("STAGE_PUT_") && stage !== "STAGE_PUT_NETWORK" ? Number(stage.slice("STAGE_PUT_".length)) : null);
-    failure = photoFailure(stage);
+    logUploadFailure(target, stage, stage.startsWith("STAGE_PUT_") && stage !== "STAGE_PUT_NETWORK" ? Number(stage.slice("STAGE_PUT_".length)) : null, storageError);
+    failure = photoFailure(stage, storageError ? `[${storageError.code}]` : undefined);
   }
 
   if (stagedUri) {

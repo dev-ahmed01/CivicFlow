@@ -392,7 +392,10 @@ export function createTicketsRouter(
       try {
         const upload = await storage.createUpload(objectKey, input.contentType);
         logPresign(request, 201, null, input.contentType);
-        response.status(201).json({ objectKey, upload });
+        response.status(201).json({
+          objectKey,
+          upload: deploymentProfile === "free_demo" ? { ...upload, diagnostic: "free_demo" } : upload,
+        });
       } catch {
         logPresign(request, 500, "storage_create_upload", input.contentType);
         response.status(500).json({

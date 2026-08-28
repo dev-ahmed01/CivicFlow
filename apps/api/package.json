@@ -9,6 +9,7 @@
     "start": "node dist/src/server.js",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
+    "diagnose:s3-put": "node dist/scripts/diagnose-s3-put.js",
     "verify:auth": "tsc -p tsconfig.json && node dist/scripts/verify-auth.js",
     "verify:phase2": "tsc -p tsconfig.json && node dist/scripts/verify-phase2.js",
     "verify:phase3": "tsc -p tsconfig.json && node dist/scripts/verify-phase3.js",

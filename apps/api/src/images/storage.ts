@@ -66,6 +66,35 @@ function normalizeContentType(value: string | null): string {
   return value?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 }
 
+export interface SafeS3Error {
+  code: string;
+  message: string;
+}
+
+const safeS3Errors: Record<string, string> = {
+  SignatureDoesNotMatch: "The storage signature did not match",
+  InvalidSignature: "The storage signature was invalid",
+  InvalidAccessKeyId: "The storage access key was not recognized",
+  AccessDenied: "Storage denied the upload",
+  AuthorizationQueryParametersError: "The storage authorization query was invalid",
+  ExpiredToken: "The storage upload authorization expired",
+  InvalidRequest: "Storage rejected the upload request",
+};
+
+export function safeS3ErrorFromBody(body: string): SafeS3Error | undefined {
+  let candidate = /<Code>\s*([A-Za-z0-9]+)\s*<\/Code>/i.exec(body)?.[1];
+  if (!candidate) {
+    try {
+      const parsed = JSON.parse(body) as Record<string, unknown>;
+      const value = parsed.Code ?? parsed.code ?? parsed.error;
+      if (typeof value === "string") candidate = value;
+    } catch { /* S3 protocol errors are normally XML. */ }
+  }
+  if (!candidate) return undefined;
+  const message = safeS3Errors[candidate];
+  return message ? { code: candidate, message } : undefined;
+}
+
 function parseContentLength(value: string | null): number | null {
   if (value === null || value.trim() === "") return null;
   const parsed = Number(value);

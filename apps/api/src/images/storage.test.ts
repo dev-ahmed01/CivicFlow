@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseEnv } from "../config/env";
-import { inspectImageBytes, inspectUploadBytes, S3CompatibleStorage } from "./storage";
+import { inspectImageBytes, inspectUploadBytes, safeS3ErrorFromBody, S3CompatibleStorage } from "./storage";
 
 function validJpeg(width = 640, height = 480): Uint8Array {
   return new Uint8Array([
@@ -100,6 +100,16 @@ describe("Supabase Storage S3 compatibility", () => {
     S3_PUBLIC_BASE_URL: "https://project-ref.supabase.co/storage/v1/object/public/civic-evidence",
     CLIP_MODE: "demo_deterministic",
     CORS_ORIGINS: "https://civicos-demo.vercel.app",
+  });
+
+  it("extracts only allowlisted S3 error diagnostics", () => {
+    const body = "<Error><Code>SignatureDoesNotMatch</Code><Message>credential=secret&amp;X-Amz-Signature=top-secret</Message></Error>";
+
+    expect(safeS3ErrorFromBody(body)).toEqual({
+      code: "SignatureDoesNotMatch",
+      message: "The storage signature did not match",
+    });
+    expect(safeS3ErrorFromBody("<Error><Code>UnexpectedSecretError</Code></Error>")).toBeUndefined();
   });
 
   it("generates an SDK-compatible path-style presigned PUT for the Supabase S3 endpoint", async () => {

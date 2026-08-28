@@ -27,8 +27,8 @@ import { uploadFile, validateReportImage } from "./api";
 
 const signedUrl = "https://project.supabase.co/storage/v1/s3/demo/photo?X-Amz-Credential=secret&X-Amz-Signature=top-secret";
 
-function target(contentType: LocalImage["contentType"]) {
-  return { uploadUrl: signedUrl, headers: { "Content-Type": contentType } };
+function target(contentType: LocalImage["contentType"], diagnostic?: "free_demo") {
+  return { uploadUrl: signedUrl, headers: { "Content-Type": contentType }, ...(diagnostic ? { diagnostic } : {}) };
 }
 
 function image(uri: string, contentType: LocalImage["contentType"]): LocalImage {
@@ -79,10 +79,33 @@ describe("Android presigned image upload", () => {
       contentType: "image/png",
       host: "project.supabase.co",
       stage: "STAGE_PUT_403",
+      storageCode: null,
+      storageMessage: null,
     });
     expect(JSON.stringify(warning.mock.calls)).not.toContain("X-Amz-");
     expect(JSON.stringify(warning.mock.calls)).not.toContain("top-secret");
     warning.mockRestore();
+  });
+
+  it("surfaces only an allowlisted Supabase error code for a free-demo PUT rejection", async () => {
+    fileSystem.uploadAsync.mockResolvedValue({
+      status: 403,
+      body: "<Error><Code>SignatureDoesNotMatch</Code><Message>credential=secret&amp;X-Amz-Signature=top-secret</Message></Error>",
+      headers: {},
+    });
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(uploadFile(target("image/jpeg", "free_demo"), image("file:///gallery/photo.jpg", "image/jpeg")))
+      .rejects.toThrow("Photo upload failed [STAGE_PUT_403] [SignatureDoesNotMatch]");
+
+    expect(warning).toHaveBeenCalledWith("[City Connect] Photo upload failed", expect.objectContaining({
+      status: 403,
+      stage: "STAGE_PUT_403",
+      storageCode: "SignatureDoesNotMatch",
+      storageMessage: "The storage signature did not match",
+    }));
+    expect(JSON.stringify(warning.mock.calls)).not.toContain("credential=secret");
+    expect(JSON.stringify(warning.mock.calls)).not.toContain("top-secret");
   });
 
   it("does not upload when the presigned and selected content types differ", async () => {
