@@ -37,6 +37,15 @@ const baseEnvSchema = z.object({
   CORS_ORIGINS: z.string().min(1).optional(),
 });
 
+const deployedStorageEnvSchema = z.object({
+  S3_ENDPOINT: z.string().trim().min(1),
+  S3_REGION: z.string().trim().min(1),
+  S3_BUCKET: z.string().trim().min(1),
+  S3_ACCESS_KEY_ID: z.string().trim().min(1),
+  S3_SECRET_ACCESS_KEY: z.string().trim().min(1),
+  S3_PUBLIC_BASE_URL: z.string().trim().min(1),
+});
+
 const envSchema = baseEnvSchema.transform((env) => ({
   ...env,
   DEPLOYMENT_PROFILE: env.DEPLOYMENT_PROFILE ?? (env.NODE_ENV === "production" ? "production" : "local"),
@@ -115,6 +124,10 @@ const envSchema = baseEnvSchema.transform((env) => ({
 export type AppEnv = z.infer<typeof envSchema>;
 
 export function parseEnv(values: NodeJS.ProcessEnv): AppEnv {
+  if (values.NODE_ENV === "production" || values.DEPLOYMENT_PROFILE === "free_demo" || values.DEPLOYMENT_PROFILE === "production") {
+    // Presigning cannot safely use local defaults on Railway or another deployment.
+    deployedStorageEnvSchema.parse(values);
+  }
   return envSchema.parse(values);
 }
 

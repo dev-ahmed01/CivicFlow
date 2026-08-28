@@ -30,6 +30,42 @@ const imageRelevanceRequestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("presign"), categoryId: z.string().uuid(), fileName: z.string().trim().min(1).max(200), contentType: imageContentTypeSchema }),
   z.object({ action: z.literal("complete"), categoryId: z.string().uuid(), objectKey: z.string().min(1).max(500), fileName: z.string().trim().min(1).max(200), contentType: imageContentTypeSchema, attempt: z.number().int().positive().default(1) }),
 ]);
+const presignS3EnvKeys = [
+  "S3_ENDPOINT",
+  "S3_REGION",
+  "S3_BUCKET",
+  "S3_ACCESS_KEY_ID",
+  "S3_SECRET_ACCESS_KEY",
+  "S3_PUBLIC_BASE_URL",
+] as const;
+
+type PresignFailurePhase = "schema_parse" | "category_lookup" | "category_not_found" | "storage_create_upload";
+
+function s3EnvPresence(): Record<(typeof presignS3EnvKeys)[number], boolean> {
+  return Object.fromEntries(presignS3EnvKeys.map((key) => [key, Boolean(process.env[key]?.trim())])) as Record<(typeof presignS3EnvKeys)[number], boolean>;
+}
+
+function presignDiagnostic(deploymentProfile: DeploymentProfile, code: string): { code: string; diagnostic: "free_demo" } | Record<string, never> {
+  return deploymentProfile === "free_demo" ? { code, diagnostic: "free_demo" } : {};
+}
+
+function logPresign(
+  request: Request,
+  status: number | null,
+  failurePhase: PresignFailurePhase | "entered" | null,
+  contentType: string | null,
+): void {
+  const diagnostic = {
+    userId: request.auth?.userId ?? null,
+    role: request.auth?.role ?? null,
+    contentType,
+    status,
+    failurePhase,
+    s3EnvPresent: s3EnvPresence(),
+  };
+  if (status !== null && status >= 400) console.warn("[tickets.image-relevance.presign] failed", diagnostic);
+  else console.info("[tickets.image-relevance.presign]", diagnostic);
+}
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -318,20 +354,52 @@ export function createTicketsRouter(
   }));
 
   router.post("/tickets/image-relevance", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {
+    const presignRequested = request.body?.action === "presign";
+    if (presignRequested) logPresign(request, null, "entered", null);
     const parsed = imageRelevanceRequestSchema.safeParse(request.body);
     if (!parsed.success) {
-      response.status(400).json({ error: "Invalid image relevance request", details: parsed.error.flatten() });
+      if (presignRequested) logPresign(request, 400, "schema_parse", null);
+      response.status(400).json({
+        error: "Invalid image relevance request",
+        details: parsed.error.flatten(),
+        ...(presignRequested ? presignDiagnostic(deploymentProfile, "PRESIGN_INVALID_REQUEST") : {}),
+      });
       return;
     }
     const input = parsed.data;
-    const category = await prisma.category.findUnique({ where: { id: input.categoryId }, select: { id: true } });
+    let category: { id: string } | null;
+    try {
+      category = await prisma.category.findUnique({ where: { id: input.categoryId }, select: { id: true } });
+    } catch (error) {
+      if (input.action !== "presign") throw error;
+      logPresign(request, 500, "category_lookup", input.contentType);
+      response.status(500).json({
+        error: "Unable to verify the selected issue category",
+        ...presignDiagnostic(deploymentProfile, "PRESIGN_CATEGORY_LOOKUP_FAILED"),
+      });
+      return;
+    }
     if (!category) {
-      response.status(422).json({ error: "Please select an available issue category" });
+      if (input.action === "presign") logPresign(request, 422, "category_not_found", input.contentType);
+      response.status(422).json({
+        error: "Please select an available issue category",
+        ...(input.action === "presign" ? presignDiagnostic(deploymentProfile, "PRESIGN_CATEGORY_NOT_FOUND") : {}),
+      });
       return;
     }
     if (input.action === "presign") {
       const objectKey = `preflight/${request.auth!.userId}/${randomUUID()}-${safeFileName(input.fileName)}`;
-      response.status(201).json({ objectKey, upload: storage.createUpload(objectKey, input.contentType) });
+      try {
+        const upload = storage.createUpload(objectKey, input.contentType);
+        logPresign(request, 201, null, input.contentType);
+        response.status(201).json({ objectKey, upload });
+      } catch {
+        logPresign(request, 500, "storage_create_upload", input.contentType);
+        response.status(500).json({
+          error: "Unable to prepare the photo upload",
+          ...presignDiagnostic(deploymentProfile, "PRESIGN_STORAGE_FAILURE"),
+        });
+      }
       return;
     }
     const expectedPrefix = `preflight/${request.auth!.userId}/`;

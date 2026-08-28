@@ -44,6 +44,7 @@ type LocalImage = { uri: string; fileName: string; contentType: "image/jpeg" | "
 type UploadTarget = { uploadUrl: string; headers: { "Content-Type": string } };
 type PhotoFailureStage =
   | "STAGE_PRESIGN"
+  | `STAGE_PRESIGN_${number}`
   | "STAGE_CONTENT_TYPE"
   | "STAGE_CONTENT_URI_COPY"
   | "STAGE_LOCAL_FILE_READ"
@@ -57,8 +58,22 @@ function uploadHost(uploadUrl: string): string {
   catch { return "invalid-host"; }
 }
 
-function photoFailure(stage: PhotoFailureStage): Error {
-  return new Error(`Photo upload failed [${stage}]`);
+type ApiErrorBody = { error?: string; code?: string; diagnostic?: "free_demo" };
+
+class ApiHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+    readonly diagnostic?: "free_demo",
+  ) {
+    super(message);
+    this.name = "ApiHttpError";
+  }
+}
+
+function photoFailure(stage: PhotoFailureStage, detail?: string): Error {
+  return new Error(`Photo upload failed [${stage}]${detail ? ` ${detail}` : ""}`);
 }
 
 function logUploadFailure(target: UploadTarget, stage: PhotoFailureStage, status: number | null): void {
@@ -71,8 +86,19 @@ function logUploadFailure(target: UploadTarget, stage: PhotoFailureStage, status
   });
 }
 
-function logPhotoFlowFailure(stage: "STAGE_PRESIGN" | "STAGE_RELEVANCE_COMPLETE", contentType: LocalImage["contentType"]): void {
-  console.warn("[City Connect] Photo flow failed", { stage, contentType });
+function logPhotoFlowFailure(
+  stage: "STAGE_PRESIGN" | `STAGE_PRESIGN_${number}` | "STAGE_RELEVANCE_COMPLETE",
+  contentType: LocalImage["contentType"],
+  status: number | null = null,
+  code: string | null = null,
+): void {
+  console.warn("[City Connect] Photo flow failed", { stage, contentType, status, code });
+}
+
+function safePresignDetail(error: ApiHttpError): string {
+  const message = error.message.replace(/[\r\n]+/g, " ").slice(0, 120);
+  const code = error.code?.match(/^[A-Z0-9_]{1,64}$/)?.[0];
+  return `${message}${code ? ` (${code})` : ""}`;
 }
 
 function uploadExtension(contentType: LocalImage["contentType"]): string {
@@ -104,13 +130,14 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       refreshToken = rotated.refreshToken;
       await persistSession();
       response = await request(accessToken);
-    } catch (cause) {
+    } catch {
       await clearInternalSession();
-      throw new Error("Your session expired. Please sign in again.", { cause });
+      const body = await response.json().catch(() => ({})) as ApiErrorBody;
+      throw new ApiHttpError(body.error ?? "Your session expired. Please sign in again.", response.status, body.code, body.diagnostic);
     }
   }
-  const body = await response.json().catch(() => ({})) as T & { error?: string };
-  if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status})`);
+  const body = await response.json().catch(() => ({})) as T & ApiErrorBody;
+  if (!response.ok) throw new ApiHttpError(body.error ?? `Request failed (${response.status})`, response.status, body.code, body.diagnostic);
   return body;
 }
 
@@ -120,8 +147,8 @@ async function rawTokenRequest(path: string, payload: Record<string, string>): P
   let response: Response;
   try { response = await fetch(`${apiUrl}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
   catch (cause) { throw new Error("City Connect is unreachable. Check your connection and try again.", { cause }); }
-  const body = await response.json().catch(() => ({})) as TokenResponse & { error?: string };
-  if (!response.ok) throw new Error(body.error ?? "Session expired. Please sign in again.");
+  const body = await response.json().catch(() => ({})) as TokenResponse & ApiErrorBody;
+  if (!response.ok) throw new ApiHttpError(body.error ?? "Session expired. Please sign in again.", response.status, body.code, body.diagnostic);
   return body;
 }
 
@@ -449,7 +476,12 @@ export async function validateReportImage(categoryId: string, image: LocalImage,
       method: "POST",
       body: JSON.stringify({ action: "presign", categoryId, fileName: image.fileName, contentType: image.contentType }),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiHttpError && error.diagnostic === "free_demo") {
+      const stage = `STAGE_PRESIGN_${error.status}` as const;
+      logPhotoFlowFailure(stage, image.contentType, error.status, error.code ?? null);
+      throw photoFailure(stage, safePresignDetail(error));
+    }
     logPhotoFlowFailure("STAGE_PRESIGN", image.contentType);
     throw photoFailure("STAGE_PRESIGN");
   }

@@ -1,10 +1,12 @@
 import jwt from "jsonwebtoken";
+import express from "express";
 import request from "supertest";
 import { prisma } from "db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import type { ImageRelevanceService } from "../images/relevance";
 import type { ImageStorage } from "../images/storage";
+import { createTicketsRouter } from "./router";
 
 const accessSecret = "test-access-secret-that-is-at-least-32-characters";
 const citizenId = "40000000-0000-4000-8000-000000000001";
@@ -81,5 +83,55 @@ describe("pre-ticket image relevance gate", () => {
       .send({ action: "complete", categoryId, objectKey: `preflight/${citizenId}/pothole-road.jpg`, fileName: "pothole-road.jpg", contentType: "image/jpeg", attempt: 1 })
       .expect(502);
     expect(response.body.error).toBe("We could not check this photo right now. Please try again.");
+  });
+
+  it("returns safe free-demo diagnostics when storage presigning fails", async () => {
+    const failingStorage: ImageStorage = {
+      ...storage,
+      createUpload() { throw new Error("secret storage credential detail"); },
+    };
+    const app = express();
+    app.use(express.json());
+    app.use(createTicketsRouter(relevance(true, 0.94, "MATCH"), failingStorage, accessSecret, "free_demo"));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const response = await request(app)
+      .post("/tickets/image-relevance")
+      .set("Authorization", `Bearer ${accessToken()}`)
+      .send({ action: "presign", categoryId, fileName: "road.jpg", contentType: "image/jpeg" })
+      .expect(500);
+
+    expect(response.body).toEqual({
+      error: "Unable to prepare the photo upload",
+      code: "PRESIGN_STORAGE_FAILURE",
+      diagnostic: "free_demo",
+    });
+    expect(JSON.stringify(response.body)).not.toContain("credential");
+  });
+
+  it("returns a safe free-demo 401 code before the presign handler when authentication is missing", async () => {
+    const previousProfile = process.env.DEPLOYMENT_PROFILE;
+    process.env.DEPLOYMENT_PROFILE = "free_demo";
+    try {
+      const app = express();
+      app.use(express.json());
+      app.use(createTicketsRouter(relevance(true, 0.94, "MATCH"), storage, accessSecret, "free_demo"));
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const response = await request(app)
+        .post("/tickets/image-relevance")
+        .send({ action: "presign", categoryId, fileName: "road.jpg", contentType: "image/jpeg" })
+        .expect(401);
+
+      expect(response.body).toEqual({
+        error: "Authentication required",
+        code: "PRESIGN_AUTH_REQUIRED",
+        diagnostic: "free_demo",
+      });
+    } finally {
+      if (previousProfile === undefined) delete process.env.DEPLOYMENT_PROFILE;
+      else process.env.DEPLOYMENT_PROFILE = previousProfile;
+    }
   });
 });

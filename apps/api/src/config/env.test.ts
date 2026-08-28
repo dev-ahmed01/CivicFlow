@@ -94,4 +94,15 @@ describe("free-demo environment", () => {
     expect(() => parseEnv({ ...freeDemoEnv, S3_ENDPOINT: "https://192.168.1.10" })).toThrow();
     expect(() => parseEnv({ ...freeDemoEnv, CORS_ORIGINS: "http://civicos.example.com" })).toThrow();
   });
+
+  it.each([
+    "S3_ENDPOINT",
+    "S3_REGION",
+    "S3_BUCKET",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+    "S3_PUBLIC_BASE_URL",
+  ] as const)("requires Railway storage variable %s instead of a local default", (key) => {
+    expect(() => parseEnv({ ...freeDemoEnv, [key]: undefined })).toThrow();
+  });
 });

@@ -150,7 +150,26 @@ describe("Android presigned image upload", () => {
     await expect(validateReportImage("category-id", image("file:///camera/IMG_1234.jpg", "image/jpeg"), 1)).rejects.toThrow("Photo upload failed [STAGE_PRESIGN]");
     expect(fileSystem.getInfoAsync).not.toHaveBeenCalled();
     expect(fileSystem.uploadAsync).not.toHaveBeenCalled();
-    expect(warning).toHaveBeenCalledWith("[City Connect] Photo flow failed", { stage: "STAGE_PRESIGN", contentType: "image/jpeg" });
+    expect(warning).toHaveBeenCalledWith("[City Connect] Photo flow failed", { stage: "STAGE_PRESIGN", contentType: "image/jpeg", status: null, code: null });
+  });
+
+  it.each([401, 400, 500])("surfaces safe free-demo presign HTTP %s diagnostics", async (status) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({
+      error: "Unable to prepare the photo upload",
+      code: "PRESIGN_STORAGE_FAILURE",
+      diagnostic: "free_demo",
+    }), { status, headers: { "Content-Type": "application/json" } }));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(validateReportImage("category-id", image("file:///camera/IMG_1234.jpg", "image/jpeg"), 1))
+      .rejects.toThrow(`Photo upload failed [STAGE_PRESIGN_${status}] Unable to prepare the photo upload (PRESIGN_STORAGE_FAILURE)`);
+    expect(warning).toHaveBeenCalledWith("[City Connect] Photo flow failed", {
+      stage: `STAGE_PRESIGN_${status}`,
+      contentType: "image/jpeg",
+      status,
+      code: "PRESIGN_STORAGE_FAILURE",
+    });
+    expect(fileSystem.uploadAsync).not.toHaveBeenCalled();
   });
 
   it("reports relevance completion only after a successful PUT", async () => {
@@ -165,6 +184,6 @@ describe("Android presigned image upload", () => {
     await expect(validateReportImage("category-id", image("file:///camera/IMG_1234.jpg", "image/jpeg"), 1)).rejects.toThrow("Photo upload failed [STAGE_RELEVANCE_COMPLETE]");
     expect(fileSystem.uploadAsync).toHaveBeenCalledOnce();
     expect(apiRequest).toHaveBeenCalledTimes(2);
-    expect(warning).toHaveBeenCalledWith("[City Connect] Photo flow failed", { stage: "STAGE_RELEVANCE_COMPLETE", contentType: "image/jpeg" });
+    expect(warning).toHaveBeenCalledWith("[City Connect] Photo flow failed", { stage: "STAGE_RELEVANCE_COMPLETE", contentType: "image/jpeg", status: null, code: null });
   });
 });
