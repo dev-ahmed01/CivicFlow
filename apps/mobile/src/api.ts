@@ -42,20 +42,37 @@ let refreshInFlight: Promise<TokenResponse> | undefined;
 
 type LocalImage = { uri: string; fileName: string; contentType: "image/jpeg" | "image/png" | "image/webp" | "image/heic" };
 type UploadTarget = { uploadUrl: string; headers: { "Content-Type": string } };
+type PhotoFailureStage =
+  | "STAGE_PRESIGN"
+  | "STAGE_CONTENT_TYPE"
+  | "STAGE_CONTENT_URI_COPY"
+  | "STAGE_LOCAL_FILE_READ"
+  | "STAGE_PUT_NETWORK"
+  | `STAGE_PUT_${number}`
+  | "STAGE_CLEANUP"
+  | "STAGE_RELEVANCE_COMPLETE";
 
 function uploadHost(uploadUrl: string): string {
   try { return new URL(uploadUrl).hostname || "invalid-host"; }
   catch { return "invalid-host"; }
 }
 
-function logUploadFailure(target: UploadTarget, phase: "prepare" | "put", status: number | null): void {
+function photoFailure(stage: PhotoFailureStage): Error {
+  return new Error(`Photo upload failed [${stage}]`);
+}
+
+function logUploadFailure(target: UploadTarget, stage: PhotoFailureStage, status: number | null): void {
   // Deliberately exclude the signed URL, query string, local URI, and native error.
   console.warn("[City Connect] Photo upload failed", {
     status,
     contentType: target.headers["Content-Type"],
     host: uploadHost(target.uploadUrl),
-    phase,
+    stage,
   });
+}
+
+function logPhotoFlowFailure(stage: "STAGE_PRESIGN" | "STAGE_RELEVANCE_COMPLETE", contentType: LocalImage["contentType"]): void {
+  console.warn("[City Connect] Photo flow failed", { stage, contentType });
 }
 
 function uploadExtension(contentType: LocalImage["contentType"]): string {
@@ -273,16 +290,16 @@ export async function loadAgencies(): Promise<Array<{ id: string; name: string }
 export async function uploadFile(target: UploadTarget, image: LocalImage): Promise<void> {
   const signedContentType = target.headers["Content-Type"];
   let stagedUri: string | undefined;
-  let phase: "prepare" | "put" = "prepare";
-  let failureLogged = false;
+  let stage: PhotoFailureStage = "STAGE_LOCAL_FILE_READ";
+  let failure: Error | undefined;
   try {
     if (signedContentType.toLowerCase() !== image.contentType.toLowerCase()) {
-      logUploadFailure(target, "prepare", null);
-      failureLogged = true;
+      stage = "STAGE_CONTENT_TYPE";
       throw new Error("The selected photo type changed before upload");
     }
     let uploadUri = image.uri;
     if (image.uri.startsWith("content://")) {
+      stage = "STAGE_CONTENT_URI_COPY";
       if (!FileSystem.cacheDirectory) throw new Error("The upload cache is unavailable");
       stagedUri = `${FileSystem.cacheDirectory}city-connect-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.${uploadExtension(image.contentType)}`;
       await FileSystem.copyAsync({ from: image.uri, to: stagedUri });
@@ -290,23 +307,37 @@ export async function uploadFile(target: UploadTarget, image: LocalImage): Promi
     } else if (!image.uri.startsWith("file://")) {
       throw new Error("Unsupported local photo URI");
     }
-    phase = "put";
+
+    stage = "STAGE_LOCAL_FILE_READ";
+    const localFile = await FileSystem.getInfoAsync(uploadUri);
+    if (!localFile.exists || localFile.isDirectory || localFile.size <= 0) {
+      throw new Error("The selected photo is not a readable local file");
+    }
+
+    stage = "STAGE_PUT_NETWORK";
     const result = await FileSystem.uploadAsync(target.uploadUrl, uploadUri, {
       httpMethod: "PUT",
       uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
       headers: { "Content-Type": signedContentType },
     });
     if (result.status < 200 || result.status >= 300) {
-      logUploadFailure(target, "put", result.status);
-      failureLogged = true;
+      stage = `STAGE_PUT_${result.status}`;
       throw new Error("The storage service rejected the photo");
     }
   } catch {
-    if (!failureLogged) logUploadFailure(target, phase, null);
-    throw new Error("The photo could not be uploaded. Check your connection and try again.");
-  } finally {
-    if (stagedUri) await FileSystem.deleteAsync(stagedUri, { idempotent: true }).catch(() => undefined);
+    logUploadFailure(target, stage, stage.startsWith("STAGE_PUT_") && stage !== "STAGE_PUT_NETWORK" ? Number(stage.slice("STAGE_PUT_".length)) : null);
+    failure = photoFailure(stage);
   }
+
+  if (stagedUri) {
+    try {
+      await FileSystem.deleteAsync(stagedUri, { idempotent: true });
+    } catch {
+      logUploadFailure(target, "STAGE_CLEANUP", null);
+      failure ??= photoFailure("STAGE_CLEANUP");
+    }
+  }
+  if (failure) throw failure;
 }
 
 export async function loadCategories(): Promise<CategorySummary[]> {
@@ -412,15 +443,26 @@ export type ImageRelevanceCheck = {
 };
 
 export async function validateReportImage(categoryId: string, image: LocalImage, attempt: number): Promise<ImageRelevanceCheck> {
-  const target = await apiFetch<{ objectKey: string; upload: UploadTarget }>("/tickets/image-relevance", {
-    method: "POST",
-    body: JSON.stringify({ action: "presign", categoryId, fileName: image.fileName, contentType: image.contentType }),
-  });
+  let target: { objectKey: string; upload: UploadTarget };
+  try {
+    target = await apiFetch<{ objectKey: string; upload: UploadTarget }>("/tickets/image-relevance", {
+      method: "POST",
+      body: JSON.stringify({ action: "presign", categoryId, fileName: image.fileName, contentType: image.contentType }),
+    });
+  } catch {
+    logPhotoFlowFailure("STAGE_PRESIGN", image.contentType);
+    throw photoFailure("STAGE_PRESIGN");
+  }
   await uploadFile(target.upload, image);
-  return apiFetch<ImageRelevanceCheck>("/tickets/image-relevance", {
-    method: "POST",
-    body: JSON.stringify({ action: "complete", categoryId, objectKey: target.objectKey, fileName: image.fileName, contentType: image.contentType, attempt }),
-  });
+  try {
+    return await apiFetch<ImageRelevanceCheck>("/tickets/image-relevance", {
+      method: "POST",
+      body: JSON.stringify({ action: "complete", categoryId, objectKey: target.objectKey, fileName: image.fileName, contentType: image.contentType, attempt }),
+    });
+  } catch {
+    logPhotoFlowFailure("STAGE_RELEVANCE_COMPLETE", image.contentType);
+    throw photoFailure("STAGE_RELEVANCE_COMPLETE");
+  }
 }
 
 export async function submitReport(

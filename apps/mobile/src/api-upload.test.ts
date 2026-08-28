@@ -4,6 +4,7 @@ import type { LocalImage } from "./api";
 const fileSystem = vi.hoisted(() => ({
   copyAsync: vi.fn(),
   deleteAsync: vi.fn(),
+  getInfoAsync: vi.fn(),
   uploadAsync: vi.fn(),
 }));
 
@@ -12,6 +13,7 @@ vi.mock("expo-file-system/legacy", () => ({
   FileSystemUploadType: { BINARY_CONTENT: 0 },
   copyAsync: fileSystem.copyAsync,
   deleteAsync: fileSystem.deleteAsync,
+  getInfoAsync: fileSystem.getInfoAsync,
   uploadAsync: fileSystem.uploadAsync,
 }));
 
@@ -39,6 +41,7 @@ describe("Android presigned image upload", () => {
     vi.clearAllMocks();
     fileSystem.copyAsync.mockResolvedValue(undefined);
     fileSystem.deleteAsync.mockResolvedValue(undefined);
+    fileSystem.getInfoAsync.mockResolvedValue({ exists: true, uri: "file:///cached-photo.jpg", size: 1024, isDirectory: false, modificationTime: 0 });
     fileSystem.uploadAsync.mockResolvedValue({ status: 200, body: "", headers: {} });
   });
 
@@ -69,13 +72,13 @@ describe("Android presigned image upload", () => {
     fileSystem.uploadAsync.mockResolvedValue({ status: 403, body: "signed URL details", headers: {} });
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    await expect(uploadFile(target("image/png"), image("file:///gallery/photo.png", "image/png"))).rejects.toThrow("The photo could not be uploaded");
+    await expect(uploadFile(target("image/png"), image("file:///gallery/photo.png", "image/png"))).rejects.toThrow("Photo upload failed [STAGE_PUT_403]");
 
     expect(warning).toHaveBeenCalledWith("[City Connect] Photo upload failed", {
       status: 403,
       contentType: "image/png",
       host: "project.supabase.co",
-      phase: "put",
+      stage: "STAGE_PUT_403",
     });
     expect(JSON.stringify(warning.mock.calls)).not.toContain("X-Amz-");
     expect(JSON.stringify(warning.mock.calls)).not.toContain("top-secret");
@@ -85,11 +88,45 @@ describe("Android presigned image upload", () => {
   it("does not upload when the presigned and selected content types differ", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    await expect(uploadFile(target("image/jpeg"), image("file:///gallery/photo.png", "image/png"))).rejects.toThrow("The photo could not be uploaded");
+    await expect(uploadFile(target("image/jpeg"), image("file:///gallery/photo.png", "image/png"))).rejects.toThrow("Photo upload failed [STAGE_CONTENT_TYPE]");
 
     expect(fileSystem.uploadAsync).not.toHaveBeenCalled();
-    expect(warning).toHaveBeenCalledWith("[City Connect] Photo upload failed", expect.objectContaining({ status: null, contentType: "image/jpeg", phase: "prepare" }));
+    expect(warning).toHaveBeenCalledWith("[City Connect] Photo upload failed", expect.objectContaining({ status: null, contentType: "image/jpeg", stage: "STAGE_CONTENT_TYPE" }));
     warning.mockRestore();
+  });
+
+  it("reports Android content URI staging failures without exposing the URI", async () => {
+    fileSystem.copyAsync.mockRejectedValueOnce(new Error("provider path content://private/photo"));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(uploadFile(target("image/jpeg"), image("content://media/external/images/1234", "image/jpeg"))).rejects.toThrow("Photo upload failed [STAGE_CONTENT_URI_COPY]");
+
+    expect(fileSystem.getInfoAsync).not.toHaveBeenCalled();
+    expect(fileSystem.uploadAsync).not.toHaveBeenCalled();
+    expect(JSON.stringify(warning.mock.calls)).not.toContain("content://");
+    warning.mockRestore();
+  });
+
+  it("reports an unreadable staged or camera file before PUT", async () => {
+    fileSystem.getInfoAsync.mockResolvedValueOnce({ exists: false, uri: "file:///private/photo", isDirectory: false });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(uploadFile(target("image/jpeg"), image("file:///camera/photo.jpg", "image/jpeg"))).rejects.toThrow("Photo upload failed [STAGE_LOCAL_FILE_READ]");
+    expect(fileSystem.uploadAsync).not.toHaveBeenCalled();
+  });
+
+  it("reports a native PUT exception separately from an HTTP response", async () => {
+    fileSystem.uploadAsync.mockRejectedValueOnce(new Error("native network failure"));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(uploadFile(target("image/jpeg"), image("file:///camera/photo.jpg", "image/jpeg"))).rejects.toThrow("Photo upload failed [STAGE_PUT_NETWORK]");
+  });
+
+  it("reports staged-file cleanup separately after a successful PUT", async () => {
+    fileSystem.deleteAsync.mockRejectedValueOnce(new Error("cache cleanup failure"));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(uploadFile(target("image/jpeg"), image("content://media/external/images/1234", "image/jpeg"))).rejects.toThrow("Photo upload failed [STAGE_CLEANUP]");
   });
 
   it("does not start relevance completion when the presigned PUT fails", async () => {
@@ -100,9 +137,34 @@ describe("Android presigned image upload", () => {
     fileSystem.uploadAsync.mockResolvedValue({ status: 403, body: "", headers: {} });
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    await expect(validateReportImage("category-id", image("file:///camera/IMG_1234.jpg", "image/jpeg"), 1)).rejects.toThrow("The photo could not be uploaded");
+    await expect(validateReportImage("category-id", image("file:///camera/IMG_1234.jpg", "image/jpeg"), 1)).rejects.toThrow("Photo upload failed [STAGE_PUT_403]");
 
     expect(apiRequest).toHaveBeenCalledTimes(1);
     expect(apiRequest.mock.calls[0]?.[0]).toBe("http://10.0.2.2:4000/tickets/image-relevance");
+  });
+
+  it("reports presign failures before any local-file or PUT operation", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({ error: "unavailable" }), { status: 503, headers: { "Content-Type": "application/json" } }));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(validateReportImage("category-id", image("file:///camera/IMG_1234.jpg", "image/jpeg"), 1)).rejects.toThrow("Photo upload failed [STAGE_PRESIGN]");
+    expect(fileSystem.getInfoAsync).not.toHaveBeenCalled();
+    expect(fileSystem.uploadAsync).not.toHaveBeenCalled();
+    expect(warning).toHaveBeenCalledWith("[City Connect] Photo flow failed", { stage: "STAGE_PRESIGN", contentType: "image/jpeg" });
+  });
+
+  it("reports relevance completion only after a successful PUT", async () => {
+    const apiRequest = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        objectKey: "preflight/citizen/photo.jpg",
+        upload: target("image/jpeg"),
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "unavailable" }), { status: 502, headers: { "Content-Type": "application/json" } }));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(validateReportImage("category-id", image("file:///camera/IMG_1234.jpg", "image/jpeg"), 1)).rejects.toThrow("Photo upload failed [STAGE_RELEVANCE_COMPLETE]");
+    expect(fileSystem.uploadAsync).toHaveBeenCalledOnce();
+    expect(apiRequest).toHaveBeenCalledTimes(2);
+    expect(warning).toHaveBeenCalledWith("[City Connect] Photo flow failed", { stage: "STAGE_RELEVANCE_COMPLETE", contentType: "image/jpeg" });
   });
 });
