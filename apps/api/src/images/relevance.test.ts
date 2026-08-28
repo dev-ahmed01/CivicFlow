@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseEnv } from "../config/env";
-import { cosineSimilarity, createImageRelevanceService, DevelopmentRelevanceService, HostedClipRelevanceService } from "./relevance";
+import { cosineSimilarity, createImageRelevanceService, decideImageRelevance, DevelopmentRelevanceService, HostedClipRelevanceService } from "./relevance";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -32,6 +32,35 @@ describe("free-demo relevance", () => {
       CORS_ORIGINS: "https://civicos-demo.vercel.app",
     });
     expect(createImageRelevanceService(env)).toBeInstanceOf(DevelopmentRelevanceService);
+  });
+
+  const service = new DevelopmentRelevanceService();
+  const roadDamage = "30000000-0000-4000-8000-000000000001";
+  const waterSupply = "30000000-0000-4000-8000-000000000003";
+  const garbage = "30000000-0000-4000-8000-000000000005";
+
+  it.each([
+    ["pothole-road-damage.jpg", roadDamage],
+    ["overflowing-garbage-bin.jpg", garbage],
+    ["water-leak-burst-pipe.jpg", waterSupply],
+  ])("accepts descriptive seeded-category evidence: %s", async (fileName, categoryId) => {
+    expect(await service.checkImageRelevance(`https://images.example.com/${fileName}`, categoryId))
+      .toMatchObject({ pass: true, score: 0.93, reason: "MATCH" });
+  });
+
+  it.each(["selfie.jpg", "indoor-room.png", "food-and-pet.jpg", "random-screenshot.png"])("rejects unrelated evidence: %s", async (fileName) => {
+    expect(await service.checkImageRelevance(`https://images.example.com/${fileName}`, roadDamage))
+      .toMatchObject({ pass: false, reason: "UNRELATED_CONTENT" });
+  });
+
+  it("rejects a relevant civic image filed under the wrong category", async () => {
+    expect(await service.checkImageRelevance("https://images.example.com/garbage-pile.jpg", roadDamage))
+      .toMatchObject({ pass: false, reason: "CATEGORY_MISMATCH" });
+  });
+
+  it("sends unknown camera filenames to a recoverable low-confidence retake", async () => {
+    const result = await service.checkImageRelevance("https://images.example.com/IMG_2048.jpg", roadDamage);
+    expect(decideImageRelevance(result, 0.6)).toEqual({ relevant: false, confidence: 0.42, reason: "LOW_CONFIDENCE" });
   });
 });
 

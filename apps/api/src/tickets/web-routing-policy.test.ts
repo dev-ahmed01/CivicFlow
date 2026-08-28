@@ -19,6 +19,6 @@ describe("web ticket routing policy", () => {
 
   it("preserves community validation for mobile and for web when the demo flag is off", () => {
     expect(imageCompletionDecision({ relevancePassed: true, directWebFlow: false, attempt: 1, maxRetries: 3 })).toBe("COMMUNITY_VALIDATION");
-    expect(imageCompletionDecision({ relevancePassed: false, directWebFlow: false, attempt: 3, maxRetries: 3 })).toBe("COMMUNITY_VALIDATION");
+    expect(imageCompletionDecision({ relevancePassed: false, directWebFlow: false, attempt: 3, maxRetries: 3 })).toBe("RETAKE");
   });
 });

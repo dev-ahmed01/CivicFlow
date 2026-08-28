@@ -1,5 +1,6 @@
 module.exports = ({ config }) => {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+  const mapStyleUrl = process.env.EXPO_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
   const productionBundle = process.env.NODE_ENV === "production" || Boolean(process.env.EAS_BUILD);
 
   if (productionBundle && !apiUrl) {
@@ -13,12 +14,16 @@ module.exports = ({ config }) => {
       throw new Error("EXPO_PUBLIC_API_URL must be a public HTTPS URL for production and EAS mobile builds");
     }
   }
+  if (new URL(mapStyleUrl).protocol !== "https:") {
+    throw new Error("EXPO_PUBLIC_MAP_STYLE_URL must be an HTTPS MapLibre style URL");
+  }
 
   return {
     ...config,
     extra: {
       ...config.extra,
-      apiUrl
+      apiUrl,
+      mapStyleUrl
     }
   };
 };

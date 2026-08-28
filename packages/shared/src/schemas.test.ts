@@ -51,4 +51,16 @@ describe("shared schemas", () => {
     expect(createTicketSchema.parse({ ...report, channel: "MOBILE" }).channel).toBe("MOBILE");
     expect(createTicketSchema.parse(report).channel).toBeUndefined();
   });
+
+  it("accepts a server validation token instead of a second primary upload", () => {
+    expect(createTicketSchema.parse({
+      categoryId: "40000000-0000-4000-8000-000000000001",
+      channel: "MOBILE",
+      title: "Pothole near the bus stop",
+      address: "Jayanagar, Bengaluru",
+      latitude: 12.9295,
+      longitude: 77.5854,
+      primaryImage: { validationToken: "signed-image-validation" },
+    }).primaryImage).toEqual({ validationToken: "signed-image-validation" });
+  });
 });

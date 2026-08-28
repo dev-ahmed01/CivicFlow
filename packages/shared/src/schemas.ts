@@ -262,10 +262,13 @@ export const createTicketSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   note: z.string().trim().max(1000).optional(),
-  primaryImage: z.object({
-    fileName: z.string().trim().min(1).max(200),
-    contentType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic"]),
-  }),
+  primaryImage: z.union([
+    z.object({
+      fileName: z.string().trim().min(1).max(200),
+      contentType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic"]),
+    }),
+    z.object({ validationToken: z.string().min(1) }),
+  ]),
 });
 
 export const imageUploadRequestSchema = z.discriminatedUnion("action", [

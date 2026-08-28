@@ -4,7 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, logoutSession, raiseCitizenGrievance, submitReport, updateCitizenLocation, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
+import { loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, logoutSession, raiseCitizenGrievance, submitReport, updateCitizenLocation, validateReportImage, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
 import { EngineerLoginScreen, EngineerProjectsApp } from "./src/engineer-projects";
 import { CategoryScreen, CitizenLoginScreen, CitizenProfileScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, GrievanceScreen, HomeScreen, LocationConfirmScreen, LocationDetectScreen, RetakeScreen, ReviewReportScreen, Shell, SplashScreen, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, WelcomeScreen, type CitizenHomeSummary, type ConfirmedLocation } from "./src/screens";
 import { NotificationsScreen } from "./src/notifications";
@@ -36,6 +36,10 @@ function AppContent() {
   const [location, setLocation] = useState<ConfirmedLocation>();
   const [draftTicketId, setDraftTicketId] = useState<string>();
   const [feedback, setFeedback] = useState({ message: "", attemptsRemaining: 0 });
+  const [imageValidationToken, setImageValidationToken] = useState<string>();
+  const [imageChecking, setImageChecking] = useState(false);
+  const [imageCheckError, setImageCheckError] = useState<string>();
+  const [photoAttempt, setPhotoAttempt] = useState(0);
   const [submitted, setSubmitted] = useState<CitizenTicketSummary>();
   const [ticketDetail, setTicketDetail] = useState<CitizenTicketDetail>();
   const [ticketTimeline, setTicketTimeline] = useState<CitizenTicketTimelineResponse>();
@@ -138,7 +142,7 @@ function AppContent() {
     });
   }, [citizenAuth, openCompletionValidations, openTicketById, openValidations, viewer]);
 
-  const resetReport = () => { setScreen("home"); setSelectedCategory(undefined); setImages([]); setLocation(undefined); setDraftTicketId(undefined); setSubmitted(undefined); void refreshHome(); };
+  const resetReport = () => { setScreen("home"); setSelectedCategory(undefined); setImages([]); setLocation(undefined); setDraftTicketId(undefined); setImageValidationToken(undefined); setImageCheckError(undefined); setPhotoAttempt(0); setSubmitted(undefined); void refreshHome(); };
   const openTickets = (filter: "ongoing" | "past") => {
     setTicketFilter(filter); setScreen("tickets"); setTicketsLoading(true); setTicketsError(undefined);
     void loadMyTickets(filter).then(setTickets).catch((error: unknown) => setTicketsError(error instanceof Error ? error.message : "Could not load reports")).finally(() => setTicketsLoading(false));
@@ -177,15 +181,38 @@ function AppContent() {
     finally { setCompletionSubmitting(false); }
   };
   const completeSubmission = async () => {
-    if (!selectedCategory || !images[0] || !location) return;
+    if (!selectedCategory || !images[0] || !location || !imageValidationToken) return;
     setSubmitting(true);
     const report: DraftReport = { categoryId: selectedCategory.id, title: `${selectedCategory.name} near ${location.address.split(",")[0]}`, address: location.address, latitude: location.latitude, longitude: location.longitude };
     try {
-      const result = await submitReport(report, images[0], images.slice(1), draftTicketId);
+      const result = await submitReport(report, images[0], images.slice(1), imageValidationToken, draftTicketId);
       if (result.needsRetake) { setDraftTicketId(result.ticketId); setFeedback(result); setScreen("feedback"); }
       else { setSubmitted(result.ticket); setDraftTicketId(undefined); setScreen("confirmation"); }
-    } catch (error) { Alert.alert("Couldn’t submit report", error instanceof Error ? error.message : "Please try again."); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Please try again.";
+      if (message.includes("doesn’t appear to match") || message.includes("photo validation")) {
+        setImageValidationToken(undefined); setFeedback({ message, attemptsRemaining: Math.max(0, 3 - photoAttempt) }); setScreen("feedback");
+      } else Alert.alert("Couldn’t submit report", message);
+    }
     finally { setSubmitting(false); }
+  };
+  const continueAfterPhotoCheck = async () => {
+    if (!selectedCategory || !images[0]) return;
+    const nextAttempt = photoAttempt + 1;
+    setImageChecking(true); setImageCheckError(undefined); setPhotoAttempt(nextAttempt);
+    try {
+      const result = await validateReportImage(selectedCategory.id, images[0], nextAttempt);
+      if (result.relevant && result.validationToken) {
+        setImageValidationToken(result.validationToken); setScreen("location-detect");
+      } else {
+        setImageValidationToken(undefined);
+        setFeedback({ message: "This photo doesn’t appear to match the selected issue.", attemptsRemaining: result.attemptsRemaining });
+        setScreen("feedback");
+      }
+    } catch (error) {
+      setImageValidationToken(undefined);
+      setImageCheckError(error instanceof Error ? error.message : "We could not check this photo right now. Please try again.");
+    } finally { setImageChecking(false); }
   };
   const refreshTicket = async () => { if (ticketDetail) await openTicketById(ticketDetail.id); };
   const submitGrievance = async (reason: CitizenGrievanceReason, note?: string, evidence?: LocalImage) => {
@@ -209,12 +236,12 @@ function AppContent() {
   if (!citizenAuth) return <DesignSystemProvider theme="citizen"><StatusBar style="dark" /><SplashScreen /></DesignSystemProvider>;
 
   let content;
-  if (screen === "category") content = <CategoryScreen categories={categories} loading={!categoryError && categories.length === 0} error={categoryError} selectedId={selectedCategory?.id} onBack={() => setScreen("home")} onSelect={(category) => { setSelectedCategory(category); setScreen("evidence"); }} />;
-  else if (screen === "evidence") content = <EvidenceScreen images={images} onChange={setImages} onBack={() => setScreen("category")} onNext={() => setScreen("location-detect")} />;
+  if (screen === "category") content = <CategoryScreen categories={categories} loading={!categoryError && categories.length === 0} error={categoryError} selectedId={selectedCategory?.id} onBack={() => setScreen("home")} onSelect={(category) => { setSelectedCategory(category); setImageValidationToken(undefined); setImageCheckError(undefined); setScreen("evidence"); }} />;
+  else if (screen === "evidence") content = <EvidenceScreen images={images} checking={imageChecking} checkError={imageCheckError} onChange={(next) => { setImages(next); setImageValidationToken(undefined); setImageCheckError(undefined); }} onBack={() => setScreen("category")} onNext={() => void continueAfterPhotoCheck()} />;
   else if (screen === "location-detect") content = <LocationDetectScreen onBack={() => setScreen("evidence")} onDetected={(next) => { setLocation(next); setScreen("location-confirm"); }} />;
   else if (screen === "location-confirm" && location) content = <LocationConfirmScreen value={location} onChange={setLocation} onBack={() => setScreen("evidence")} onRetry={() => setScreen("location-detect")} onNext={() => setScreen("review")} />;
   else if (screen === "review" && selectedCategory && images[0] && location) content = <ReviewReportScreen category={selectedCategory} image={images[0]} location={location} submitting={submitting} onBack={() => setScreen("location-confirm")} onSubmit={() => void completeSubmission()} />;
-  else if (screen === "feedback") content = <RetakeScreen {...feedback} onRetake={() => { setImages([]); setScreen("evidence"); }} />;
+  else if (screen === "feedback") content = <RetakeScreen attemptsRemaining={feedback.attemptsRemaining} onSelected={(image) => { setImages([image]); setImageValidationToken(undefined); setImageCheckError(undefined); setScreen("evidence"); }} />;
   else if (screen === "confirmation" && submitted && images[0] && location) content = <ConfirmationScreen ticket={submitted} image={images[0]} location={location} onView={() => void openTicketById(submitted.id)} onDone={resetReport} />;
   else if (screen === "detail" && ticketDetail) content = <TicketDetailScreen ticket={ticketDetail} timeline={ticketTimeline} loading={ticketDetailLoading} error={ticketDetailError} onRefresh={() => void refreshTicket()} onDone={() => openTickets("ongoing")} onRaiseGrievance={() => setScreen("grievance")} />;
   else if (screen === "detail") content = <Shell><View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>{ticketDetailError ?? "Loading ticket details…"}</Text></View></Shell>;

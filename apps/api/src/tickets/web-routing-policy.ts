@@ -20,7 +20,9 @@ export function imageCompletionDecision(input: {
   attempt: number;
   maxRetries: number;
 }): ImageCompletionDecision {
-  if (!input.relevancePassed && (input.directWebFlow || input.attempt < input.maxRetries)) return "RETAKE";
+  // Part III §8.2 — AI is advisory, but a failed relevance check cannot create
+  // downstream civic work. Every confidence failure stays recoverable as retake.
+  if (!input.relevancePassed) return "RETAKE";
   if (input.relevancePassed && input.directWebFlow) return "DIRECT_AGENCY";
   return "COMMUNITY_VALIDATION";
 }

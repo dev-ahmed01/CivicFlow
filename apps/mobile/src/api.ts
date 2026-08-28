@@ -356,20 +356,41 @@ export type SubmissionResult =
   | { needsRetake: true; ticketId: string; message: string; attemptsRemaining: number }
   | { needsRetake: false; ticket: CitizenTicketSummary };
 
+export type ImageRelevanceCheck = {
+  relevant: boolean;
+  confidence: number;
+  reason: "MATCH" | "CATEGORY_MISMATCH" | "UNRELATED_CONTENT" | "LOW_CONFIDENCE";
+  attemptsRemaining: number;
+  validationToken?: string;
+};
+
+export async function validateReportImage(categoryId: string, image: LocalImage, attempt: number): Promise<ImageRelevanceCheck> {
+  const target = await apiFetch<{ objectKey: string; upload: UploadTarget }>("/tickets/image-relevance", {
+    method: "POST",
+    body: JSON.stringify({ action: "presign", categoryId, fileName: image.fileName, contentType: image.contentType }),
+  });
+  await uploadFile(target.upload, image);
+  return apiFetch<ImageRelevanceCheck>("/tickets/image-relevance", {
+    method: "POST",
+    body: JSON.stringify({ action: "complete", categoryId, objectKey: target.objectKey, fileName: image.fileName, contentType: image.contentType, attempt }),
+  });
+}
+
 export async function submitReport(
   report: DraftReport,
   primary: LocalImage,
   supporting: LocalImage[],
+  validationToken: string,
   draftTicketId?: string,
 ): Promise<SubmissionResult> {
   let ticketId = draftTicketId;
   let primaryImageId: string;
-  let primaryUpload: UploadTarget;
+  let primaryUpload: UploadTarget | undefined;
 
   if (!ticketId) {
-    const created = await apiFetch<{ ticketId: string; imageId: string; upload: UploadTarget }>("/tickets", {
+    const created = await apiFetch<{ ticketId: string; imageId: string; upload?: UploadTarget; prevalidated?: boolean }>("/tickets", {
       method: "POST",
-      body: JSON.stringify({ ...report, channel: "MOBILE", primaryImage: { fileName: primary.fileName, contentType: primary.contentType } }),
+      body: JSON.stringify({ ...report, channel: "MOBILE", primaryImage: { validationToken } }),
     });
     ticketId = created.ticketId;
     primaryImageId = created.imageId;
@@ -383,7 +404,7 @@ export async function submitReport(
     primaryUpload = retake.upload;
   }
 
-  await uploadFile(primaryUpload, primary);
+  if (primaryUpload) await uploadFile(primaryUpload, primary);
   for (const image of supporting) {
     const target = await apiFetch<{ imageId: string; upload: UploadTarget }>(`/tickets/${ticketId}/images`, {
       method: "POST",

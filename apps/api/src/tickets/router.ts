@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { Channel, Prisma, ProjectState, TicketState, UserRole, prisma } from "db";
+import { z } from "zod";
 import {
   citizenTicketFilterSchema,
   citizenTicketStateLabels,
@@ -14,7 +15,8 @@ import {
 } from "@civicos/shared";
 import { requireAuth, requireRole } from "../auth/middleware";
 import { storageReadUrl, type ImageStorage } from "../images/storage";
-import { cosineSimilarity, type ImageRelevanceService } from "../images/relevance";
+import { cosineSimilarity, decideImageRelevance, type ImageRelevanceService } from "../images/relevance";
+import { issueValidatedImageToken, verifyValidatedImageToken } from "../images/validation-token";
 import { enterPendingValidation } from "../validations/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
 import { routeRelevantWebTicket } from "../routing/service";
@@ -22,6 +24,11 @@ import { imageCompletionDecision, webAutoRoutingEnabled, type DeploymentProfile 
 
 const terminalStates: TicketState[] = [TicketState.RESOLVED, TicketState.CLOSED, TicketState.REJECTED, TicketState.CANCELLED];
 const preValidationStates: TicketState[] = [TicketState.DRAFT, TicketState.AI_CHECK_PENDING, TicketState.AI_FLAGGED];
+const imageContentTypeSchema = z.enum(["image/jpeg", "image/png", "image/webp", "image/heic"]);
+const imageRelevanceRequestSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("presign"), categoryId: z.string().uuid(), fileName: z.string().trim().min(1).max(200), contentType: imageContentTypeSchema }),
+  z.object({ action: z.literal("complete"), categoryId: z.string().uuid(), objectKey: z.string().min(1).max(500), fileName: z.string().trim().min(1).max(200), contentType: imageContentTypeSchema, attempt: z.number().int().positive().default(1) }),
+]);
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -263,6 +270,7 @@ async function finalizeNewTicket(
 export function createTicketsRouter(
   relevance: ImageRelevanceService,
   storage: ImageStorage,
+  imageValidationSecret: string,
   deploymentProfile: DeploymentProfile = "local",
 ): Router {
   const router = Router();
@@ -308,6 +316,55 @@ export function createTicketsRouter(
     response.json({ categories: categories.map((category) => ({ ...category, roadIntelligenceEnabled: category.id === roadCategoryId })) });
   }));
 
+  router.post("/tickets/image-relevance", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {
+    const parsed = imageRelevanceRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "Invalid image relevance request", details: parsed.error.flatten() });
+      return;
+    }
+    const input = parsed.data;
+    const category = await prisma.category.findUnique({ where: { id: input.categoryId }, select: { id: true } });
+    if (!category) {
+      response.status(422).json({ error: "Please select an available issue category" });
+      return;
+    }
+    if (input.action === "presign") {
+      const objectKey = `preflight/${request.auth!.userId}/${randomUUID()}-${safeFileName(input.fileName)}`;
+      response.status(201).json({ objectKey, upload: storage.createUpload(objectKey, input.contentType) });
+      return;
+    }
+    const expectedPrefix = `preflight/${request.auth!.userId}/`;
+    if (!input.objectKey.startsWith(expectedPrefix) || !(await storage.verifyUpload(input.objectKey, input.contentType))) {
+      response.status(422).json({ error: "The uploaded image is missing, empty, too large, or has an unexpected file type." });
+      return;
+    }
+    let check;
+    try {
+      check = await relevance.checkImageRelevance(storage.createDownload(input.objectKey), input.categoryId);
+    } catch {
+      response.status(502).json({ error: "We could not check this photo right now. Please try again." });
+      return;
+    }
+    const [threshold, maxRetries] = await Promise.all([
+      getConfigNumber("ai_relevance.pass_threshold"),
+      getConfigNumber("ai_relevance.max_retries"),
+    ]);
+    const decision = decideImageRelevance(check, threshold);
+    response.json({
+      ...decision,
+      attemptsRemaining: Math.max(0, maxRetries - input.attempt),
+      ...(decision.relevant ? {
+        validationToken: issueValidatedImageToken(imageValidationSecret, {
+          userId: request.auth!.userId,
+          categoryId: input.categoryId,
+          objectKey: input.objectKey,
+          fileName: input.fileName,
+          contentType: input.contentType,
+        }),
+      } : {}),
+    });
+  }));
+
   router.post("/tickets", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {
     const parsed = createTicketSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -319,6 +376,45 @@ export function createTicketsRouter(
     if (!category) {
       response.status(422).json({ error: "Please select an available issue category" });
       return;
+    }
+    const validatedImage = "validationToken" in input.primaryImage ? input.primaryImage : null;
+    if (!validatedImage && input.channel !== Channel.WEB) {
+      response.status(400).json({ error: "Photo relevance validation is required before creating a mobile report." });
+      return;
+    }
+
+    let primary: { objectKey: string; fileName: string; contentType: "image/jpeg" | "image/png" | "image/webp" | "image/heic" };
+    let relevanceScore: number | undefined;
+    let relevanceEmbedding: number[] | null = null;
+    if (validatedImage) {
+      try {
+        const claims = verifyValidatedImageToken(imageValidationSecret, validatedImage.validationToken);
+        if (claims.userId !== request.auth!.userId || claims.categoryId !== input.categoryId || !claims.objectKey.startsWith(`preflight/${request.auth!.userId}/`)) {
+          response.status(422).json({ error: "The photo validation does not match this report." });
+          return;
+        }
+        if (!(await storage.verifyUpload(claims.objectKey, claims.contentType))) {
+          response.status(422).json({ error: "The validated photo is no longer available. Please choose it again." });
+          return;
+        }
+        const imageUrl = storage.createDownload(claims.objectKey);
+        const check = await relevance.checkImageRelevance(imageUrl, input.categoryId);
+        const threshold = await getConfigNumber("ai_relevance.pass_threshold");
+        const decision = decideImageRelevance(check, threshold);
+        if (!decision.relevant) {
+          response.status(422).json({ error: "This photo doesn’t appear to match the selected issue.", code: decision.reason });
+          return;
+        }
+        relevanceScore = decision.confidence;
+        relevanceEmbedding = await relevance.getImageEmbedding(imageUrl);
+        primary = claims;
+      } catch (error) {
+        response.status(422).json({ error: error instanceof Error && error.message === "Invalid image validation token" ? "The photo validation has expired. Please check the photo again." : "We could not check this photo right now. Please try again." });
+        return;
+      }
+    } else {
+      if (!("fileName" in input.primaryImage)) throw new Error("Validated image narrowing failed");
+      primary = { objectKey: "", fileName: input.primaryImage.fileName, contentType: input.primaryImage.contentType };
     }
     const wards = await prisma.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "Ward"
@@ -334,8 +430,8 @@ export function createTicketsRouter(
     const ticketId = randomUUID();
     const observationId = randomUUID();
     const imageId = randomUUID();
-    const objectKey = `tickets/${ticketId}/${imageId}-${safeFileName(input.primaryImage.fileName)}`;
-    const upload = storage.createUpload(objectKey, input.primaryImage.contentType);
+    const objectKey = validatedImage ? primary.objectKey : `tickets/${ticketId}/${imageId}-${safeFileName(primary.fileName)}`;
+    const upload = storage.createUpload(objectKey, primary.contentType);
     await prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`
         INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "channel", "title", "address", "createdAt", "updatedAt")
@@ -356,14 +452,14 @@ export function createTicketsRouter(
         },
       });
       await transaction.image.create({
-        data: { id: imageId, observationId, url: upload.publicUrl, objectKey, contentType: input.primaryImage.contentType, isPrimary: true },
+        data: { id: imageId, observationId, url: upload.publicUrl, objectKey, contentType: primary.contentType, isPrimary: true, aiRelevanceScore: relevanceScore, embedding: relevanceEmbedding ?? Prisma.JsonNull, uploadedAt: validatedImage ? new Date() : null },
       });
       await transaction.ticketStateTransition.createMany({ data: [
         { ticketId, fromState: null, toState: TicketState.DRAFT, reason: "REPORT_STARTED", actedById: request.auth!.userId },
         { ticketId, fromState: TicketState.DRAFT, toState: TicketState.AI_CHECK_PENDING, reason: "PRIMARY_IMAGE_UPLOAD_CREATED", actedById: request.auth!.userId },
       ] });
     });
-    response.status(201).json({ ticketId, imageId, upload, ...publicStatus(TicketState.AI_CHECK_PENDING) });
+    response.status(201).json({ ticketId, imageId, ...(validatedImage ? { prevalidated: true } : { upload }), ...publicStatus(TicketState.AI_CHECK_PENDING) });
   }));
 
   router.post("/tickets/:id/images", requireRole(UserRole.CITIZEN), asyncRoute(async (request, response) => {
@@ -433,18 +529,31 @@ export function createTicketsRouter(
       response.json({ imageId: image.id, uploaded: true });
       return;
     }
+    if (!preValidationStates.includes(image.observation.ticket.state)) {
+      const row = await getTicketRow(ticketId);
+      if (!row) throw new Error("Finalized ticket could not be loaded");
+      response.json({ ticket: serializeTicket(row), needsRetake: false });
+      return;
+    }
 
     let check;
     let embedding: number[] | null;
-    try {
-      const imageUrl = storage.createDownload(image.objectKey);
-      check = await relevance.checkImageRelevance(imageUrl, image.observation.ticket.categoryId);
-      embedding = await relevance.getImageEmbedding(imageUrl);
-    } catch (error) {
-      response.status(502).json({ error: "We could not check this photo right now. Please try again.", detail: error instanceof Error ? error.message : undefined });
-      return;
+    if (image.aiRelevanceScore !== null && image.uploadedAt) {
+      check = { score: image.aiRelevanceScore, pass: true, reason: "MATCH" as const };
+      embedding = vectorFromJson(image.embedding);
+    } else {
+      try {
+        const imageUrl = storage.createDownload(image.objectKey);
+        check = await relevance.checkImageRelevance(imageUrl, image.observation.ticket.categoryId);
+        embedding = await relevance.getImageEmbedding(imageUrl);
+      } catch (error) {
+        response.status(502).json({ error: "We could not check this photo right now. Please try again.", detail: error instanceof Error ? error.message : undefined });
+        return;
+      }
     }
     const maxRetries = await getConfigNumber("ai_relevance.max_retries");
+    const relevanceThreshold = await getConfigNumber("ai_relevance.pass_threshold");
+    const relevanceDecision = decideImageRelevance(check, relevanceThreshold);
     const nextAttempt = image.observation.ticket.aiRetryCount + 1;
     // The channel is client-reported and spoofable. It is acceptable only as a
     // demo workflow hint: authorization and agency ownership remain server-side.
@@ -455,14 +564,14 @@ export function createTicketsRouter(
         await getConfigBoolean("demo.web_auto_route_enabled"),
       );
     const completionDecision = imageCompletionDecision({
-      relevancePassed: check.pass,
+      relevancePassed: relevanceDecision.relevant,
       directWebFlow,
       attempt: nextAttempt,
       maxRetries,
     });
     await prisma.image.update({
       where: { id: image.id },
-      data: { aiRelevanceScore: check.score, embedding: embedding ?? Prisma.JsonNull, uploadedAt: new Date() },
+      data: { aiRelevanceScore: relevanceDecision.confidence, embedding: embedding ?? Prisma.JsonNull, uploadedAt: new Date() },
     });
 
     if (completionDecision === "RETAKE") {
@@ -486,7 +595,7 @@ export function createTicketsRouter(
 
     await prisma.ticket.update({
       where: { id: ticketId },
-      data: { aiRetryCount: nextAttempt, manualReviewRecommended: !check.pass },
+      data: { aiRetryCount: nextAttempt, manualReviewRecommended: !relevanceDecision.relevant },
     });
     const final = await finalizeNewTicket(
       ticketId,

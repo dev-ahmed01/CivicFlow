@@ -69,6 +69,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.use(createTicketsRouter(
     resolvedDependencies.imageRelevance ?? createImageRelevanceService(env),
     imageStorage,
+    env.JWT_ACCESS_SECRET,
     env.DEPLOYMENT_PROFILE,
   ));
   app.use(createValidationsRouter(imageStorage));
