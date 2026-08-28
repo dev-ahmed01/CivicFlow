@@ -13,7 +13,7 @@ function validJpeg(width = 640, height = 480): Uint8Array {
 }
 
 describe("Cloudflare R2 compatibility", () => {
-  it("signs an R2 path-style PUT without changing the storage contract", () => {
+  it("signs an R2 path-style PUT without changing the storage contract", async () => {
     const env = parseEnv({
       NODE_ENV: "production",
       DEPLOYMENT_PROFILE: "free_demo",
@@ -34,7 +34,7 @@ describe("Cloudflare R2 compatibility", () => {
     });
     const storage = new S3CompatibleStorage(env, () => new Date("2026-08-24T10:00:00.000Z"));
 
-    const upload = storage.createUpload("tickets/example/photo one.jpg", "image/jpeg");
+    const upload = await storage.createUpload("tickets/example/photo one.jpg", "image/jpeg");
 
     const uploadUrl = new URL(upload.uploadUrl);
     expect(uploadUrl.origin).toBe("https://account-id.r2.cloudflarestorage.com");
@@ -102,6 +102,26 @@ describe("Supabase Storage S3 compatibility", () => {
     CORS_ORIGINS: "https://civicos-demo.vercel.app",
   });
 
+  it("generates an SDK-compatible path-style presigned PUT for the Supabase S3 endpoint", async () => {
+    const storage = new S3CompatibleStorage(env(), () => new Date("2026-08-28T10:00:00.000Z"));
+
+    const upload = await storage.createUpload("preflight/citizen/photo (1)!.jpg", "image/jpeg");
+    const url = new URL(upload.uploadUrl);
+
+    expect(url.origin).toBe("https://project-ref.storage.supabase.co");
+    expect(url.pathname).toBe("/storage/v1/s3/civic-evidence/preflight/citizen/photo%20%281%29%21.jpg");
+    expect(url.searchParams.get("X-Amz-Algorithm")).toBe("AWS4-HMAC-SHA256");
+    expect(url.searchParams.get("X-Amz-Credential")).toBe("supabase-access-key/20260828/ap-southeast-1/s3/aws4_request");
+    expect(url.searchParams.get("X-Amz-Date")).toBe("20260828T100000Z");
+    expect(url.searchParams.get("X-Amz-Expires")).toBe("900");
+    expect(url.searchParams.get("X-Amz-Content-Sha256")).toBe("UNSIGNED-PAYLOAD");
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe("content-type;host");
+    expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[a-f0-9]{64}$/);
+    expect(url.searchParams.get("x-id")).toBe("PutObject");
+    expect(url.searchParams.has("x-amz-checksum-crc32")).toBe(false);
+    expect(upload.headers).toEqual({ "Content-Type": "image/jpeg" });
+  });
+
   it("uses the same bucket path, region, and object-key encoding for PUT, HEAD, and GET", async () => {
     const jpeg = validJpeg();
     const request = vi.fn()
@@ -110,7 +130,8 @@ describe("Supabase Storage S3 compatibility", () => {
     const storage = new S3CompatibleStorage(env(), () => new Date("2026-08-28T10:00:00.000Z"), request);
 
     const objectKey = "preflight/citizen/photo (1)!.jpg";
-    const putUrl = new URL(storage.createUpload(objectKey, "image/jpeg").uploadUrl);
+    const upload = await storage.createUpload(objectKey, "image/jpeg");
+    const putUrl = new URL(upload.uploadUrl);
     await expect(storage.verifyUpload(objectKey, "image/jpeg")).resolves.toBe(true);
     const headUrl = new URL(request.mock.calls[0]?.[0] as string);
     const getUrl = new URL(request.mock.calls[1]?.[0] as string);
@@ -121,6 +142,9 @@ describe("Supabase Storage S3 compatibility", () => {
       expect(url.searchParams.get("X-Amz-Credential")).toContain("/ap-southeast-1/s3/aws4_request");
       expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[a-f0-9]{64}$/);
     }
+    expect(putUrl.searchParams.get("X-Amz-Content-Sha256")).toBe("UNSIGNED-PAYLOAD");
+    expect(putUrl.searchParams.get("X-Amz-SignedHeaders")).toBe("content-type;host");
+    expect(upload.headers).toEqual({ "Content-Type": "image/jpeg" });
     expect(new Set([putUrl, headUrl, getUrl].map((url) => url.searchParams.get("X-Amz-Signature"))).size).toBe(3);
   });
 

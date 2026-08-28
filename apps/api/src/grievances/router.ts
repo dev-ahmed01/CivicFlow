@@ -71,7 +71,7 @@ export function createGrievancesRouter(storage: ImageStorage): Router {
     const grievanceId = randomUUID();
     const evidence = parsed.data.evidence;
     const objectKey = evidence ? `grievances/${grievanceId}/${safeFileName(evidence.fileName)}` : undefined;
-    const upload = evidence && objectKey ? storage.createUpload(objectKey, evidence.contentType) : undefined;
+    const upload = evidence && objectKey ? await storage.createUpload(objectKey, evidence.contentType) : undefined;
     const grievance = await prisma.$transaction(async (transaction) => {
       const created = await transaction.grievance.create({
         data: {

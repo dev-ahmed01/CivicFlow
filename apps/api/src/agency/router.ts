@@ -249,7 +249,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
       const observationId = randomUUID();
       const imageId = randomUUID();
       const objectKey = `agency-tickets/${ticketId}/${imageId}-${safeFileName(input.evidence.fileName)}`;
-      const upload = storage.createUpload(objectKey, input.evidence.contentType);
+      const upload = await storage.createUpload(objectKey, input.evidence.contentType);
       const title = `${category.name}: ${input.description}`.slice(0, 160);
       const address = input.location?.address ?? `${ward.name}, Bengaluru`;
       const result = await prisma.$transaction(async (transaction) => {
@@ -356,7 +356,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         const input = parsed.data;
         const reportId = randomUUID();
         const objectKey = `inspection-reports/${ticketId}/${reportId}-${safeFileName(input.fileName)}`;
-        const upload = storage.createUpload(objectKey, input.contentType);
+        const upload = await storage.createUpload(objectKey, input.contentType);
         await prisma.$transaction(async (transaction) => {
           if (ticket.state === TicketState.ROUTED_TO_AGENCY) {
             await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.INSPECTION_DUE } });

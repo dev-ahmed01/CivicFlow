@@ -493,7 +493,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         }
         const evidenceId = randomUUID();
         const objectKey = `completion-evidence/${project.id}/${evidenceId}-${safeFileName(parsed.data.fileName)}`;
-        const upload = storage.createUpload(objectKey, parsed.data.contentType);
+        const upload = await storage.createUpload(objectKey, parsed.data.contentType);
         await prisma.completionEvidence.create({ data: {
           id: evidenceId,
           projectId: project.id,

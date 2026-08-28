@@ -24,6 +24,8 @@
     "verify:demo100": "tsc -p tsconfig.json && node dist/scripts/verify-demo100.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1120.0",
+    "@aws-sdk/s3-request-presigner": "3.1120.0",
     "@civicos/shared": "workspace:*",
     "bcrypt": "6.0.0",
     "compression": "1.8.1",

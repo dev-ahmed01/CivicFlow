@@ -1,4 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { AppEnv } from "../config/env";
 
 export interface PresignedUpload {
@@ -9,7 +11,7 @@ export interface PresignedUpload {
 }
 
 export interface ImageStorage {
-  createUpload(objectKey: string, contentType: string): PresignedUpload;
+  createUpload(objectKey: string, contentType: string): PresignedUpload | Promise<PresignedUpload>;
   createDownload(objectKey: string): string;
   verifyUpload(objectKey: string, contentType: string): Promise<boolean>;
 }
@@ -185,13 +187,27 @@ export function inspectUploadBytes(bytes: Uint8Array, contentType: string): bool
 }
 
 export class S3CompatibleStorage implements ImageStorage {
+  private readonly client: S3Client;
+
   constructor(
     private readonly env: AppEnv,
     private readonly now = () => new Date(),
     private readonly request = fetch,
-  ) {}
+  ) {
+    this.client = new S3Client({
+      endpoint: env.S3_ENDPOINT,
+      region: env.S3_REGION,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: env.S3_ACCESS_KEY_ID,
+        secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+      },
+      // Supabase does not require the SDK's optional automatic PUT checksum.
+      requestChecksumCalculation: "WHEN_REQUIRED",
+    });
+  }
 
-  private sign(method: "GET" | "HEAD" | "PUT", objectKey: string, expiresInSeconds = 900): string {
+  private sign(method: "GET" | "HEAD", objectKey: string, expiresInSeconds = 900): string {
     const endpoint = new URL(this.env.S3_ENDPOINT);
     const instant = this.now().toISOString().replace(/[:-]|\.\d{3}/g, "");
     const date = instant.slice(0, 8);
@@ -216,14 +232,29 @@ export class S3CompatibleStorage implements ImageStorage {
     return `${endpoint.origin}${canonicalUri}?${query.toString()}`;
   }
 
-  createUpload(objectKey: string, contentType: string): PresignedUpload {
+  async createUpload(objectKey: string, contentType: string): Promise<PresignedUpload> {
+    const expiresInSeconds = 900;
+    const uploadUrl = await getSignedUrl(
+      this.client,
+      new PutObjectCommand({
+        Bucket: this.env.S3_BUCKET,
+        Key: objectKey,
+        ContentType: contentType,
+      }),
+      {
+        expiresIn: expiresInSeconds,
+        signingDate: this.now(),
+        // The Android PUT must send exactly the content type requested here.
+        signableHeaders: new Set(["content-type"]),
+      },
+    );
     return {
-      uploadUrl: this.sign("PUT", objectKey),
+      uploadUrl,
       // This stable object reference is persisted, but never returned as an
       // authorization mechanism. API responses use createDownload instead.
       publicUrl: `${this.env.S3_PUBLIC_BASE_URL.replace(/\/$/, "")}/${encodePath(objectKey)}`,
       headers: { "Content-Type": contentType },
-      expiresInSeconds: 900,
+      expiresInSeconds,
     };
   }
 

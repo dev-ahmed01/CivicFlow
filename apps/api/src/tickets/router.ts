@@ -390,7 +390,7 @@ export function createTicketsRouter(
     if (input.action === "presign") {
       const objectKey = `preflight/${request.auth!.userId}/${randomUUID()}-${safeFileName(input.fileName)}`;
       try {
-        const upload = storage.createUpload(objectKey, input.contentType);
+        const upload = await storage.createUpload(objectKey, input.contentType);
         logPresign(request, 201, null, input.contentType);
         response.status(201).json({ objectKey, upload });
       } catch {
@@ -500,7 +500,7 @@ export function createTicketsRouter(
     const observationId = randomUUID();
     const imageId = randomUUID();
     const objectKey = validatedImage ? primary.objectKey : `tickets/${ticketId}/${imageId}-${safeFileName(primary.fileName)}`;
-    const upload = storage.createUpload(objectKey, primary.contentType);
+    const upload = await storage.createUpload(objectKey, primary.contentType);
     await prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`
         INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "coordinates", "wardId", "state", "channel", "title", "address", "createdAt", "updatedAt")
@@ -558,7 +558,7 @@ export function createTicketsRouter(
       }
       const imageId = randomUUID();
       const objectKey = `tickets/${ticketId}/${imageId}-${safeFileName(uploadInput.fileName)}`;
-      const upload = storage.createUpload(objectKey, uploadInput.contentType);
+      const upload = await storage.createUpload(objectKey, uploadInput.contentType);
       await prisma.$transaction(async (transaction) => {
         if (uploadInput.isPrimary) {
           await transaction.image.updateMany({ where: { observationId: observation.id, isPrimary: true }, data: { isPrimary: false } });

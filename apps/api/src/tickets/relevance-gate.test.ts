@@ -24,7 +24,7 @@ function accessToken() {
 }
 
 const storage: ImageStorage = {
-  createUpload: (objectKey, contentType) => ({ uploadUrl: "https://upload.example.com", publicUrl: `https://images.example.com/${objectKey}`, headers: { "Content-Type": contentType }, expiresInSeconds: 900 }),
+  createUpload: async (objectKey, contentType) => ({ uploadUrl: "https://upload.example.com", publicUrl: `https://images.example.com/${objectKey}`, headers: { "Content-Type": contentType }, expiresInSeconds: 900 }),
   createDownload: (objectKey) => `https://images.example.com/${objectKey}`,
   verifyUpload: async () => true,
 };
@@ -88,7 +88,7 @@ describe("pre-ticket image relevance gate", () => {
   it("returns safe free-demo diagnostics when storage presigning fails", async () => {
     const failingStorage: ImageStorage = {
       ...storage,
-      createUpload() { throw new Error("secret storage credential detail"); },
+      async createUpload() { throw new Error("secret storage credential detail"); },
     };
     const app = express();
     app.use(express.json());
