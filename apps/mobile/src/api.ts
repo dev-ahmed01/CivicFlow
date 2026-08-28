@@ -443,6 +443,21 @@ export async function updateCitizenLocation(latitude: number, longitude: number)
   });
 }
 
+export type ResolvedReportingArea = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+};
+
+export async function resolveReportingArea(latitude: number, longitude: number): Promise<ResolvedReportingArea> {
+  const result = await apiFetch<{ area: ResolvedReportingArea }>("/reporting-areas/resolve", {
+    method: "POST",
+    body: JSON.stringify({ latitude, longitude }),
+  });
+  return result.area;
+}
+
 export async function validateTicket(ticketId: string, vote: ValidationVote): Promise<SubmitValidationResult> {
   return apiFetch<SubmitValidationResult>(`/tickets/${ticketId}/validate`, {
     method: "POST",

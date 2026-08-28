@@ -4,7 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
 import { ActivityIndicator, Alert, AppState, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, logoutSession, raiseCitizenGrievance, submitReport, updateCitizenLocation, validateReportImage, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
+import { loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, logoutSession, raiseCitizenGrievance, resolveReportingArea, submitReport, updateCitizenLocation, validateReportImage, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
 import { EngineerLoginScreen, EngineerProjectsApp } from "./src/engineer-projects";
 import { CategoryScreen, CitizenLoginScreen, CitizenProfileScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, GrievanceScreen, HomeScreen, LocationConfirmScreen, LocationDetectScreen, RetakeScreen, ReviewReportScreen, Shell, SplashScreen, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, WelcomeScreen, type CitizenHomeSummary, type ConfirmedLocation } from "./src/screens";
 import { NotificationsScreen } from "./src/notifications";
@@ -35,6 +35,8 @@ function AppContent() {
   const [selectedCategory, setSelectedCategory] = useState<CategorySummary>();
   const [images, setImages] = useState<LocalImage[]>([]);
   const [location, setLocation] = useState<ConfirmedLocation>();
+  const [confirmedLocation, setConfirmedLocation] = useState<ConfirmedLocation>();
+  const [confirmingLocation, setConfirmingLocation] = useState(false);
   const [draftTicketId, setDraftTicketId] = useState<string>();
   const [feedback, setFeedback] = useState({ message: "", attemptsRemaining: 0 });
   const [imageValidationToken, setImageValidationToken] = useState<string>();
@@ -169,7 +171,7 @@ function AppContent() {
     });
   }, [citizenAuth, openCompletionValidations, openTicketById, openValidations, viewer]);
 
-  const resetReport = () => { setScreen("home"); setSelectedCategory(undefined); setImages([]); setLocation(undefined); setDraftTicketId(undefined); setImageValidationToken(undefined); setImageCheckError(undefined); setPhotoAttempt(0); setSubmitted(undefined); void refreshHome(); };
+  const resetReport = () => { setScreen("home"); setSelectedCategory(undefined); setImages([]); setLocation(undefined); setConfirmedLocation(undefined); setDraftTicketId(undefined); setImageValidationToken(undefined); setImageCheckError(undefined); setPhotoAttempt(0); setSubmitted(undefined); void refreshHome(); };
   const openTickets = (filter: "ongoing" | "past") => {
     setTicketFilter(filter); setScreen("tickets"); setTicketsLoading(true); setTicketsError(undefined);
     void loadMyTickets(filter).then(setTickets).catch((error: unknown) => setTicketsError(error instanceof Error ? error.message : "Could not load reports")).finally(() => setTicketsLoading(false));
@@ -208,9 +210,9 @@ function AppContent() {
     finally { setCompletionSubmitting(false); }
   };
   const completeSubmission = async () => {
-    if (!selectedCategory || !images[0] || !location || !imageValidationToken) return;
+    if (!selectedCategory || !images[0] || !confirmedLocation || !imageValidationToken) return;
     setSubmitting(true);
-    const report: DraftReport = { categoryId: selectedCategory.id, title: `${selectedCategory.name} near ${location.address.split(",")[0]}`, address: location.address, latitude: location.latitude, longitude: location.longitude };
+    const report: DraftReport = { categoryId: selectedCategory.id, title: `${selectedCategory.name} near ${confirmedLocation.address.split(",")[0]}`, address: confirmedLocation.address, latitude: confirmedLocation.latitude, longitude: confirmedLocation.longitude };
     try {
       const result = await submitReport(report, images[0], images.slice(1), imageValidationToken, draftTicketId);
       if (result.needsRetake) { setDraftTicketId(result.ticketId); setFeedback(result); setScreen("feedback"); }
@@ -222,6 +224,20 @@ function AppContent() {
       } else Alert.alert("Couldn’t submit report", message);
     }
     finally { setSubmitting(false); }
+  };
+  const confirmReportLocation = async () => {
+    if (!location) return;
+    const candidate = location;
+    setConfirmingLocation(true);
+    try {
+      await resolveReportingArea(candidate.latitude, candidate.longitude);
+      setConfirmedLocation(candidate);
+      setScreen("review");
+    } catch (error) {
+      Alert.alert("Unsupported location", error instanceof Error ? error.message : "Please retry your location.");
+    } finally {
+      setConfirmingLocation(false);
+    }
   };
   const continueAfterPhotoCheck = async () => {
     if (!selectedCategory || !images[0]) return;
@@ -265,11 +281,11 @@ function AppContent() {
   let content;
   if (screen === "category") content = <CategoryScreen categories={categories} loading={!categoryError && categories.length === 0} error={categoryError} selectedId={selectedCategory?.id} onBack={() => setScreen("home")} onSelect={(category) => { setSelectedCategory(category); setImageValidationToken(undefined); setImageCheckError(undefined); setScreen("evidence"); }} />;
   else if (screen === "evidence") content = <EvidenceScreen images={images} checking={imageChecking} checkError={imageCheckError} onChange={(next) => { setImages(next); setImageValidationToken(undefined); setImageCheckError(undefined); }} onBack={() => setScreen("category")} onNext={() => void continueAfterPhotoCheck()} />;
-  else if (screen === "location-detect") content = <LocationDetectScreen onBack={() => setScreen("evidence")} onDetected={(next) => { setLocation(next); setScreen("location-confirm"); }} />;
-  else if (screen === "location-confirm" && location) content = <LocationConfirmScreen value={location} onChange={setLocation} onBack={() => setScreen("evidence")} onRetry={() => setScreen("location-detect")} onNext={() => setScreen("review")} />;
-  else if (screen === "review" && selectedCategory && images[0] && location) content = <ReviewReportScreen category={selectedCategory} image={images[0]} location={location} submitting={submitting} onBack={() => setScreen("location-confirm")} onSubmit={() => void completeSubmission()} />;
+  else if (screen === "location-detect") content = <LocationDetectScreen onBack={() => setScreen("evidence")} onDetected={(next) => { setLocation(next); setConfirmedLocation(undefined); setScreen("location-confirm"); }} />;
+  else if (screen === "location-confirm" && location) content = <LocationConfirmScreen value={location} confirming={confirmingLocation} onChange={(next) => { setLocation(next); setConfirmedLocation(undefined); }} onBack={() => setScreen("evidence")} onRetry={() => setScreen("location-detect")} onNext={() => void confirmReportLocation()} />;
+  else if (screen === "review" && selectedCategory && images[0] && confirmedLocation) content = <ReviewReportScreen category={selectedCategory} image={images[0]} location={confirmedLocation} submitting={submitting} onBack={() => setScreen("location-confirm")} onSubmit={() => void completeSubmission()} />;
   else if (screen === "feedback") content = <RetakeScreen attemptsRemaining={feedback.attemptsRemaining} reason={feedback.message || "Please upload a real photo of the civic issue."} onSelected={(image) => { setImages((current) => [image, ...current.slice(1)]); setImageValidationToken(undefined); setImageCheckError(undefined); setScreen("evidence"); }} />;
-  else if (screen === "confirmation" && submitted && images[0] && location) content = <ConfirmationScreen ticket={submitted} image={images[0]} location={location} onView={() => void openTicketById(submitted.id)} onDone={resetReport} />;
+  else if (screen === "confirmation" && submitted && images[0] && confirmedLocation) content = <ConfirmationScreen ticket={submitted} image={images[0]} location={confirmedLocation} onView={() => void openTicketById(submitted.id)} onDone={resetReport} />;
   else if (screen === "detail" && ticketDetail) content = <TicketDetailScreen ticket={ticketDetail} timeline={ticketTimeline} loading={ticketDetailLoading} error={ticketDetailError} onRefresh={() => void refreshTicket()} onDone={() => openTickets("ongoing")} onRaiseGrievance={() => setScreen("grievance")} />;
   else if (screen === "detail") content = <Shell><View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>{ticketDetailError ?? "Loading ticket details…"}</Text></View></Shell>;
   else if (screen === "grievance" && ticketDetail) content = <GrievanceScreen submitting={grievanceSubmitting} onBack={() => setScreen("detail")} onSubmit={(reason, note, evidence) => void submitGrievance(reason, note, evidence)} />;

@@ -40,6 +40,7 @@ const presignS3EnvKeys = [
 ] as const;
 
 type PresignFailurePhase = "schema_parse" | "category_lookup" | "category_not_found" | "storage_create_upload";
+type LocationResolutionPhase = "location_confirmation" | "ticket_creation";
 
 function s3EnvPresence(): Record<(typeof presignS3EnvKeys)[number], boolean> {
   return Object.fromEntries(presignS3EnvKeys.map((key) => [key, Boolean(process.env[key]?.trim())])) as Record<(typeof presignS3EnvKeys)[number], boolean>;
@@ -47,6 +48,24 @@ function s3EnvPresence(): Record<(typeof presignS3EnvKeys)[number], boolean> {
 
 function presignDiagnostic(deploymentProfile: DeploymentProfile, code: string): { code: string; diagnostic: "free_demo" } | Record<string, never> {
   return deploymentProfile === "free_demo" ? { code, diagnostic: "free_demo" } : {};
+}
+
+function logLocationResolution(
+  deploymentProfile: DeploymentProfile,
+  route: "/reporting-areas/resolve" | "/tickets",
+  phase: LocationResolutionPhase,
+  receivedLatitude: number,
+  receivedLongitude: number,
+  matchedWardName: string | null,
+): void {
+  if (deploymentProfile !== "free_demo") return;
+  console.info("[tickets.location]", {
+    receivedLatitude,
+    receivedLongitude,
+    matchedWardName,
+    route,
+    phase,
+  });
 }
 
 function logPresign(
@@ -337,6 +356,14 @@ export function createTicketsRouter(
       WHERE ST_Covers("boundary", ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326))
       LIMIT 1
     `;
+    logLocationResolution(
+      deploymentProfile,
+      "/reporting-areas/resolve",
+      "location_confirmation",
+      latitude,
+      longitude,
+      areas[0]?.name ?? null,
+    );
     if (!areas[0]) {
       response.status(422).json({ error: "Your current location is outside the supported areas. Choose an area from the list." });
       return;
@@ -488,12 +515,20 @@ export function createTicketsRouter(
       if (!("fileName" in input.primaryImage)) throw new Error("Validated image narrowing failed");
       primary = { objectKey: "", fileName: input.primaryImage.fileName, contentType: input.primaryImage.contentType };
     }
-    const wards = await prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT "id" FROM "Ward"
+    const wards = await prisma.$queryRaw<Array<{ id: string; name: string }>>`
+      SELECT "id", "name" FROM "Ward"
       WHERE ST_Covers("boundary", ST_SetSRID(ST_MakePoint(${input.longitude}, ${input.latitude}), 4326))
       LIMIT 1
     `;
     const ward = wards[0];
+    logLocationResolution(
+      deploymentProfile,
+      "/tickets",
+      "ticket_creation",
+      input.latitude,
+      input.longitude,
+      ward?.name ?? null,
+    );
     if (!ward) {
       response.status(422).json({ error: "Choose a supported reporting area or use a current location within one." });
       return;

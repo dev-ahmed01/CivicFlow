@@ -44,6 +44,33 @@ describe("pre-ticket image relevance gate", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it("logs only safe free-demo coordinates and the matched ward during confirmation", async () => {
+    vi.spyOn(prisma, "$queryRaw").mockResolvedValueOnce([{
+      id: "10000000-0000-4000-8000-000000000005",
+      name: "BTM Layout",
+      latitude: 12.91942,
+      longitude: 77.60352,
+    }]);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const app = express();
+    app.use(express.json());
+    app.use(createTicketsRouter(relevance(true, 0.94, "MATCH"), storage, accessSecret, "free_demo"));
+
+    await request(app)
+      .post("/reporting-areas/resolve")
+      .set("Authorization", `Bearer ${accessToken()}`)
+      .send({ latitude: 12.91942, longitude: 77.60352 })
+      .expect(200);
+
+    expect(info).toHaveBeenCalledWith("[tickets.location]", {
+      receivedLatitude: 12.91942,
+      receivedLongitude: 77.60352,
+      matchedWardName: "BTM Layout",
+      route: "/reporting-areas/resolve",
+      phase: "location_confirmation",
+    });
+  });
+
   it("rejects unrelated evidence without creating tickets, invitations, or routing work", async () => {
     const executeRaw = vi.spyOn(prisma, "$executeRaw");
     const invitations = vi.spyOn(prisma.validationRequest, "createMany");

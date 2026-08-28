@@ -23,7 +23,7 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
 }));
 
-import { uploadFile, validateReportImage } from "./api";
+import { resolveReportingArea, submitReport, uploadFile, validateReportImage } from "./api";
 
 const signedUrl = "https://project.supabase.co/storage/v1/s3/demo/photo?X-Amz-Credential=secret&X-Amz-Signature=top-secret";
 
@@ -208,5 +208,61 @@ describe("Android presigned image upload", () => {
     expect(fileSystem.uploadAsync).toHaveBeenCalledOnce();
     expect(apiRequest).toHaveBeenCalledTimes(2);
     expect(warning).toHaveBeenCalledWith("[City Connect] Photo flow failed", { stage: "STAGE_RELEVANCE_COMPLETE", contentType: "image/jpeg", status: null, code: null });
+  });
+});
+
+describe("reporting-area resolution", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("sends the physical BTM latitude and longitude without swapping them", async () => {
+    const apiRequest = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({
+      area: {
+        id: "10000000-0000-4000-8000-000000000005",
+        name: "BTM Layout",
+        latitude: 12.91942,
+        longitude: 77.60352,
+      },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await expect(resolveReportingArea(12.91942, 77.60352)).resolves.toMatchObject({ name: "BTM Layout" });
+    expect(apiRequest).toHaveBeenCalledWith("http://10.0.2.2:4000/reporting-areas/resolve", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ latitude: 12.91942, longitude: 77.60352 }),
+    }));
+  });
+
+  it("uses the confirmed BTM coordinates unchanged for final ticket creation", async () => {
+    const apiRequest = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        area: {
+          id: "10000000-0000-4000-8000-000000000005",
+          name: "BTM Layout",
+          latitude: 12.91942,
+          longitude: 77.60352,
+        },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ticketId: "50000000-0000-4000-8000-000000000001",
+        imageId: "60000000-0000-4000-8000-000000000001",
+        prevalidated: true,
+      }), { status: 201, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ needsRetake: false, ticket: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+
+    const confirmed = await resolveReportingArea(12.91942, 77.60352);
+    await submitReport({
+      categoryId: "30000000-0000-4000-8000-000000000001",
+      title: "Road damage near BTM 1st Stage",
+      address: "BTM 1st Stage, Bengaluru",
+      latitude: confirmed.latitude,
+      longitude: confirmed.longitude,
+    }, image("file:///camera/road.jpg", "image/jpeg"), [], "validated-image-token");
+
+    const confirmationBody = JSON.parse(String(apiRequest.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    const creationBody = JSON.parse(String(apiRequest.mock.calls[1]?.[1]?.body)) as Record<string, unknown>;
+    expect(confirmationBody).toMatchObject({ latitude: 12.91942, longitude: 77.60352 });
+    expect(creationBody).toMatchObject({ latitude: 12.91942, longitude: 77.60352 });
   });
 });
