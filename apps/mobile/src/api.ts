@@ -20,6 +20,7 @@ import type {
   UserRole,
   ValidationVote,
 } from "@civicos/shared";
+import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "expo-secure-store";
 
 function resolveApiUrl(): string {
@@ -41,6 +42,28 @@ let refreshInFlight: Promise<TokenResponse> | undefined;
 
 type LocalImage = { uri: string; fileName: string; contentType: "image/jpeg" | "image/png" | "image/webp" | "image/heic" };
 type UploadTarget = { uploadUrl: string; headers: { "Content-Type": string } };
+
+function uploadHost(uploadUrl: string): string {
+  try { return new URL(uploadUrl).hostname || "invalid-host"; }
+  catch { return "invalid-host"; }
+}
+
+function logUploadFailure(target: UploadTarget, phase: "prepare" | "put", status: number | null): void {
+  // Deliberately exclude the signed URL, query string, local URI, and native error.
+  console.warn("[City Connect] Photo upload failed", {
+    status,
+    contentType: target.headers["Content-Type"],
+    host: uploadHost(target.uploadUrl),
+    phase,
+  });
+}
+
+function uploadExtension(contentType: LocalImage["contentType"]): string {
+  if (contentType === "image/png") return "png";
+  if (contentType === "image/webp") return "webp";
+  if (contentType === "image/heic") return "heic";
+  return "jpg";
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   await hydrateSession();
@@ -247,19 +270,43 @@ export async function loadAgencies(): Promise<Array<{ id: string; name: string }
   return result.agencies;
 }
 
-async function uploadFile(target: UploadTarget, image: LocalImage): Promise<void> {
-  let blob: Blob;
-  let response: Response;
+export async function uploadFile(target: UploadTarget, image: LocalImage): Promise<void> {
+  const signedContentType = target.headers["Content-Type"];
+  let stagedUri: string | undefined;
+  let phase: "prepare" | "put" = "prepare";
+  let failureLogged = false;
   try {
-    blob = await fetch(image.uri).then((result) => {
-      if (!result.ok) throw new Error("The selected photo is no longer available");
-      return result.blob();
+    if (signedContentType.toLowerCase() !== image.contentType.toLowerCase()) {
+      logUploadFailure(target, "prepare", null);
+      failureLogged = true;
+      throw new Error("The selected photo type changed before upload");
+    }
+    let uploadUri = image.uri;
+    if (image.uri.startsWith("content://")) {
+      if (!FileSystem.cacheDirectory) throw new Error("The upload cache is unavailable");
+      stagedUri = `${FileSystem.cacheDirectory}city-connect-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.${uploadExtension(image.contentType)}`;
+      await FileSystem.copyAsync({ from: image.uri, to: stagedUri });
+      uploadUri = stagedUri;
+    } else if (!image.uri.startsWith("file://")) {
+      throw new Error("Unsupported local photo URI");
+    }
+    phase = "put";
+    const result = await FileSystem.uploadAsync(target.uploadUrl, uploadUri, {
+      httpMethod: "PUT",
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: { "Content-Type": signedContentType },
     });
-    response = await fetch(target.uploadUrl, { method: "PUT", headers: target.headers, body: blob });
-  } catch (cause) {
-    throw new Error("The photo could not be uploaded. Check your connection and try again.", { cause });
+    if (result.status < 200 || result.status >= 300) {
+      logUploadFailure(target, "put", result.status);
+      failureLogged = true;
+      throw new Error("The storage service rejected the photo");
+    }
+  } catch {
+    if (!failureLogged) logUploadFailure(target, phase, null);
+    throw new Error("The photo could not be uploaded. Check your connection and try again.");
+  } finally {
+    if (stagedUri) await FileSystem.deleteAsync(stagedUri, { idempotent: true }).catch(() => undefined);
   }
-  if (!response.ok) throw new Error("Photo upload failed");
 }
 
 export async function loadCategories(): Promise<CategorySummary[]> {
