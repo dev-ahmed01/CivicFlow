@@ -14,6 +14,28 @@ export interface ImageStorage {
   verifyUpload(objectKey: string, contentType: string): Promise<boolean>;
 }
 
+type VerificationFailurePhase =
+  | "head_request"
+  | "head_status"
+  | "head_metadata"
+  | "get_request"
+  | "get_status"
+  | "get_body"
+  | "content_type"
+  | "content_length"
+  | "integrity";
+
+interface VerificationDiagnostic {
+  failurePhase: VerificationFailurePhase;
+  headStatus: number | null;
+  getStatus: number | null;
+  storageHost: string;
+  objectKey: string;
+  contentType: string;
+  storedContentType: string | null;
+  contentLength: number | null;
+}
+
 export function storageReadUrl(storage: ImageStorage, objectKey: string, legacyUrl: string): string {
   return objectKey.startsWith("demo/") ? legacyUrl : storage.createDownload(objectKey);
 }
@@ -26,8 +48,26 @@ function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function encodePathSegment(value: string): string {
+  // AWS SigV4 URI encoding is stricter than encodeURIComponent for these five
+  // printable characters. Percent escapes must use uppercase hex digits.
+  return encodeURIComponent(value).replace(/[!'()*]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
 function encodePath(path: string): string {
-  return path.split("/").map(encodeURIComponent).join("/");
+  return path.split("/").map(encodePathSegment).join("/");
+}
+
+function normalizeContentType(value: string | null): string {
+  return value?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+}
+
+function parseContentLength(value: string | null): number | null {
+  if (value === null || value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function ascii(bytes: Uint8Array, start: number, end: number): string {
@@ -157,7 +197,7 @@ export class S3CompatibleStorage implements ImageStorage {
     const date = instant.slice(0, 8);
     const scope = `${date}/${this.env.S3_REGION}/s3/aws4_request`;
     const credential = `${this.env.S3_ACCESS_KEY_ID}/${scope}`;
-    const canonicalUri = `${endpoint.pathname.replace(/\/$/, "")}/${encodeURIComponent(this.env.S3_BUCKET)}/${encodePath(objectKey)}`;
+    const canonicalUri = `${endpoint.pathname.replace(/\/$/, "")}/${encodePathSegment(this.env.S3_BUCKET)}/${encodePath(objectKey)}`;
     const query = new URLSearchParams({
       "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
       "X-Amz-Credential": credential,
@@ -192,22 +232,95 @@ export class S3CompatibleStorage implements ImageStorage {
   }
 
   async verifyUpload(objectKey: string, contentType: string): Promise<boolean> {
+    const expectedContentType = normalizeContentType(contentType);
+    const diagnostic: Omit<VerificationDiagnostic, "failurePhase"> = {
+      headStatus: null,
+      getStatus: null,
+      storageHost: new URL(this.env.S3_ENDPOINT).hostname,
+      objectKey,
+      contentType: expectedContentType,
+      storedContentType: null,
+      contentLength: null,
+    };
+    let headFailure: VerificationFailurePhase | null = null;
+
     try {
-      const response = await this.request(this.sign("HEAD", objectKey), { method: "HEAD" });
-      const actualType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-      const length = Number(response.headers.get("content-length"));
-      const metadataValid = response.ok
-        && actualType === contentType.toLowerCase()
-        && Number.isFinite(length)
-        && length > 0
-        && length <= 20 * 1024 * 1024;
-      if (!metadataValid) return false;
-      const image = await this.request(this.sign("GET", objectKey));
-      if (!image.ok) return false;
-      const bytes = new Uint8Array(await image.arrayBuffer());
-      return bytes.length === length && inspectUploadBytes(bytes, contentType);
+      const head = await this.request(this.sign("HEAD", objectKey), { method: "HEAD" });
+      diagnostic.headStatus = head.status;
+      diagnostic.storedContentType = normalizeContentType(head.headers.get("content-type")) || null;
+      diagnostic.contentLength = parseContentLength(head.headers.get("content-length"));
+
+      if (!head.ok) headFailure = "head_status";
+      else if (
+        diagnostic.storedContentType !== expectedContentType ||
+        diagnostic.contentLength === null ||
+        diagnostic.contentLength <= 0 ||
+        diagnostic.contentLength > 20 * 1024 * 1024
+      ) {
+        headFailure = "head_metadata";
+      }
     } catch {
+      headFailure = "head_request";
+    }
+
+    try {
+      const download = await this.request(this.sign("GET", objectKey), { method: "GET" });
+      diagnostic.getStatus = download.status;
+      if (!download.ok) {
+        this.logVerificationFailure({ ...diagnostic, failurePhase: "get_status" });
+        return false;
+      }
+
+      const getContentType = normalizeContentType(download.headers.get("content-type"));
+      const storedContentType = getContentType || diagnostic.storedContentType;
+      const getContentLength = parseContentLength(download.headers.get("content-length"));
+      diagnostic.storedContentType = storedContentType;
+
+      let bytes: Uint8Array;
+      try {
+        bytes = new Uint8Array(await download.arrayBuffer());
+      } catch {
+        this.logVerificationFailure({ ...diagnostic, failurePhase: "get_body" });
+        return false;
+      }
+
+      diagnostic.contentLength = bytes.byteLength;
+      if (storedContentType !== expectedContentType) {
+        this.logVerificationFailure({ ...diagnostic, failurePhase: "content_type" });
+        return false;
+      }
+      if (
+        bytes.byteLength <= 0 ||
+        bytes.byteLength > 20 * 1024 * 1024 ||
+        (getContentLength !== null && getContentLength !== bytes.byteLength)
+      ) {
+        this.logVerificationFailure({ ...diagnostic, failurePhase: "content_length" });
+        return false;
+      }
+      if (!inspectUploadBytes(bytes, contentType)) {
+        this.logVerificationFailure({ ...diagnostic, failurePhase: "integrity" });
+        return false;
+      }
+
+      // A successful full-body GET is stronger proof than HEAD metadata. Some
+      // S3-compatible gateways reject or omit metadata on HEAD even though the
+      // newly uploaded object is immediately readable.
+      if (headFailure) {
+        console.warn("[storage.verifyUpload] HEAD check failed; GET verified the object", {
+          ...diagnostic,
+          failurePhase: headFailure,
+        });
+      }
+      return true;
+    } catch {
+      this.logVerificationFailure({ ...diagnostic, failurePhase: "get_request" });
       return false;
     }
+  }
+
+  private logVerificationFailure(diagnostic: VerificationDiagnostic): void {
+    // Never log credentials or the signed URL. The hostname and object key are
+    // sufficient to identify the failed storage operation safely.
+    console.warn("[storage.verifyUpload] verification failed", diagnostic);
   }
 }

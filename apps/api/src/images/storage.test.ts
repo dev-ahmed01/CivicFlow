@@ -68,14 +68,114 @@ describe("Cloudflare R2 compatibility", () => {
     const jpeg = validJpeg();
     const request = vi.fn()
       .mockResolvedValueOnce(new Response(null, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }))
-      .mockResolvedValueOnce(new Response(jpeg.buffer as ArrayBuffer, { status: 200 }))
-      .mockResolvedValueOnce(new Response(null, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }));
+      .mockResolvedValueOnce(new Response(jpeg.buffer as ArrayBuffer, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }))
+      .mockResolvedValueOnce(new Response(null, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }))
+      .mockResolvedValueOnce(new Response(jpeg.buffer as ArrayBuffer, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }));
     const storage = new S3CompatibleStorage(env, () => new Date("2026-08-24T10:00:00.000Z"), request);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     await expect(storage.verifyUpload("tickets/example/photo.jpg", "image/jpeg")).resolves.toBe(true);
     await expect(storage.verifyUpload("tickets/example/photo.jpg", "image/png")).resolves.toBe(false);
     expect(request).toHaveBeenCalledWith(expect.stringContaining("X-Amz-Signature="), { method: "HEAD" });
-    expect(request).toHaveBeenCalledWith(expect.stringContaining("X-Amz-Signature="));
+    expect(request).toHaveBeenCalledWith(expect.stringContaining("X-Amz-Signature="), { method: "GET" });
+    warn.mockRestore();
+  });
+});
+
+describe("Supabase Storage S3 compatibility", () => {
+  const env = () => parseEnv({
+    NODE_ENV: "production",
+    DEPLOYMENT_PROFILE: "free_demo",
+    DATABASE_URL: "postgresql://prisma:secret@pooler.supabase.com:5432/postgres",
+    JWT_ACCESS_SECRET: "access-secret-that-is-at-least-32-characters",
+    JWT_REFRESH_SECRET: "refresh-secret-that-is-at-least-32-characters",
+    OTP_PROVIDER: "demo",
+    DEMO_AUTH_MODE: "fixed_otp",
+    DEMO_AUTH_CODE: "123456",
+    S3_ENDPOINT: "https://project-ref.storage.supabase.co/storage/v1/s3",
+    S3_REGION: "ap-southeast-1",
+    S3_BUCKET: "civic-evidence",
+    S3_ACCESS_KEY_ID: "supabase-access-key",
+    S3_SECRET_ACCESS_KEY: "supabase-secret-key",
+    S3_PUBLIC_BASE_URL: "https://project-ref.supabase.co/storage/v1/object/public/civic-evidence",
+    CLIP_MODE: "demo_deterministic",
+    CORS_ORIGINS: "https://civicos-demo.vercel.app",
+  });
+
+  it("uses the same bucket path, region, and object-key encoding for PUT, HEAD, and GET", async () => {
+    const jpeg = validJpeg();
+    const request = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }))
+      .mockResolvedValueOnce(new Response(jpeg.buffer as ArrayBuffer, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }));
+    const storage = new S3CompatibleStorage(env(), () => new Date("2026-08-28T10:00:00.000Z"), request);
+
+    const objectKey = "preflight/citizen/photo (1)!.jpg";
+    const putUrl = new URL(storage.createUpload(objectKey, "image/jpeg").uploadUrl);
+    await expect(storage.verifyUpload(objectKey, "image/jpeg")).resolves.toBe(true);
+    const headUrl = new URL(request.mock.calls[0]?.[0] as string);
+    const getUrl = new URL(request.mock.calls[1]?.[0] as string);
+
+    for (const url of [putUrl, headUrl, getUrl]) {
+      expect(url.hostname).toBe("project-ref.storage.supabase.co");
+      expect(url.pathname).toBe("/storage/v1/s3/civic-evidence/preflight/citizen/photo%20%281%29%21.jpg");
+      expect(url.searchParams.get("X-Amz-Credential")).toContain("/ap-southeast-1/s3/aws4_request");
+      expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[a-f0-9]{64}$/);
+    }
+    expect(new Set([putUrl, headUrl, getUrl].map((url) => url.searchParams.get("X-Amz-Signature"))).size).toBe(3);
+  });
+
+  it("downloads and verifies the object even when the storage gateway rejects HEAD", async () => {
+    const jpeg = validJpeg();
+    const request = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(new Response(jpeg.buffer as ArrayBuffer, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }));
+    const storage = new S3CompatibleStorage(env(), () => new Date("2026-08-28T10:00:00.000Z"), request);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(storage.verifyUpload("preflight/citizen/IMG_1234.jpg", "image/jpeg")).resolves.toBe(true);
+    expect(request).toHaveBeenNthCalledWith(1, expect.any(String), { method: "HEAD" });
+    expect(request).toHaveBeenNthCalledWith(2, expect.any(String), { method: "GET" });
+    expect(warn).toHaveBeenCalledWith(
+      "[storage.verifyUpload] HEAD check failed; GET verified the object",
+      expect.objectContaining({
+        failurePhase: "head_status",
+        headStatus: 403,
+        getStatus: 200,
+        storageHost: "project-ref.storage.supabase.co",
+        objectKey: "preflight/citizen/IMG_1234.jpg",
+        contentType: "image/jpeg",
+        contentLength: jpeg.length,
+      }),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("X-Amz-");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("supabase-secret-key");
+    warn.mockRestore();
+  });
+
+  it("rejects a failed GET and logs safe phase/status diagnostics", async () => {
+    const jpeg = validJpeg();
+    const request = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": String(jpeg.length) } }))
+      .mockResolvedValueOnce(new Response(null, { status: 403 }));
+    const storage = new S3CompatibleStorage(env(), () => new Date("2026-08-28T10:00:00.000Z"), request);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(storage.verifyUpload("preflight/citizen/IMG_1234.jpg", "image/jpeg")).resolves.toBe(false);
+    expect(warn).toHaveBeenCalledWith(
+      "[storage.verifyUpload] verification failed",
+      expect.objectContaining({
+        failurePhase: "get_status",
+        headStatus: 200,
+        getStatus: 403,
+        storageHost: "project-ref.storage.supabase.co",
+        objectKey: "preflight/citizen/IMG_1234.jpg",
+        contentType: "image/jpeg",
+        contentLength: jpeg.length,
+      }),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("X-Amz-");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("supabase-secret-key");
+    warn.mockRestore();
   });
 });
 
