@@ -3,7 +3,7 @@ import { routeValidatedTicket } from "../routing/service";
 import { createNotifications } from "../notifications/service";
 
 const requestType = "VALIDATION_REQUEST";
-const demoValidationQuorum = 3;
+const demoValidationQuorum = 1;
 
 function notifyAllCitizensEnabled(): boolean {
   return process.env.DEMO_NOTIFY_ALL_CITIZENS === "true";

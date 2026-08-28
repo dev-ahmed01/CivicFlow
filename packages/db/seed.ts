@@ -125,7 +125,7 @@ const adminConfigs = [
   { key: "road.simulated_avoided_rework_factor", value: 0.65, description: "Illustrative fraction of restoration work assumed avoided after an accepted sequencing recommendation" },
   { key: "verification.default_radius_meters", value: 500, description: "Default citizen verification radius when a ward override is absent" },
   { key: "verification.daily_cap", value: 10, description: "Maximum validations a citizen may submit per day" },
-  { key: "verification.quorum", value: 3, description: "Independent confirmations required to validate a ticket" },
+  { key: "verification.quorum", value: 1, description: "Independent confirmations required to validate a ticket" },
   { key: "verification.initial_recipient_count", value: 15, description: "Nearest eligible citizens notified for a validation batch" },
   { key: "verification.renotify_after_hours", value: 72, description: "Hours before an incomplete validation batch is sent again" },
   { key: "duplicate.radius_meters", value: 75, description: "Geographic radius used by shared-ticket detection" },

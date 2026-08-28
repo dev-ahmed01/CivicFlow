@@ -13,8 +13,8 @@ describe("hackathon community validation", () => {
     expect(confirmationQuorumReached(3, 3)).toBe(true);
   });
 
-  it("uses exactly three confirmations in demo broadcast mode", () => {
-    expect(effectiveValidationQuorum(5, true)).toBe(3);
+  it("uses one confirmation in demo broadcast mode", () => {
+    expect(effectiveValidationQuorum(5, true)).toBe(1);
     expect(effectiveValidationQuorum(5, false)).toBe(5);
   });
 });

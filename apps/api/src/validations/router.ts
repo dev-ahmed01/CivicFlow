@@ -9,7 +9,7 @@ import {
   type TicketState as SharedTicketState,
 } from "@civicos/shared";
 import { requireAuth, requireRole } from "../auth/middleware";
-import { runValidationRebatchJob, submitValidation, ValidationDailyCapError } from "./service";
+import { effectiveValidationQuorum, runValidationRebatchJob, submitValidation, ValidationDailyCapError } from "./service";
 import { createNotifications } from "../notifications/service";
 import { storageReadUrl, type ImageStorage } from "../images/storage";
 
@@ -91,7 +91,10 @@ export function createValidationsRouter(storage: ImageStorage): Router {
     ]);
     if (!dailyCapConfig || typeof dailyCapConfig.value !== "number") throw new Error("Missing required AdminConfig verification.daily_cap");
     if (!quorumConfig || typeof quorumConfig.value !== "number") throw new Error("Missing required AdminConfig verification.quorum");
-    const quorum = process.env.DEMO_NOTIFY_ALL_CITIZENS === "true" ? 3 : quorumConfig.value;
+    const quorum = effectiveValidationQuorum(
+      quorumConfig.value,
+      process.env.DEMO_NOTIFY_ALL_CITIZENS === "true",
+    );
     const dayStart = new Date();
     dayStart.setUTCHours(0, 0, 0, 0);
     const [citizen, dailyCount] = await Promise.all([

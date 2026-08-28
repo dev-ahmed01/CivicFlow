@@ -12,7 +12,7 @@ export type NotificationPresentation = {
 
 const presentations: Record<string, NotificationPresentation> = {
   VALIDATION_REQUEST: { icon: "i", tone: "info", category: "general", message: "A civic issue needs your validation." },
-  TICKET_VALIDATED: { icon: "✓", tone: "success", category: "general", message: "Your report reached 3 confirmations." },
+  TICKET_VALIDATED: { icon: "✓", tone: "success", category: "general", message: "Your report reached the required community confirmations." },
   TICKET_ROUTED_TO_AGENCY: { icon: "✓", tone: "success", category: "general", message: "Your issue has been routed to the responsible agency." },
   PROJECT_CREATED: { icon: "↓", tone: "info", category: "assignments", message: "An engineer has been assigned." },
   PROJECT_ACTIVE: { icon: "▶", tone: "info", category: "assignments", message: "Work has started on this issue." },
