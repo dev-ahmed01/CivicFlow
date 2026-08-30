@@ -103,11 +103,10 @@ export async function checkProjectConflicts(
   const candidates = await client.$queryRaw<ConflictCandidate[]>(Prisma.sql`
     WITH source AS (
       SELECT p."id", p."agencyId", p."plannedStart", p."plannedEnd",
-        t."coordinates", t."address", t."wardId", w."name" AS "wardName",
+        p."geometry" AS "coordinates", p."locationLabel" AS "address", p."wardId", w."name" AS "wardName",
         i."segmentId", rs."roadName"
       FROM "Project" p
-      LEFT JOIN "Ticket" t ON t."id" = p."ticketId"
-      LEFT JOIN "Ward" w ON w."id" = t."wardId"
+      LEFT JOIN "Ward" w ON w."id" = p."wardId"
       LEFT JOIN "Intervention" i ON i."projectId" = p."id"
       LEFT JOIN "RoadSegment" rs ON rs."id" = i."segmentId"
       WHERE p."id" = ${projectId}::uuid
@@ -126,23 +125,22 @@ export async function checkProjectConflicts(
       other."id" AS "candidateProjectId",
       other."agencyId" AS "candidateAgencyId",
       agency."name" AS "candidateAgencyName",
-      COALESCE(other_ticket."title", CONCAT('Project ', LEFT(other."id"::text, 8))) AS "candidateProjectName",
+      other."title" AS "candidateProjectName",
       other."plannedStart" AS "candidatePlannedStart",
       other."plannedEnd" AS "candidatePlannedEnd",
-      other_ticket."address" AS "candidateAddress",
+      other."locationLabel" AS "candidateAddress",
       other_ward."name" AS "candidateWardName",
       other_intervention."segmentId" AS "candidateSegmentId",
       other_segment."roadName" AS "candidateRoadName",
-      CASE WHEN s."coordinates" IS NOT NULL AND other_ticket."coordinates" IS NOT NULL
-        THEN ST_Distance(s."coordinates"::geography, other_ticket."coordinates"::geography)
+      CASE WHEN s."coordinates" IS NOT NULL AND other."geometry" IS NOT NULL
+        THEN ST_Distance(ST_Centroid(s."coordinates")::geography, ST_Centroid(other."geometry")::geography)
         ELSE NULL END AS "distanceMeters",
-      COALESCE(s."wardId" = other_ticket."wardId", FALSE) AS "sameWard",
+      COALESCE(s."wardId" = other."wardId", FALSE) AS "sameWard",
       COALESCE(s."segmentId" = other_intervention."segmentId", FALSE) AS "sameSegment"
     FROM source s
     JOIN "Project" other ON other."id" <> s."id"
     JOIN "Agency" agency ON agency."id" = other."agencyId"
-    LEFT JOIN "Ticket" other_ticket ON other_ticket."id" = other."ticketId"
-    LEFT JOIN "Ward" other_ward ON other_ward."id" = other_ticket."wardId"
+    LEFT JOIN "Ward" other_ward ON other_ward."id" = other."wardId"
     LEFT JOIN "Intervention" other_intervention ON other_intervention."projectId" = other."id"
     LEFT JOIN "RoadSegment" other_segment ON other_segment."id" = other_intervention."segmentId"
     WHERE other."state" IN (${Prisma.join(activeStates.map((state) => Prisma.sql`${state}::"ProjectState"`))})
@@ -151,9 +149,9 @@ export async function checkProjectConflicts(
       AND other."plannedStart" <= s."plannedEnd"
       AND other."plannedEnd" >= s."plannedStart"
       AND (
-        (s."coordinates" IS NOT NULL AND other_ticket."coordinates" IS NOT NULL
-          AND ST_DWithin(s."coordinates"::geography, other_ticket."coordinates"::geography, ${radiusMeters}))
-        OR (s."wardId" IS NOT NULL AND s."wardId" = other_ticket."wardId")
+        (s."coordinates" IS NOT NULL AND other."geometry" IS NOT NULL
+          AND ST_DWithin(ST_Centroid(s."coordinates")::geography, ST_Centroid(other."geometry")::geography, ${radiusMeters}))
+        OR (s."wardId" IS NOT NULL AND s."wardId" = other."wardId")
         OR (s."segmentId" IS NOT NULL AND s."segmentId" = other_intervention."segmentId")
       )
     ORDER BY other."plannedStart", other."id"

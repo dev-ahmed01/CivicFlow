@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { DependencyState, GrievanceStatus, ProjectState, TicketState, UserRole, WorkflowActionType, prisma } from "db";
+import { CivicWorkOrigin, DependencyState, GrievanceStatus, ProjectState, TicketState, UserRole, WorkflowActionType, prisma } from "db";
 import {
   agencyOriginatedTicketRequestSchema,
   inspectionReportRequestSchema,
@@ -299,7 +299,16 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         const project = await transaction.project.create({
           data: {
             ticketId,
+            categoryId: category.id,
             agencyId,
+            ownerProjectHeadId: request.auth!.userId,
+            createdById: request.auth!.userId,
+            updatedById: request.auth!.userId,
+            origin: CivicWorkOrigin.AGENCY_PLANNED,
+            title,
+            description: input.description,
+            locationLabel: address,
+            wardId: ward.id,
             state: ProjectState.CREATED,
             plannedStart: new Date(intervention.plannedStart),
             plannedEnd: new Date(intervention.plannedEnd),
@@ -316,6 +325,13 @@ export function createAgencyRouter(storage: ImageStorage): Router {
             } },
           },
         });
+        await transaction.$executeRaw`
+          UPDATE "Project" AS project
+          SET "geometry" = segment."geometry"
+          FROM "RoadSegment" AS segment
+          WHERE project."id" = ${project.id}::uuid
+            AND segment."id" = ${intervention.segmentId}::uuid
+        `;
         await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.PROJECT_CREATED, roadSegmentId: intervention.segmentId } });
         await transaction.ticketStateTransition.create({ data: { ticketId, fromState: TicketState.ROUTED_TO_AGENCY, toState: TicketState.PROJECT_CREATED, reason: "PLANNED_INTERVENTION_CREATED", actedById: request.auth!.userId } });
         await createWorkflowAction(transaction, {

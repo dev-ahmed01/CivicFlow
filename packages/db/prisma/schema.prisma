@@ -55,6 +55,27 @@ enum ProjectState {
   CANCELLED
 }
 
+enum CivicWorkOrigin {
+  AGENCY_PLANNED
+  CITIZEN_REPORTED
+  SYSTEM_INTEGRATION
+}
+
+enum CivicWorkPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ProjectEvidenceKind {
+  PLANNING_DOCUMENT
+  SITE_PHOTO
+  PERMIT
+  INSPECTION
+  OTHER
+}
+
 enum ConflictSeverity {
   PROMINENT
   INLINE
@@ -129,44 +150,49 @@ enum GrievanceStatus {
 }
 
 model User {
-  id                String    @id @default(uuid()) @db.Uuid
-  role              UserRole
-  phone             String?   @unique
-  email             String?   @unique
-  passwordHash      String?
-  mustResetPassword Boolean   @default(false)
-  phoneVerifiedAt   DateTime?
-  totpSecret        String?
-  totpEnabled       Boolean   @default(false)
-  agencyId          String?   @db.Uuid
-  wardId            String?   @db.Uuid
+  id                   String                               @id @default(uuid()) @db.Uuid
+  role                 UserRole
+  phone                String?                              @unique
+  email                String?                              @unique
+  passwordHash         String?
+  mustResetPassword    Boolean                              @default(false)
+  phoneVerifiedAt      DateTime?
+  totpSecret           String?
+  totpEnabled          Boolean                              @default(false)
+  agencyId             String?                              @db.Uuid
+  wardId               String?                              @db.Uuid
   lastKnownCoordinates Unsupported("geometry(Point,4326)")?
-  createdAt         DateTime  @default(now())
+  createdAt            DateTime                             @default(now())
 
-  agency               Agency?          @relation(fields: [agencyId], references: [id], onDelete: SetNull)
-  ward                 Ward?            @relation(fields: [wardId], references: [id], onDelete: SetNull)
-  reportedTickets      Ticket[]         @relation("TicketReporter")
-  observations         Observation[]
-  validations          Validation[]
-  validationRequests   ValidationRequest[]
-  engineeringProjects  Project[]        @relation("ProjectEngineer")
-  assignedDependencies Dependency[]     @relation("DependencyEngineer")
-  notifications        Notification[]
-  pushTokens           PushToken[]
-  otpChallenges        OtpChallenge[]
-  refreshSessions      RefreshSession[]
-  inspectionReports    InspectionReport[]
-  dependencyTransitions DependencyStateTransition[] @relation("DependencyTransitionActor")
-  projectTransitions   ProjectStateTransition[] @relation("ProjectTransitionActor")
-  ticketTransitions    TicketStateTransition[] @relation("TicketTransitionActor")
-  projectWorkNotes     ProjectWorkNote[]
-  completionEvidence   CompletionEvidence[] @relation("CompletionEvidenceSubmitter")
+  agency                         Agency?                         @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+  ward                           Ward?                           @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  reportedTickets                Ticket[]                        @relation("TicketReporter")
+  observations                   Observation[]
+  validations                    Validation[]
+  validationRequests             ValidationRequest[]
+  engineeringProjects            Project[]                       @relation("ProjectEngineer")
+  ownedProjects                  Project[]                       @relation("ProjectOwner")
+  createdProjects                Project[]                       @relation("ProjectCreator")
+  updatedProjects                Project[]                       @relation("ProjectUpdater")
+  assignedDependencies           Dependency[]                    @relation("DependencyEngineer")
+  notifications                  Notification[]
+  pushTokens                     PushToken[]
+  otpChallenges                  OtpChallenge[]
+  refreshSessions                RefreshSession[]
+  inspectionReports              InspectionReport[]
+  dependencyTransitions          DependencyStateTransition[]     @relation("DependencyTransitionActor")
+  projectTransitions             ProjectStateTransition[]        @relation("ProjectTransitionActor")
+  ticketTransitions              TicketStateTransition[]         @relation("TicketTransitionActor")
+  projectWorkNotes               ProjectWorkNote[]
+  projectEvidence                ProjectEvidence[]
+  projectAuditEvents             ProjectAuditEvent[]
+  completionEvidence             CompletionEvidence[]            @relation("CompletionEvidenceSubmitter")
   completionVerificationRequests CompletionVerificationRequest[]
-  completionVerifications CompletionVerification[]
-  sequencingRecommendationLogs SequencingRecommendationLog[]
-  responsibleActions WorkflowAction[] @relation("WorkflowActionResponsibleUser")
-  grievancesRaised Grievance[] @relation("GrievanceRaisedBy")
-  responsibleGrievances Grievance[] @relation("GrievanceResponsibleUser")
+  completionVerifications        CompletionVerification[]
+  sequencingRecommendationLogs   SequencingRecommendationLog[]
+  responsibleActions             WorkflowAction[]                @relation("WorkflowActionResponsibleUser")
+  grievancesRaised               Grievance[]                     @relation("GrievanceRaisedBy")
+  responsibleGrievances          Grievance[]                     @relation("GrievanceResponsibleUser")
 
   @@index([agencyId])
   @@index([wardId])
@@ -183,6 +209,7 @@ model Ward {
   users        User[]
   tickets      Ticket[]
   roadSegments RoadSegment[]
+  projects     Project[]
 }
 
 model Agency {
@@ -193,17 +220,17 @@ model Agency {
   users                  User[]
   primaryCategories      Category[]
   routingDependencies    RoutingRule[]
-  assignedTickets        Ticket[]       @relation("TicketAssignedAgency")
+  assignedTickets        Ticket[]          @relation("TicketAssignedAgency")
   projects               Project[]
-  requestedDependencies  Dependency[]   @relation("DependencyRequestingAgency")
-  respondingDependencies Dependency[]   @relation("DependencyRespondingAgency")
+  requestedDependencies  Dependency[]      @relation("DependencyRequestingAgency")
+  respondingDependencies Dependency[]      @relation("DependencyRespondingAgency")
   requestedInterventions Intervention[]
-  projectConflictLogs     ConflictLog[] @relation("ConflictLogProjectAgency")
-  conflictingProjectLogs ConflictLog[] @relation("ConflictLogConflictingAgency")
-  roadConflictLogs        RoadConflictLog[] @relation("RoadConflictProjectAgency")
-  conflictingRoadLogs     RoadConflictLog[] @relation("RoadConflictConflictingAgency")
-  workflowActions         WorkflowAction[]
-  grievances              Grievance[]
+  projectConflictLogs    ConflictLog[]     @relation("ConflictLogProjectAgency")
+  conflictingProjectLogs ConflictLog[]     @relation("ConflictLogConflictingAgency")
+  roadConflictLogs       RoadConflictLog[] @relation("RoadConflictProjectAgency")
+  conflictingRoadLogs    RoadConflictLog[] @relation("RoadConflictConflictingAgency")
+  workflowActions        WorkflowAction[]
+  grievances             Grievance[]
 }
 
 model Category {
@@ -216,6 +243,7 @@ model Category {
   primaryAgency Agency        @relation(fields: [primaryAgencyId], references: [id], onDelete: Restrict)
   routingRules  RoutingRule[]
   tickets       Ticket[]
+  projects      Project[]
 
   @@index([primaryAgencyId])
 }
@@ -233,41 +261,41 @@ model RoutingRule {
 }
 
 model Ticket {
-  id               String                              @id @default(uuid()) @db.Uuid
-  referenceNumber  String                              @unique @default(dbgenerated("next_ticket_reference()")) @db.VarChar(20)
-  categoryId       String                              @db.Uuid
-  reporterId       String?                             @db.Uuid
-  assignedAgencyId String?                             @db.Uuid
-  coordinates      Unsupported("geometry(Point,4326)")
-  wardId           String                              @db.Uuid
-  roadSegmentId    String?                             @db.Uuid
-  state            TicketState                         @default(DRAFT)
-  channel          Channel                             @default(MOBILE)
-  title            String                              @default("Civic issue") @db.VarChar(160)
-  address          String                              @default("Location pending")
-  aiRetryCount     Int                                 @default(0)
-  manualReviewRecommended Boolean                     @default(false)
-  duplicateReviewRecommended Boolean                  @default(false)
-  duplicateCandidateId String?                        @db.Uuid
-  duplicateVisualSimilarity Float?
-  duplicateVisualMatch Boolean?
-  createdAt        DateTime                            @default(now())
-  updatedAt        DateTime                            @updatedAt
+  id                         String                              @id @default(uuid()) @db.Uuid
+  referenceNumber            String                              @unique @default(dbgenerated("next_ticket_reference()")) @db.VarChar(20)
+  categoryId                 String                              @db.Uuid
+  reporterId                 String?                             @db.Uuid
+  assignedAgencyId           String?                             @db.Uuid
+  coordinates                Unsupported("geometry(Point,4326)")
+  wardId                     String                              @db.Uuid
+  roadSegmentId              String?                             @db.Uuid
+  state                      TicketState                         @default(DRAFT)
+  channel                    Channel                             @default(MOBILE)
+  title                      String                              @default("Civic issue") @db.VarChar(160)
+  address                    String                              @default("Location pending")
+  aiRetryCount               Int                                 @default(0)
+  manualReviewRecommended    Boolean                             @default(false)
+  duplicateReviewRecommended Boolean                             @default(false)
+  duplicateCandidateId       String?                             @db.Uuid
+  duplicateVisualSimilarity  Float?
+  duplicateVisualMatch       Boolean?
+  createdAt                  DateTime                            @default(now())
+  updatedAt                  DateTime                            @updatedAt
 
-  category       Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  reporter       User?         @relation("TicketReporter", fields: [reporterId], references: [id], onDelete: SetNull)
-  assignedAgency Agency?       @relation("TicketAssignedAgency", fields: [assignedAgencyId], references: [id], onDelete: SetNull)
-  ward           Ward          @relation(fields: [wardId], references: [id], onDelete: Restrict)
-  roadSegment    RoadSegment?  @relation(fields: [roadSegmentId], references: [id], onDelete: SetNull)
-  observations   Observation[]
-  validations    Validation[]
+  category           Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  reporter           User?                   @relation("TicketReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  assignedAgency     Agency?                 @relation("TicketAssignedAgency", fields: [assignedAgencyId], references: [id], onDelete: SetNull)
+  ward               Ward                    @relation(fields: [wardId], references: [id], onDelete: Restrict)
+  roadSegment        RoadSegment?            @relation(fields: [roadSegmentId], references: [id], onDelete: SetNull)
+  observations       Observation[]
+  validations        Validation[]
   validationRequests ValidationRequest[]
-  project        Project?
-  stateTransitions TicketStateTransition[]
-  inspectionReports InspectionReport[]
+  project            Project?
+  stateTransitions   TicketStateTransition[]
+  inspectionReports  InspectionReport[]
   completionEvidence CompletionEvidence[]
-  workflowActions WorkflowAction[]
-  grievances Grievance[]
+  workflowActions    WorkflowAction[]
+  grievances         Grievance[]
 
   @@index([categoryId])
   @@index([reporterId])
@@ -313,8 +341,8 @@ model Observation {
   address     String?
   createdAt   DateTime @default(now())
 
-  ticket    Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  submitter User   @relation(fields: [submitterId], references: [id], onDelete: Restrict)
+  ticket    Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  submitter User    @relation(fields: [submitterId], references: [id], onDelete: Restrict)
   images    Image[]
 
   @@index([ticketId])
@@ -322,16 +350,16 @@ model Observation {
 }
 
 model Image {
-  id               String   @id @default(uuid()) @db.Uuid
-  observationId    String   @db.Uuid
+  id               String    @id @default(uuid()) @db.Uuid
+  observationId    String    @db.Uuid
   url              String
-  objectKey        String   @unique
+  objectKey        String    @unique
   contentType      String?
-  isPrimary        Boolean  @default(false)
+  isPrimary        Boolean   @default(false)
   aiRelevanceScore Float?
   embedding        Json?
   uploadedAt       DateTime?
-  createdAt        DateTime @default(now())
+  createdAt        DateTime  @default(now())
 
   observation Observation @relation(fields: [observationId], references: [id], onDelete: Cascade)
 
@@ -348,7 +376,7 @@ model TicketStateTransition {
   actedById String?      @db.Uuid
   createdAt DateTime     @default(now())
 
-  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket  Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   actedBy User?  @relation("TicketTransitionActor", fields: [actedById], references: [id], onDelete: SetNull)
 
   @@index([ticketId, createdAt])
@@ -373,12 +401,12 @@ model Validation {
 }
 
 model ValidationRequest {
-  id             String   @id @default(uuid()) @db.Uuid
-  ticketId       String   @db.Uuid
-  citizenId      String   @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  ticketId       String    @db.Uuid
+  citizenId      String    @db.Uuid
   batchNumber    Int
   distanceMeters Float
-  notifiedAt     DateTime @default(now())
+  notifiedAt     DateTime  @default(now())
   expiresAt      DateTime
   respondedAt    DateTime?
 
@@ -392,58 +420,94 @@ model ValidationRequest {
 }
 
 model Project {
-  id           String       @id @default(uuid()) @db.Uuid
-  ticketId     String?      @unique @db.Uuid
-  agencyId     String       @db.Uuid
-  state        ProjectState @default(CREATED)
-  plannedStart DateTime?
-  plannedEnd   DateTime?
-  workDescription String?
-  dependencyFlags Json         @default("[]")
-  engineerId   String?      @db.Uuid
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id                 String                                  @id @default(uuid()) @db.Uuid
+  referenceNumber    String                                  @unique @default(dbgenerated("next_civic_work_reference()")) @db.VarChar(24)
+  ticketId           String?                                 @unique @db.Uuid
+  categoryId         String?                                 @db.Uuid
+  agencyId           String                                  @db.Uuid
+  ownerProjectHeadId String?                                 @db.Uuid
+  createdById        String?                                 @db.Uuid
+  updatedById        String?                                 @db.Uuid
+  origin             CivicWorkOrigin                         @default(CITIZEN_REPORTED)
+  title              String                                  @default("Civic work") @db.VarChar(180)
+  description        String?
+  locationLabel      String?
+  geometry           Unsupported("geometry(Geometry,4326)")?
+  wardId             String?                                 @db.Uuid
+  state              ProjectState                            @default(CREATED)
+  priority           CivicWorkPriority                       @default(NORMAL)
+  plannedStart       DateTime?
+  plannedEnd         DateTime?
+  actualStart        DateTime?
+  actualCompletion   DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  workDescription    String?
+  dependencyFlags    Json                                    @default("[]")
+  engineerId         String?                                 @db.Uuid
+  createdAt          DateTime                                @default(now())
+  updatedAt          DateTime                                @updatedAt
 
-  ticket       Ticket?       @relation(fields: [ticketId], references: [id], onDelete: SetNull)
-  agency       Agency        @relation(fields: [agencyId], references: [id], onDelete: Restrict)
-  engineer     User?         @relation("ProjectEngineer", fields: [engineerId], references: [id], onDelete: SetNull)
-  dependencies Dependency[]
-  intervention Intervention?
-  stateTransitions ProjectStateTransition[]
-  workNotes ProjectWorkNote[]
-  completionEvidence CompletionEvidence[]
-  conflictLogs       ConflictLog[] @relation("ConflictLogProject")
-  conflictingLogs   ConflictLog[] @relation("ConflictLogConflictingProject")
-  roadConflictLogs       RoadConflictLog[] @relation("RoadConflictProject")
-  conflictingRoadLogs   RoadConflictLog[] @relation("RoadConflictConflictingProject")
-  workflowActions       WorkflowAction[]
-  grievances            Grievance[]
+  ticket              Ticket?                  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  category            Category?                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  agency              Agency                   @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  ward                Ward?                    @relation(fields: [wardId], references: [id], onDelete: Restrict)
+  ownerProjectHead    User?                    @relation("ProjectOwner", fields: [ownerProjectHeadId], references: [id], onDelete: SetNull)
+  createdBy           User?                    @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy           User?                    @relation("ProjectUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  engineer            User?                    @relation("ProjectEngineer", fields: [engineerId], references: [id], onDelete: SetNull)
+  dependencies        Dependency[]
+  intervention        Intervention?
+  stateTransitions    ProjectStateTransition[]
+  workNotes           ProjectWorkNote[]
+  evidence            ProjectEvidence[]
+  auditEvents         ProjectAuditEvent[]
+  completionEvidence  CompletionEvidence[]
+  conflictLogs        ConflictLog[]            @relation("ConflictLogProject")
+  conflictingLogs     ConflictLog[]            @relation("ConflictLogConflictingProject")
+  roadConflictLogs    RoadConflictLog[]        @relation("RoadConflictProject")
+  conflictingRoadLogs RoadConflictLog[]        @relation("RoadConflictConflictingProject")
+  workflowActions     WorkflowAction[]
+  grievances          Grievance[]
 
   @@index([ticketId])
+  @@index([categoryId])
   @@index([agencyId])
+  @@index([wardId])
+  @@index([ownerProjectHeadId])
+  @@index([createdById])
   @@index([engineerId])
   @@index([state])
+  @@index([origin])
+  @@index([priority])
+  @@index([plannedStart, plannedEnd])
   @@index([agencyId, createdAt])
   @@index([engineerId, state, createdAt])
+  @@index([geometry], type: Gist, map: "Project_geometry_gist_idx")
+}
+
+model CivicWorkReferenceCounter {
+  period    String @id @db.VarChar(6)
+  lastValue Int
 }
 
 model ConflictLog {
-  id                         String           @id @default(uuid()) @db.Uuid
-  projectId                  String           @db.Uuid
-  conflictingProjectId       String           @db.Uuid
-  projectAgencyId            String           @db.Uuid
-  conflictingAgencyId        String           @db.Uuid
-  projectTimelineStart       DateTime
-  projectTimelineEnd         DateTime
-  conflictingTimelineStart  DateTime
-  conflictingTimelineEnd    DateTime
-  overlapStart               DateTime
-  overlapEnd                 DateTime
-  locationDescription       String
-  distanceMeters             Float?
-  severity                   ConflictSeverity
-  timelineFingerprint        String           @db.Char(64)
-  createdAt                  DateTime          @default(now())
+  id                       String           @id @default(uuid()) @db.Uuid
+  projectId                String           @db.Uuid
+  conflictingProjectId     String           @db.Uuid
+  projectAgencyId          String           @db.Uuid
+  conflictingAgencyId      String           @db.Uuid
+  projectTimelineStart     DateTime
+  projectTimelineEnd       DateTime
+  conflictingTimelineStart DateTime
+  conflictingTimelineEnd   DateTime
+  overlapStart             DateTime
+  overlapEnd               DateTime
+  locationDescription      String
+  distanceMeters           Float?
+  severity                 ConflictSeverity
+  timelineFingerprint      String           @db.Char(64)
+  createdAt                DateTime         @default(now())
 
   project            Project @relation("ConflictLogProject", fields: [projectId], references: [id], onDelete: Cascade)
   conflictingProject Project @relation("ConflictLogConflictingProject", fields: [conflictingProjectId], references: [id], onDelete: Cascade)
@@ -457,13 +521,13 @@ model ConflictLog {
 }
 
 model ProjectStateTransition {
-  id        String       @id @default(uuid()) @db.Uuid
-  projectId String       @db.Uuid
+  id        String        @id @default(uuid()) @db.Uuid
+  projectId String        @db.Uuid
   fromState ProjectState?
   toState   ProjectState
   reason    String
-  actedById String?      @db.Uuid
-  createdAt DateTime     @default(now())
+  actedById String?       @db.Uuid
+  createdAt DateTime      @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   actedBy User?   @relation("ProjectTransitionActor", fields: [actedById], references: [id], onDelete: SetNull)
@@ -486,6 +550,39 @@ model ProjectWorkNote {
   @@index([authorId])
 }
 
+model ProjectEvidence {
+  id          String              @id @default(uuid()) @db.Uuid
+  projectId   String              @db.Uuid
+  kind        ProjectEvidenceKind
+  label       String
+  url         String
+  objectKey   String?             @unique
+  contentType String?
+  createdById String              @db.Uuid
+  createdAt   DateTime            @default(now())
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@index([createdById])
+}
+
+model ProjectAuditEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @db.Uuid
+  action    String   @db.VarChar(80)
+  actorId   String?  @db.Uuid
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([actorId])
+}
+
 model CompletionEvidence {
   id            String    @id @default(uuid()) @db.Uuid
   projectId     String    @db.Uuid
@@ -498,11 +595,11 @@ model CompletionEvidence {
   uploadedAt    DateTime?
   createdAt     DateTime  @default(now())
 
-  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  ticket      Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  submittedBy User    @relation("CompletionEvidenceSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+  project              Project                         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ticket               Ticket                          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  submittedBy          User                            @relation("CompletionEvidenceSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
   verificationRequests CompletionVerificationRequest[]
-  verifications CompletionVerification[]
+  verifications        CompletionVerification[]
 
   @@index([projectId, createdAt])
   @@index([ticketId])
@@ -517,7 +614,7 @@ model CompletionVerificationRequest {
   respondedAt          DateTime?
 
   completionEvidence CompletionEvidence @relation(fields: [completionEvidenceId], references: [id], onDelete: Cascade)
-  citizen           User               @relation(fields: [citizenId], references: [id], onDelete: Cascade)
+  citizen            User               @relation(fields: [citizenId], references: [id], onDelete: Cascade)
 
   @@unique([completionEvidenceId, citizenId])
   @@index([citizenId, respondedAt])
@@ -551,13 +648,13 @@ model Dependency {
   escalatedAt        DateTime?
   createdAt          DateTime        @default(now())
 
-  project          Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  requestingAgency Agency  @relation("DependencyRequestingAgency", fields: [requestingAgencyId], references: [id], onDelete: Restrict)
-  respondingAgency Agency  @relation("DependencyRespondingAgency", fields: [respondingAgencyId], references: [id], onDelete: Restrict)
-  assignedEngineer User?   @relation("DependencyEngineer", fields: [assignedEngineerId], references: [id], onDelete: SetNull)
+  project          Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requestingAgency Agency                      @relation("DependencyRequestingAgency", fields: [requestingAgencyId], references: [id], onDelete: Restrict)
+  respondingAgency Agency                      @relation("DependencyRespondingAgency", fields: [respondingAgencyId], references: [id], onDelete: Restrict)
+  assignedEngineer User?                       @relation("DependencyEngineer", fields: [assignedEngineerId], references: [id], onDelete: SetNull)
   stateTransitions DependencyStateTransition[]
-  workflowActions WorkflowAction[]
-  grievances Grievance[]
+  workflowActions  WorkflowAction[]
+  grievances       Grievance[]
 
   @@unique([projectId, respondingAgencyId])
   @@index([projectId])
@@ -569,13 +666,13 @@ model Dependency {
 }
 
 model DependencyStateTransition {
-  id           String          @id @default(uuid()) @db.Uuid
-  dependencyId String          @db.Uuid
+  id           String           @id @default(uuid()) @db.Uuid
+  dependencyId String           @db.Uuid
   fromState    DependencyState?
   toState      DependencyState
   reason       String
-  actedById    String?         @db.Uuid
-  createdAt    DateTime        @default(now())
+  actedById    String?          @db.Uuid
+  createdAt    DateTime         @default(now())
 
   dependency Dependency @relation(fields: [dependencyId], references: [id], onDelete: Cascade)
   actedBy    User?      @relation("DependencyTransitionActor", fields: [actedById], references: [id], onDelete: SetNull)
@@ -592,11 +689,11 @@ model RoadSegment {
   surfaceType         String
   lastRestorationDate DateTime?
 
-  ward          Ward           @relation(fields: [wardId], references: [id], onDelete: Restrict)
-  interventions Intervention[]
-  tickets       Ticket[]
-  roadConflictLogs RoadConflictLog[]
-  sequencingRecommendations SequencingRecommendation[]
+  ward                         Ward                          @relation(fields: [wardId], references: [id], onDelete: Restrict)
+  interventions                Intervention[]
+  tickets                      Ticket[]
+  roadConflictLogs             RoadConflictLog[]
+  sequencingRecommendations    SequencingRecommendation[]
   sequencingRecommendationLogs SequencingRecommendationLog[]
 
   @@index([wardId])
@@ -639,11 +736,11 @@ model RoadConflictLog {
   fingerprint          String               @db.Char(64)
   createdAt            DateTime             @default(now())
 
-  project            Project      @relation("RoadConflictProject", fields: [projectId], references: [id], onDelete: Cascade)
-  conflictingProject Project?     @relation("RoadConflictConflictingProject", fields: [conflictingProjectId], references: [id], onDelete: Cascade)
-  segment            RoadSegment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
-  projectAgency      Agency       @relation("RoadConflictProjectAgency", fields: [projectAgencyId], references: [id], onDelete: Restrict)
-  conflictingAgency  Agency?      @relation("RoadConflictConflictingAgency", fields: [conflictingAgencyId], references: [id], onDelete: Restrict)
+  project            Project     @relation("RoadConflictProject", fields: [projectId], references: [id], onDelete: Cascade)
+  conflictingProject Project?    @relation("RoadConflictConflictingProject", fields: [conflictingProjectId], references: [id], onDelete: Cascade)
+  segment            RoadSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  projectAgency      Agency      @relation("RoadConflictProjectAgency", fields: [projectAgencyId], references: [id], onDelete: Restrict)
+  conflictingAgency  Agency?     @relation("RoadConflictConflictingAgency", fields: [conflictingAgencyId], references: [id], onDelete: Restrict)
 
   @@unique([projectId, type, fingerprint])
   @@index([projectId, createdAt])
@@ -652,17 +749,17 @@ model RoadConflictLog {
 }
 
 model SequencingRecommendation {
-  id            String      @id @default(uuid()) @db.Uuid
-  segmentId     String      @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  segmentId     String   @db.Uuid
   projectIds    Json
   proposedOrder Json
   explanation   String
   ruleTrace     Json
-  fingerprint   String      @unique @db.Char(64)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  fingerprint   String   @unique @db.Char(64)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  segment RoadSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  segment RoadSegment                   @relation(fields: [segmentId], references: [id], onDelete: Cascade)
   logs    SequencingRecommendationLog[]
 
   @@index([segmentId, updatedAt])
@@ -678,8 +775,8 @@ model SequencingRecommendationLog {
   actedAt          DateTime                        @default(now())
 
   recommendation SequencingRecommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
-  segment        RoadSegment             @relation(fields: [segmentId], references: [id], onDelete: Cascade)
-  actedBy        User                    @relation(fields: [actedById], references: [id], onDelete: Restrict)
+  segment        RoadSegment              @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  actedBy        User                     @relation(fields: [actedById], references: [id], onDelete: Restrict)
 
   @@index([recommendationId, actedAt])
   @@index([segmentId, actedAt])
@@ -694,7 +791,7 @@ model Notification {
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   pushDeliveries NotificationPushDelivery[]
 
   @@index([userId])

@@ -37,10 +37,17 @@ async function createPlannedProject(input: { title: string; longitude: number; l
   await prisma.project.create({ data: {
     id: projectId,
     ticketId,
+    categoryId,
     agencyId: input.agencyId,
+    wardId,
+    title: `${titlePrefix} ${input.title}`,
     engineerId: input.engineerId,
     state: ProjectState.UPTAKEN,
   } });
+  await prisma.$executeRaw`
+    UPDATE "Project" AS project SET "geometry" = ticket."coordinates"
+    FROM "Ticket" AS ticket WHERE project."id" = ${projectId}::uuid AND ticket."id" = ${ticketId}::uuid
+  `;
   return projectId;
 }
 

@@ -23,6 +23,7 @@ import { createRoadIntelligenceRouter } from "./road-intelligence/router";
 import { createNotificationsRouter } from "./notifications/router";
 import { createAnalyticsRouter } from "./analytics/router";
 import { createDeadlineJobsRouter, createGrievancesRouter } from "./grievances/router";
+import { createCivicWorksRouter } from "./civic-works/router";
 
 export interface AppDependencies {
   otpProvider?: OtpProvider;
@@ -75,6 +76,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.use(createValidationsRouter(imageStorage));
   app.use(createAgencyRouter(imageStorage));
   app.use(createProjectsRouter(imageStorage));
+  app.use(createCivicWorksRouter());
   app.use(createDependenciesRouter());
   app.use(createRoadIntelligenceRouter());
   app.use(createNotificationsRouter());

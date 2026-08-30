@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { citizenLoginSchema, createTicketSchema, internalLoginSchema, requestOtpSchema, submitValidationSchema, ticketStateSchema, toCitizenTicketState } from "./schemas";
+import {
+  citizenLoginSchema,
+  civicWorkGeometrySchema,
+  createPlannedCivicWorkSchema,
+  createTicketSchema,
+  internalLoginSchema,
+  listCivicWorksQuerySchema,
+  requestOtpSchema,
+  submitValidationSchema,
+  ticketStateSchema,
+  toCitizenTicketState,
+} from "./schemas";
 
 describe("shared schemas", () => {
   it("accepts a citizen phone in E.164 format", () => {
@@ -62,5 +73,33 @@ describe("shared schemas", () => {
       longitude: 77.5854,
       primaryImage: { validationToken: "signed-image-validation" },
     }).primaryImage).toEqual({ validationToken: "signed-image-validation" });
+  });
+
+  it("validates planned-work dates and requires a spatial reference", () => {
+    const input = {
+      title: "BTM water-main replacement",
+      description: "Replace an aging distribution main and reinstate the affected public road.",
+      categoryId: "30000000-0000-4000-8000-000000000003",
+      wardId: "10000000-0000-4000-8000-000000000005",
+      proposedStart: "2026-10-20T00:00:00.000Z",
+      proposedEnd: "2026-10-10T00:00:00.000Z",
+    };
+    expect(createPlannedCivicWorkSchema.safeParse(input).success).toBe(false);
+    expect(createPlannedCivicWorkSchema.safeParse({
+      ...input,
+      proposedEnd: "2026-10-22T00:00:00.000Z",
+      geometry: { type: "Point", coordinates: [77.6101, 12.9166] },
+    }).success).toBe(true);
+  });
+
+  it("rejects unclosed civic-work polygons and partial area filters", () => {
+    expect(civicWorkGeometrySchema.safeParse({
+      type: "Polygon",
+      coordinates: [[[77.60, 12.90], [77.61, 12.90], [77.61, 12.91], [77.60, 12.91]]],
+    }).success).toBe(false);
+    expect(listCivicWorksQuerySchema.safeParse({ minLongitude: "77.60" }).success).toBe(false);
+    expect(listCivicWorksQuerySchema.safeParse({
+      minLongitude: "77.60", minLatitude: "12.90", maxLongitude: "77.62", maxLatitude: "12.92",
+    }).success).toBe(true);
   });
 });

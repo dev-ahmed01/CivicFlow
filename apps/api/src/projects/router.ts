@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { ProjectState, TicketState, UserRole, WorkflowActionType, prisma, type Prisma } from "db";
+import { CivicWorkOrigin, ProjectState, TicketState, UserRole, WorkflowActionType, prisma, type Prisma } from "db";
 import {
   completionEvidenceRequestSchema,
   createProjectSchema,
@@ -137,8 +137,8 @@ export function createProjectsRouter(storage: ImageStorage): Router {
 
       const result = await prisma.$transaction(async (transaction) => {
         // Part III §17.2 — lock and scope the ticket before any state mutation.
-        const rows = await transaction.$queryRaw<Array<{ id: string; state: TicketState; assignedAgencyId: string | null; categoryId: string; wardId: string }>>`
-          SELECT "id", "state", "assignedAgencyId", "categoryId", "wardId" FROM "Ticket"
+        const rows = await transaction.$queryRaw<Array<{ id: string; state: TicketState; assignedAgencyId: string | null; categoryId: string; wardId: string; reporterId: string | null; title: string; address: string }>>`
+          SELECT "id", "state", "assignedAgencyId", "categoryId", "wardId", "reporterId", "title", "address" FROM "Ticket"
           WHERE "id" = ${parsed.data.ticketId}::uuid FOR UPDATE
         `;
         const ticket = rows[0];
@@ -166,6 +166,8 @@ export function createProjectsRouter(storage: ImageStorage): Router {
             data: {
               engineerId: engineer.id,
               state: ProjectState.PENDING_UPTAKE,
+              ownerProjectHeadId: request.auth!.userId,
+              updatedById: request.auth!.userId,
               ...(intervention ? { plannedStart: new Date(intervention.plannedStart), plannedEnd: new Date(intervention.plannedEnd) } : {}),
               stateTransitions: { create: { fromState: ProjectState.CREATED, toState: ProjectState.PENDING_UPTAKE, reason: "ENGINEER_ASSIGNED", actedById: request.auth!.userId } },
               ...(intervention ? { intervention: { update: {
@@ -183,7 +185,15 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           : await transaction.project.create({
             data: {
               ticketId: ticket.id,
+              categoryId: ticket.categoryId,
               agencyId,
+              ownerProjectHeadId: request.auth!.userId,
+              createdById: request.auth!.userId,
+              updatedById: request.auth!.userId,
+              origin: ticket.reporterId ? CivicWorkOrigin.CITIZEN_REPORTED : CivicWorkOrigin.AGENCY_PLANNED,
+              title: ticket.title,
+              locationLabel: ticket.address,
+              wardId: ticket.wardId,
               engineerId: engineer.id,
               state: ProjectState.PENDING_UPTAKE,
               ...(intervention ? { plannedStart: new Date(intervention.plannedStart), plannedEnd: new Date(intervention.plannedEnd) } : {}),
@@ -204,6 +214,28 @@ export function createProjectsRouter(storage: ImageStorage): Router {
             },
           include: { engineer: { select: { id: true, email: true } }, ticket: { select: { id: true, title: true } } },
           });
+        // Phase 1 — ticket intake remains authoritative for the citizen-linked
+        // location while Project becomes the reusable spatial work record.
+        await transaction.$executeRaw`
+          UPDATE "Project" AS project
+          SET "geometry" = ticket."coordinates",
+              "categoryId" = ticket."categoryId",
+              "wardId" = ticket."wardId",
+              "title" = ticket."title",
+              "locationLabel" = ticket."address"
+          FROM "Ticket" AS ticket
+          WHERE project."id" = ${created.id}::uuid
+            AND ticket."id" = ${ticket.id}::uuid
+        `;
+        if (intervention) {
+          await transaction.$executeRaw`
+            UPDATE "Project" AS project
+            SET "geometry" = segment."geometry"
+            FROM "RoadSegment" AS segment
+            WHERE project."id" = ${created.id}::uuid
+              AND segment."id" = ${intervention.segmentId}::uuid
+          `;
+        }
         await transaction.ticket.update({ where: { id: ticket.id }, data: { state: TicketState.ENGINEER_ASSIGNED, ...(intervention ? { roadSegmentId: intervention.segmentId } : {}) } });
         await transaction.ticketStateTransition.createMany({ data: [
           ...(existing ? [] : [{ ticketId: ticket.id, fromState: TicketState.INSPECTION_COMPLETE, toState: TicketState.PROJECT_CREATED, reason: "PROJECT_CREATED" as const, actedById: request.auth!.userId }]),
@@ -354,8 +386,8 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         return;
       }
       const result = await prisma.$transaction(async (transaction) => {
-        const rows = await transaction.$queryRaw<Array<{ id: string; agencyId: string; engineerId: string | null; state: ProjectState; ticketId: string | null }>>`
-          SELECT "id", "agencyId", "engineerId", "state", "ticketId" FROM "Project"
+        const rows = await transaction.$queryRaw<Array<{ id: string; agencyId: string; engineerId: string | null; state: ProjectState; ticketId: string | null; actualStart: Date | null }>>`
+          SELECT "id", "agencyId", "engineerId", "state", "ticketId", "actualStart" FROM "Project"
           WHERE "id" = ${routeId(request)}::uuid FOR UPDATE
         `;
         const project = rows[0];
@@ -383,7 +415,10 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           await transaction.project.update({ where: { id: project.id }, data: { state: ProjectState.CONFLICT_CHECKED } });
           await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: ProjectState.TIMELINE_SET, toState: ProjectState.CONFLICT_CHECKED, reason: "CONFLICT_CHECK_COMPLETE", actedById: request.auth!.userId } });
         }
-        await transaction.project.update({ where: { id: project.id }, data: { state: ProjectState.ACTIVE } });
+        await transaction.project.update({
+          where: { id: project.id },
+          data: { state: ProjectState.ACTIVE, actualStart: project.actualStart ?? new Date(), updatedById: request.auth!.userId },
+        });
         await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: initialTimeline ? ProjectState.CONFLICT_CHECKED : ProjectState.MODIFIED, toState: ProjectState.ACTIVE, reason: conflicts.length === 0 ? "NO_BLOCKING_CONFLICTS" : "ADVISORY_CONFLICTS_REVIEWED", actedById: request.auth!.userId } });
 
         if (project.ticketId) {
@@ -445,7 +480,10 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         if (parsed.data.note) await transaction.projectWorkNote.create({ data: { projectId: project.id, authorId: request.auth!.userId, note: parsed.data.note } });
         if (!parsed.data.state) return { kind: "updated" as const };
         if (project.state !== ProjectState.ACTIVE) return { kind: "state" as const, state: project.state };
-        await transaction.project.update({ where: { id: project.id }, data: { state: ProjectState.COMPLETED } });
+        await transaction.project.update({
+          where: { id: project.id },
+          data: { state: ProjectState.COMPLETED, actualCompletion: new Date(), updatedById: request.auth!.userId },
+        });
         await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: project.state, toState: ProjectState.COMPLETED, reason: "WORK_COMPLETED", actedById: request.auth!.userId } });
         if (project.ticketId) {
           const ticket = await transaction.ticket.findUnique({ where: { id: project.ticketId }, select: { state: true } });

@@ -58,10 +58,16 @@ async function prepareFixture() {
   await prisma.validation.createMany({ data: ticketIds.map((ticketId, index) => ({ id: uuid("a3000000", index), ticketId, validatorId: ids.validator, vote: "CONFIRM", counted: true })) });
   await prisma.ticketStateTransition.createMany({ data: ticketIds.map((ticketId, index) => ({ id: uuid("a7000000", index), ticketId, fromState: TicketState.VALIDATED, toState: index === 30 ? TicketState.INSPECTION_COMPLETE : index < 30 ? TicketState.WORK_IN_PROGRESS : index % 2 ? TicketState.ROUTED_TO_AGENCY : TicketState.INSPECTION_DUE, reason: "DEMO_100_LOAD_FIXTURE" })) });
   await prisma.project.createMany({ data: projectIds.map((id, index) => ({
-    id, ticketId: ticketIds[index], agencyId: ids.agency, engineerId: ids.engineer, state: ProjectState.ACTIVE,
+    id, ticketId: ticketIds[index], categoryId: ids.category, agencyId: ids.agency, wardId: ids.ward,
+    ownerProjectHeadId: ids.head, createdById: ids.head, title: `Demo load delivery project ${index + 1}`,
+    engineerId: ids.engineer, state: ProjectState.ACTIVE,
     plannedStart: new Date("2026-09-01T00:00:00.000Z"), plannedEnd: new Date("2026-09-12T23:59:59.999Z"),
     workDescription: `Demo load delivery project ${index + 1}`,
   })) });
+  await prisma.$executeRaw`
+    UPDATE "Project" AS project SET "geometry" = ticket."coordinates"
+    FROM "Ticket" AS ticket WHERE project."ticketId" = ticket."id" AND project."id" = ANY(${projectIds}::uuid[])
+  `;
   await prisma.projectStateTransition.createMany({ data: projectIds.map((projectId, index) => ({ id: uuid("a5000000", index), projectId, fromState: ProjectState.TIMELINE_SET, toState: ProjectState.ACTIVE, reason: "DEMO_100_LOAD_FIXTURE", actedById: ids.engineer })) });
   await prisma.notification.createMany({ data: ticketIds.map((ticketId, index) => ({ id: uuid("a6000000", index), userId: ids.head, type: "TICKET_ROUTED_TO_AGENCY", payload: { ticketId } })) });
 }

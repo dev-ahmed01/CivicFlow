@@ -79,6 +79,14 @@ export const projectStateSchema = z.enum([
   "CANCELLED",
 ]);
 
+export const civicWorkOriginSchema = z.enum([
+  "AGENCY_PLANNED",
+  "CITIZEN_REPORTED",
+  "SYSTEM_INTEGRATION",
+]);
+
+export const civicWorkPrioritySchema = z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]);
+
 export const completionVerificationDecisionSchema = z.enum(["VERIFIED", "REWORK_REQUESTED"]);
 
 export const dependencyStateSchema = z.enum([
@@ -125,6 +133,29 @@ export const lineStringSchema = z.object({
 export const polygonSchema = z.object({
   type: z.literal("Polygon"),
   coordinates: z.array(z.array(z.tuple([z.number(), z.number()]))).min(1),
+});
+
+const boundedLongitudeSchema = z.number().min(-180).max(180);
+const boundedLatitudeSchema = z.number().min(-90).max(90);
+const boundedCoordinateSchema = z.tuple([boundedLongitudeSchema, boundedLatitudeSchema]);
+
+export const civicWorkGeometrySchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("Point"), coordinates: boundedCoordinateSchema }),
+  z.object({ type: z.literal("LineString"), coordinates: z.array(boundedCoordinateSchema).min(2).max(10_000) }),
+  z.object({
+    type: z.literal("Polygon"),
+    coordinates: z.array(z.array(boundedCoordinateSchema).min(4).max(10_000)).min(1).max(100),
+  }),
+]).superRefine((value, context) => {
+  if (value.type === "Polygon") {
+    value.coordinates.forEach((ring, index) => {
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      if (!first || !last || first[0] !== last[0] || first[1] !== last[1]) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["coordinates", index], message: "Polygon rings must be closed" });
+      }
+    });
+  }
 });
 
 export const userSchema = z.object({
@@ -342,6 +373,78 @@ export const createProjectSchema = z.object({
     requirement: z.string().trim().min(10).max(2000),
     deadline: z.string().datetime().optional(),
   })).max(20).optional(),
+});
+
+export const createPlannedCivicWorkSchema = z.object({
+  title: z.string().trim().min(3).max(180),
+  description: z.string().trim().min(10).max(5000),
+  categoryId: idSchema,
+  wardId: idSchema,
+  priority: civicWorkPrioritySchema.default("NORMAL"),
+  proposedStart: z.string().datetime(),
+  proposedEnd: z.string().datetime(),
+  locationLabel: z.string().trim().min(3).max(500).optional(),
+  geometry: civicWorkGeometrySchema.optional(),
+  engineerId: idSchema.optional(),
+  intervention: interventionInputSchema.optional(),
+}).superRefine((value, context) => {
+  if (new Date(value.proposedEnd) < new Date(value.proposedStart)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["proposedEnd"], message: "Proposed end must be on or after proposed start" });
+  }
+  if (!value.geometry && !value.intervention) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["geometry"], message: "Provide a work geometry or a road intervention" });
+  }
+  if (value.intervention && (value.intervention.plannedStart !== value.proposedStart || value.intervention.plannedEnd !== value.proposedEnd)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["intervention"], message: "Road intervention dates must match the civic work date range" });
+  }
+});
+
+export const updateCivicWorkSchema = z.object({
+  title: z.string().trim().min(3).max(180).optional(),
+  description: z.string().trim().min(10).max(5000).optional(),
+  categoryId: idSchema.optional(),
+  wardId: idSchema.optional(),
+  priority: civicWorkPrioritySchema.optional(),
+  proposedStart: z.string().datetime().optional(),
+  proposedEnd: z.string().datetime().optional(),
+  locationLabel: z.string().trim().min(3).max(500).nullable().optional(),
+  geometry: civicWorkGeometrySchema.optional(),
+  engineerId: idSchema.nullable().optional(),
+}).refine((value) => Object.keys(value).length > 0, { message: "Choose at least one field to update" });
+
+export const cancelCivicWorkSchema = z.object({
+  reason: z.string().trim().min(10).max(1000),
+});
+
+export const listCivicWorksQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  agencyId: idSchema.optional(),
+  wardId: idSchema.optional(),
+  categoryId: idSchema.optional(),
+  status: projectStateSchema.optional(),
+  origin: civicWorkOriginSchema.optional(),
+  priority: civicWorkPrioritySchema.optional(),
+  dateFrom: z.string().datetime().optional(),
+  dateTo: z.string().datetime().optional(),
+  minLongitude: z.coerce.number().min(-180).max(180).optional(),
+  minLatitude: z.coerce.number().min(-90).max(90).optional(),
+  maxLongitude: z.coerce.number().min(-180).max(180).optional(),
+  maxLatitude: z.coerce.number().min(-90).max(90).optional(),
+}).superRefine((value, context) => {
+  if (value.dateFrom && value.dateTo && new Date(value.dateTo) < new Date(value.dateFrom)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["dateTo"], message: "Date range end must be on or after its start" });
+  }
+  const bounds = [value.minLongitude, value.minLatitude, value.maxLongitude, value.maxLatitude];
+  if (bounds.some((coordinate) => coordinate !== undefined) && bounds.some((coordinate) => coordinate === undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["minLongitude"], message: "All four bounding-box coordinates are required" });
+  }
+  if (value.minLongitude !== undefined && value.maxLongitude !== undefined && value.maxLongitude <= value.minLongitude) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["maxLongitude"], message: "Maximum longitude must exceed minimum longitude" });
+  }
+  if (value.minLatitude !== undefined && value.maxLatitude !== undefined && value.maxLatitude <= value.minLatitude) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["maxLatitude"], message: "Maximum latitude must exceed minimum latitude" });
+  }
 });
 
 export const updateProjectTimelineSchema = z.object({
@@ -595,16 +698,48 @@ export const submitValidationResultSchema = z.object({
 
 export const projectSchema = z.object({
   id: idSchema,
+  referenceNumber: z.string().regex(/^CW\d{9,}$/),
   ticketId: idSchema.nullable(),
+  categoryId: idSchema.nullable(),
   agencyId: idSchema,
+  ownerProjectHeadId: idSchema.nullable(),
+  createdById: idSchema.nullable(),
+  updatedById: idSchema.nullable(),
+  origin: civicWorkOriginSchema,
+  title: z.string(),
+  description: z.string().nullable(),
+  locationLabel: z.string().nullable(),
+  wardId: idSchema.nullable(),
   state: projectStateSchema,
+  priority: civicWorkPrioritySchema,
   plannedStart: dateSchema.nullable(),
   plannedEnd: dateSchema.nullable(),
+  actualStart: dateSchema.nullable(),
+  actualCompletion: dateSchema.nullable(),
+  cancelledAt: dateSchema.nullable(),
+  cancellationReason: z.string().nullable(),
   workDescription: z.string().nullable(),
   dependencyFlags: z.array(z.string()),
   engineerId: idSchema.nullable(),
   createdAt: dateSchema,
   updatedAt: dateSchema,
+});
+
+export const civicWorkAuditEventSchema = z.object({
+  id: idSchema,
+  action: z.string().min(1),
+  actorId: idSchema.nullable(),
+  metadata: z.record(z.unknown()),
+  createdAt: dateSchema,
+});
+
+export const civicWorkEvidenceSchema = z.object({
+  id: idSchema,
+  kind: z.enum(["PLANNING_DOCUMENT", "SITE_PHOTO", "PERMIT", "INSPECTION", "OTHER"]),
+  label: z.string(),
+  url: z.string().url(),
+  contentType: z.string().nullable(),
+  createdAt: dateSchema,
 });
 
 export const projectConflictSchema = z.object({
@@ -735,6 +870,22 @@ export const interventionSchema = z.object({
 
 export const roadSegmentSummarySchema = roadSegmentSchema.omit({ geometry: true }).extend({
   ward: wardSummarySchema,
+});
+
+export const civicWorkSchema = projectSchema.extend({
+  geometry: civicWorkGeometrySchema.nullable(),
+  category: categorySummarySchema.nullable(),
+  agency: agencySchema.pick({ id: true, name: true, type: true }),
+  ward: wardSummarySchema.nullable(),
+  ownerProjectHead: engineerSummarySchema.nullable(),
+  engineer: engineerSummarySchema.nullable(),
+  citizenTicketReference: z.object({ id: idSchema, referenceNumber: z.string(), title: z.string() }).nullable(),
+  roadSegment: roadSegmentSummarySchema.nullable(),
+  dependencyCount: z.number().int().nonnegative(),
+  conflictCount: z.number().int().nonnegative(),
+  roadConflictCount: z.number().int().nonnegative(),
+  evidence: z.array(civicWorkEvidenceSchema),
+  audit: z.array(civicWorkAuditEventSchema),
 });
 
 export const roadInterventionHistoryItemSchema = interventionSchema.extend({
@@ -868,6 +1019,9 @@ export type TicketState = z.infer<typeof ticketStateSchema>;
 export type TicketChannel = z.infer<typeof ticketChannelSchema>;
 export type CitizenTicketState = z.infer<typeof citizenTicketStateSchema>;
 export type ProjectState = z.infer<typeof projectStateSchema>;
+export type CivicWorkOrigin = z.infer<typeof civicWorkOriginSchema>;
+export type CivicWorkPriority = z.infer<typeof civicWorkPrioritySchema>;
+export type CivicWorkGeometry = z.infer<typeof civicWorkGeometrySchema>;
 export type DependencyState = z.infer<typeof dependencyStateSchema>;
 export type ValidationVote = z.infer<typeof validationVoteSchema>;
 export type InterventionPurpose = z.infer<typeof interventionPurposeSchema>;
@@ -892,6 +1046,11 @@ export type PendingValidation = z.infer<typeof pendingValidationSchema>;
 export type SubmitValidation = z.infer<typeof submitValidationSchema>;
 export type SubmitValidationResult = z.infer<typeof submitValidationResultSchema>;
 export type Project = z.infer<typeof projectSchema>;
+export type CivicWork = z.infer<typeof civicWorkSchema>;
+export type CreatePlannedCivicWork = z.infer<typeof createPlannedCivicWorkSchema>;
+export type UpdateCivicWork = z.infer<typeof updateCivicWorkSchema>;
+export type CancelCivicWork = z.infer<typeof cancelCivicWorkSchema>;
+export type ListCivicWorksQuery = z.infer<typeof listCivicWorksQuerySchema>;
 export type ProjectConflict = z.infer<typeof projectConflictSchema>;
 export type EngineerProjectDetail = z.infer<typeof engineerProjectDetailSchema>;
 export type CompletionEvidence = z.infer<typeof completionEvidenceSchema>;

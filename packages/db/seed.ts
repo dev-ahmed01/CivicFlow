@@ -1,4 +1,5 @@
 import {
+  CivicWorkOrigin,
   CompletionVerificationDecision,
   DependencyState,
   Prisma,
@@ -51,6 +52,11 @@ const ids = {
     dependency: "90000000-0000-4000-8000-000000000006",
     workNote: "90000000-0000-4000-8000-000000000007",
     completionEvidence: "90000000-0000-4000-8000-000000000008",
+  },
+  plannedWorks: {
+    btmPipeline: "88000000-0000-4000-8000-000000000001",
+    btmCable: "88000000-0000-4000-8000-000000000002",
+    btmDrainage: "88000000-0000-4000-8000-000000000003",
   },
 } as const;
 
@@ -186,8 +192,12 @@ async function seedEngineerWorkflowDemo(): Promise<void> {
     await prisma.project.upsert({
       where: { id: projectId },
       update: { agencyId: item.agencyId, engineerId: item.engineerId, state: item.projectState, plannedStart: item.start, plannedEnd: item.end, workDescription: item.start ? "Execute the inspected scope with field safety controls and restore the public area." : null, dependencyFlags: item.agencyId === ids.agencies.pwd ? ["Traffic coordination"] : ["Road restoration coordination"] },
-      create: { id: projectId, ticketId, agencyId: item.agencyId, engineerId: item.engineerId, state: item.projectState, plannedStart: item.start, plannedEnd: item.end, workDescription: item.start ? "Execute the inspected scope with field safety controls and restore the public area." : null, dependencyFlags: item.agencyId === ids.agencies.pwd ? ["Traffic coordination"] : ["Road restoration coordination"] },
+      create: { id: projectId, ticketId, categoryId: item.categoryId, agencyId: item.agencyId, wardId: item.wardId, ownerProjectHeadId: "40000000-0000-4000-8000-000000000101", createdById: "40000000-0000-4000-8000-000000000101", updatedById: "40000000-0000-4000-8000-000000000101", origin: CivicWorkOrigin.CITIZEN_REPORTED, title: item.title, locationLabel: `${item.title}, Bengaluru`, engineerId: item.engineerId, state: item.projectState, plannedStart: item.start, plannedEnd: item.end, workDescription: item.start ? "Execute the inspected scope with field safety controls and restore the public area." : null, dependencyFlags: item.agencyId === ids.agencies.pwd ? ["Traffic coordination"] : ["Road restoration coordination"] },
     });
+    await prisma.$executeRaw`
+      UPDATE "Project" AS project SET "geometry" = ticket."coordinates"
+      FROM "Ticket" AS ticket WHERE project."id" = ${projectId}::uuid AND ticket."id" = ${ticketId}::uuid
+    `;
     const actionType = item.projectState === ProjectState.PENDING_UPTAKE ? WorkflowActionType.ACCEPT_PROJECT : WorkflowActionType.SUBMIT_COMPLETION;
     await prisma.workflowAction.upsert({
       where: { dedupeKey: item.projectState === ProjectState.PENDING_UPTAKE ? `project:${projectId}:accept` : `project:${projectId}:submit-completion` },
@@ -347,7 +357,15 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
     create: {
       id: demo.project,
       ticketId: demo.ticket,
+      categoryId: categories[1].id,
       agencyId: ids.agencies.bescom,
+      wardId: ids.wards.jayanagar,
+      ownerProjectHeadId: projectHeadId,
+      createdById: projectHeadId,
+      updatedById: projectHeadId,
+      origin: CivicWorkOrigin.CITIZEN_REPORTED,
+      title: "Restore streetlights beside Jayanagar metro exit",
+      locationLabel: "11th Main Road, Jayanagar 4th Block, Bengaluru",
       engineerId,
       state: ProjectState.CLOSED,
       plannedStart: at(7),
@@ -357,6 +375,10 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
       createdAt: at(5),
     },
   });
+  await prisma.$executeRaw`
+    UPDATE "Project" AS project SET "geometry" = ticket."coordinates"
+    FROM "Ticket" AS ticket WHERE project."id" = ${demo.project}::uuid AND ticket."id" = ${demo.ticket}::uuid
+  `;
   await prisma.dependency.upsert({
     where: { id: demo.dependency },
     update: {
@@ -514,7 +536,7 @@ async function seedRoadCuttingDemo(): Promise<void> {
     await prisma.project.upsert({
       where: { id: projectId },
       update: { agencyId: item.agencyId, engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title },
-      create: { id: projectId, ticketId, agencyId: item.agencyId, engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title },
+      create: { id: projectId, ticketId, categoryId: categories[0].id, agencyId: item.agencyId, wardId: ids.wards.jayanagar, ownerProjectHeadId: item.agencyId === ids.agencies.pwd ? "40000000-0000-4000-8000-000000000101" : item.agencyId === ids.agencies.bwssb ? "40000000-0000-4000-8000-000000000102" : "40000000-0000-4000-8000-000000000103", origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, locationLabel: "Segment X · 11th Main Road, Jayanagar", engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title },
     });
     await prisma.workflowAction.upsert({
       where: { dedupeKey: `project:${projectId}:complete-work` },
@@ -525,6 +547,88 @@ async function seedRoadCuttingDemo(): Promise<void> {
       where: { projectId },
       update: { segmentId: ids.roadSegments.flagship, requestingAgencyId: item.agencyId, purpose: item.purpose, plannedStart: item.start, plannedEnd: item.end, startOffsetM: item.offset, affectedLengthM: item.length, dependencyRefs: [...item.refs] },
       create: { id: interventionId, projectId, segmentId: ids.roadSegments.flagship, requestingAgencyId: item.agencyId, purpose: item.purpose, plannedStart: item.start, plannedEnd: item.end, startOffsetM: item.offset, affectedLengthM: item.length, dependencyRefs: [...item.refs] },
+    });
+    await prisma.$executeRaw`
+      UPDATE "Project" AS project SET "geometry" = segment."geometry"
+      FROM "RoadSegment" AS segment WHERE project."id" = ${projectId}::uuid AND segment."id" = ${ids.roadSegments.flagship}::uuid
+    `;
+  }
+}
+
+// Phase 1 — standalone registry fixtures prove work no longer needs a citizen
+// complaint. The first two deliberately overlap in BTM Layout for a later
+// geographic/temporal conflict demonstration; warnings remain advisory.
+async function seedPlannedCivicWorks(): Promise<void> {
+  const planned = [
+    {
+      id: ids.plannedWorks.btmPipeline,
+      categoryId: categories[2].id,
+      agencyId: ids.agencies.bwssb,
+      ownerId: "40000000-0000-4000-8000-000000000102",
+      title: "BTM 2nd Stage water-main replacement",
+      description: "Replace the aging distribution main and reinstate the affected carriageway along 16th Main Road.",
+      locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru",
+      start: new Date("2026-10-12T03:30:00.000Z"),
+      end: new Date("2026-10-22T12:30:00.000Z"),
+      geometry: { type: "LineString", coordinates: [[77.6075, 12.9142], [77.6125, 12.9142]] },
+    },
+    {
+      id: ids.plannedWorks.btmCable,
+      categoryId: categories[5].id,
+      agencyId: ids.agencies.bescom,
+      ownerId: "40000000-0000-4000-8000-000000000103",
+      title: "BESCOM underground cable maintenance",
+      description: "Replace a deteriorated underground feeder cable and inspect jointing pits on the shared corridor.",
+      locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru",
+      start: new Date("2026-10-17T03:30:00.000Z"),
+      end: new Date("2026-10-20T12:30:00.000Z"),
+      geometry: { type: "LineString", coordinates: [[77.6090, 12.9142], [77.6130, 12.9142]] },
+    },
+    {
+      id: ids.plannedWorks.btmDrainage,
+      categoryId: categories[3].id,
+      agencyId: ids.agencies.bwssb,
+      ownerId: "40000000-0000-4000-8000-000000000102",
+      title: "BTM storm-drain desilting and repair",
+      description: "Desilt the secondary drain, repair two damaged covers, and document pre-monsoon flow restoration.",
+      locationLabel: "7th Cross Road, BTM Layout 1st Stage, Bengaluru",
+      start: new Date("2026-11-02T03:30:00.000Z"),
+      end: new Date("2026-11-06T12:30:00.000Z"),
+      geometry: { type: "Point", coordinates: [77.6170, 12.9180] },
+    },
+  ] as const;
+
+  for (const [index, item] of planned.entries()) {
+    await prisma.project.upsert({
+      where: { id: item.id },
+      update: {
+        categoryId: item.categoryId, agencyId: item.agencyId, wardId: ids.wards.btmLayout,
+        ownerProjectHeadId: item.ownerId, createdById: item.ownerId, updatedById: item.ownerId,
+        origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, description: item.description,
+        workDescription: item.description, locationLabel: item.locationLabel,
+        plannedStart: item.start, plannedEnd: item.end, state: ProjectState.TIMELINE_SET,
+      },
+      create: {
+        id: item.id, categoryId: item.categoryId, agencyId: item.agencyId, wardId: ids.wards.btmLayout,
+        ownerProjectHeadId: item.ownerId, createdById: item.ownerId, updatedById: item.ownerId,
+        origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, description: item.description,
+        workDescription: item.description, locationLabel: item.locationLabel,
+        plannedStart: item.start, plannedEnd: item.end, state: ProjectState.TIMELINE_SET,
+      },
+    });
+    await prisma.$executeRaw`
+      UPDATE "Project" SET "geometry" = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(item.geometry)}), 4326)
+      WHERE "id" = ${item.id}::uuid
+    `;
+    await prisma.projectStateTransition.upsert({
+      where: { id: `89000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}` },
+      update: { projectId: item.id, fromState: ProjectState.CREATED, toState: ProjectState.TIMELINE_SET, reason: "PLANNED_TIMELINE_REGISTERED", actedById: item.ownerId },
+      create: { id: `89000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, projectId: item.id, fromState: ProjectState.CREATED, toState: ProjectState.TIMELINE_SET, reason: "PLANNED_TIMELINE_REGISTERED", actedById: item.ownerId },
+    });
+    await prisma.projectAuditEvent.upsert({
+      where: { id: `8a000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}` },
+      update: { projectId: item.id, action: "PLANNED_WORK_CREATED", actorId: item.ownerId, metadata: { seeded: true } },
+      create: { id: `8a000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, projectId: item.id, action: "PLANNED_WORK_CREATED", actorId: item.ownerId, metadata: { seeded: true } },
     });
   }
 }
@@ -617,11 +721,13 @@ async function main(): Promise<void> {
   await seedEngineerWorkflowDemo();
   await seedGeneralEndToEndDemo();
   await seedRoadCuttingDemo();
+  await seedPlannedCivicWorks();
 
   console.log(`Seeded ${demoWards.length} wards, ${agencies.length} agencies, ${categories.length} categories, and ${users.length} users.`);
   console.log(`Seeded ${engineerDemoProjects.length} Executive Engineer demo projects.`);
   console.log("Seeded the Part I §31 closed streetlight lifecycle with validation, dependency, execution, and citizen verification history.");
   console.log("Seeded Segment X flagship road-cutting scenario (PWD, BWSSB, BESCOM).");
+  console.log("Seeded three standalone planned works in BTM Layout, including an intentional overlapping pair.");
   console.log(process.env.NODE_ENV === "production"
     ? "Internal demo-user password loaded from DEMO_INTERNAL_PASSWORD."
     : "Local internal-user password: CivicOS@123");

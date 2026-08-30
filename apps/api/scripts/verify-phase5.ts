@@ -15,6 +15,9 @@ process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret-that-is-at-least-32-char
 const pwdAgencyId = "20000000-0000-4000-8000-000000000003";
 const bwssbAgencyId = "20000000-0000-4000-8000-000000000001";
 const bwssbEngineerId = "40000000-0000-4000-8000-000000000202";
+const pwdProjectHeadId = "40000000-0000-4000-8000-000000000101";
+const categoryId = "30000000-0000-4000-8000-000000000001";
+const wardId = "10000000-0000-4000-8000-000000000004";
 const projectIds: string[] = [];
 
 const storage: ImageStorage = {
@@ -38,7 +41,11 @@ async function login(app: ReturnType<typeof createApp>, email: string): Promise<
 async function createProject(): Promise<string> {
   const id = randomUUID();
   projectIds.push(id);
-  await prisma.project.create({ data: { id, agencyId: pwdAgencyId, state: ProjectState.CREATED } });
+  await prisma.project.create({ data: {
+    id, categoryId, agencyId: pwdAgencyId, wardId, ownerProjectHeadId: pwdProjectHeadId,
+    createdById: pwdProjectHeadId, title: "Phase 5 dependency verification work", state: ProjectState.CREATED,
+  } });
+  await prisma.$executeRaw`UPDATE "Project" SET "geometry" = ST_SetSRID(ST_MakePoint(77.5844, 12.9299), 4326) WHERE "id" = ${id}::uuid`;
   return id;
 }
 

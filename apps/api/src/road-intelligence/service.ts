@@ -284,7 +284,7 @@ async function roadConfig(client: RoadIntelligenceClient): Promise<{ categoryId:
 
 async function segmentRecords(client: RoadIntelligenceClient, segmentId: string, categoryId: string): Promise<RoadInterventionRecord[]> {
   const records = await client.intervention.findMany({
-    where: { segmentId, project: { ticket: { categoryId } } },
+    where: { segmentId, project: { categoryId } },
     include: {
       requestingAgency: { select: { id: true, name: true } },
       project: {
@@ -322,9 +322,9 @@ export async function checkRoadConflicts(client: RoadIntelligenceClient, project
   const config = await roadConfig(client);
   const source = await client.intervention.findUnique({
     where: { projectId },
-    include: { segment: { select: { id: true, roadName: true, lastRestorationDate: true } }, project: { select: { ticket: { select: { categoryId: true } } } } },
+    include: { segment: { select: { id: true, roadName: true, lastRestorationDate: true } }, project: { select: { categoryId: true } } },
   });
-  if (!source || source.project.ticket?.categoryId !== config.categoryId) return [];
+  if (!source || source.project.categoryId !== config.categoryId) return [];
   const records = await segmentRecords(client, source.segmentId, config.categoryId);
   const detections = evaluateRoadConflicts(projectId, records, source.segment.lastRestorationDate, config.repeatedDays);
   const logged = await Promise.all(detections.map(async (item) => {
