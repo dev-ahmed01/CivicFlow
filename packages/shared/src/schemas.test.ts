@@ -12,6 +12,7 @@ import {
   createTicketSchema,
   internalLoginSchema,
   listCivicWorksQuerySchema,
+  nearbyCivicWorksQuerySchema,
   requestOtpSchema,
   submitValidationSchema,
   ticketStateSchema,
@@ -107,6 +108,16 @@ describe("shared schemas", () => {
     expect(listCivicWorksQuerySchema.safeParse({
       minLongitude: "77.60", minLatitude: "12.90", maxLongitude: "77.62", maxLatitude: "12.92",
     }).success).toBe(true);
+  });
+
+  it("bounds citizen nearby-work searches to a local, finite area", () => {
+    expect(nearbyCivicWorksQuerySchema.parse({ latitude: "12.93", longitude: "77.58" })).toMatchObject({
+      latitude: 12.93,
+      longitude: 77.58,
+      radiusMeters: 2_000,
+      limit: 30,
+    });
+    expect(nearbyCivicWorksQuerySchema.safeParse({ latitude: 12.93, longitude: 77.58, radiusMeters: 10_001 }).success).toBe(false);
   });
 
   it("requires bounded calendar and ledger reads", () => {

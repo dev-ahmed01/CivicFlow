@@ -12,9 +12,10 @@ import { registerForPushNotifications, subscribeToPushNavigation, subscribeToPus
 import { DesignSystemProvider, MobileTabBar, type MobileTab } from "./src/components";
 import { colors } from "./src/theme";
 import { nextScreenAfterPhotoCheck, photoRejectionMessage } from "./src/photo-flow";
+import { NearbyWorksScreen } from "./src/nearby-works";
 
 type Viewer = "LOADING" | "SIGNED_OUT" | "CITIZEN" | "ENGINEER";
-type Screen = "welcome" | "citizen-login" | "engineer-login" | "home" | "category" | "evidence" | "location-detect" | "location-confirm" | "review" | "feedback" | "confirmation" | "detail" | "grievance" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "profile";
+type Screen = "welcome" | "citizen-login" | "engineer-login" | "home" | "nearby-works" | "category" | "evidence" | "location-detect" | "location-confirm" | "review" | "feedback" | "confirmation" | "detail" | "grievance" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "profile";
 
 const emptyHomeSummary: CitizenHomeSummary = { pendingValidations: 0, pendingCompletions: 0, ongoingReports: 0, resolvedReports: 0, recentNotifications: [] };
 
@@ -296,22 +297,19 @@ function AppContent() {
   else if (screen === "completion-verification" && selectedCompletion) content = <CompletionVerificationScreen completion={selectedCompletion} submitting={completionSubmitting} onBack={() => setScreen("completion-validations")} onSubmit={(decision) => void submitCompletionVote(decision)} />;
   else if (screen === "notifications") content = <NotificationsScreen role="CITIZEN" onBack={() => setScreen("home")} onOpen={openNotification} onViewed={() => setNotificationUnread(0)} />;
   else if (screen === "profile") content = <CitizenProfileScreen auth={citizenAuth} onSignOut={signOut} />;
-  else content = <HomeScreen auth={citizenAuth} unread={notificationUnread} summary={homeSummary} loading={homeLoading} onReport={() => setScreen("category")} onTickets={openTickets} onValidations={() => openValidations()} onCompletionValidations={() => openCompletionValidations()} onNotifications={() => setScreen("notifications")} onProfile={() => setScreen("profile")} onOpenNotification={openNotification} />;
+  else if (screen === "nearby-works") content = <NearbyWorksScreen onBack={() => setScreen("home")} />;
+  else content = <HomeScreen auth={citizenAuth} unread={notificationUnread} summary={homeSummary} loading={homeLoading} onReport={() => setScreen("category")} onNearby={() => setScreen("nearby-works")} onTickets={openTickets} onValidations={() => openValidations()} onCompletionValidations={() => openCompletionValidations()} onNotifications={() => setScreen("notifications")} onProfile={() => setScreen("profile")} onOpenNotification={openNotification} />;
 
   const tabs: MobileTab[] = [
-    { id: "home", label: "Home", icon: "home-outline", activeIcon: "home" },
     { id: "report", label: "Report", icon: "add-circle-outline", activeIcon: "add-circle" },
-    { id: "tickets", label: "My Reports", icon: "document-text-outline", activeIcon: "document-text" },
-    { id: "notifications", label: "Updates", icon: "notifications-outline", activeIcon: "notifications", badge: notificationUnread },
-    { id: "profile", label: "Profile", icon: "person-outline", activeIcon: "person" },
+    { id: "tickets", label: "Track", icon: "document-text-outline", activeIcon: "document-text" },
+    { id: "nearby", label: "Nearby Works", icon: "map-outline", activeIcon: "map" },
   ];
-  const activeTab = screen === "home" ? "home" : ["category", "evidence", "location-detect", "location-confirm", "review", "feedback", "confirmation"].includes(screen) ? "report" : ["tickets", "detail", "grievance"].includes(screen) ? "tickets" : ["validations", "verification", "completion-validations", "completion-verification", "notifications"].includes(screen) ? "notifications" : "profile";
+  const activeTab = ["category", "evidence", "location-detect", "location-confirm", "review", "feedback", "confirmation"].includes(screen) ? "report" : ["tickets", "detail", "grievance"].includes(screen) ? "tickets" : screen === "nearby-works" ? "nearby" : "";
   const selectTab = (id: string) => {
-    if (id === "home") { setScreen("home"); void refreshHome(); }
-    else if (id === "profile") setScreen("profile");
-    else if (id === "report") { setScreen("category"); }
+    if (id === "report") { setScreen("category"); }
     else if (id === "tickets") openTickets("ongoing");
-    else if (id === "notifications") setScreen("notifications");
+    else if (id === "nearby") setScreen("nearby-works");
   };
   return <DesignSystemProvider theme="citizen"><StatusBar style="dark" /><View style={styles.app}><View style={styles.stage}>{content}</View><View style={styles.tabInset}><MobileTabBar active={activeTab} items={tabs} onSelect={selectTab} /></View></View></DesignSystemProvider>;
 }

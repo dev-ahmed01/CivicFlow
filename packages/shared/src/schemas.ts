@@ -461,6 +461,37 @@ export const listCivicWorksQuerySchema = z.object({
   }
 });
 
+// Citizen transparency uses a deliberately narrow contract. Operational Project
+// fields must never be added here by spreading the internal model.
+export const nearbyCivicWorksQuerySchema = z.object({
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+  radiusMeters: z.coerce.number().int().min(100).max(10_000).default(2_000),
+  limit: z.coerce.number().int().min(1).max(50).default(30),
+});
+
+export const publicCivicWorkStatusSchema = z.enum(["PLANNED", "SCHEDULED", "IN_PROGRESS", "COMPLETED"]);
+export const publicCivicWorkCompletionSchema = z.enum(["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]);
+export const publicCivicWorkSchema = z.object({
+  id: idSchema,
+  referenceNumber: z.string().min(1),
+  workType: z.string().min(1),
+  agency: z.string().min(1),
+  approximateLocation: z.object({
+    ward: z.string().min(1),
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+  }),
+  distanceMeters: z.number().nonnegative(),
+  status: publicCivicWorkStatusSchema,
+  statusLabel: z.string().min(1),
+  publicProgress: z.string().min(1),
+  plannedStart: dateSchema.nullable(),
+  expectedCompletion: dateSchema.nullable(),
+  completedAt: dateSchema.nullable(),
+  completionStatus: publicCivicWorkCompletionSchema,
+});
+
 export const civicWorkPeriodSchema = z.enum(["PAST", "CURRENT", "FUTURE"]);
 
 const spatialBoundsSchema = z.object({
@@ -1323,6 +1354,9 @@ export type CreatePlannedCivicWork = z.infer<typeof createPlannedCivicWorkSchema
 export type UpdateCivicWork = z.infer<typeof updateCivicWorkSchema>;
 export type CancelCivicWork = z.infer<typeof cancelCivicWorkSchema>;
 export type ListCivicWorksQuery = z.infer<typeof listCivicWorksQuerySchema>;
+export type NearbyCivicWorksQuery = z.infer<typeof nearbyCivicWorksQuerySchema>;
+export type PublicCivicWorkStatus = z.infer<typeof publicCivicWorkStatusSchema>;
+export type PublicCivicWork = z.infer<typeof publicCivicWorkSchema>;
 export type ProjectConflict = z.infer<typeof projectConflictSchema>;
 export type EngineerProjectDetail = z.infer<typeof engineerProjectDetailSchema>;
 export type CompletionEvidence = z.infer<typeof completionEvidenceSchema>;

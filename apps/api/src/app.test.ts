@@ -83,6 +83,43 @@ describe("RBAC middleware", () => {
     expect(response.body.privacyNotice).toBe("Aggregated only");
   });
 
+  it("serves citizens only the allowlisted Nearby Works fields", async () => {
+    mockCurrentUser("CITIZEN");
+    vi.spyOn(prisma, "$queryRaw").mockResolvedValue([{
+      id: "90000000-0000-4000-8000-000000000001",
+      referenceNumber: "CW-202608-0001",
+      workType: "Road Damage",
+      agency: "PWD",
+      ward: "Jayanagar",
+      latitude: 12.93,
+      longitude: 77.584,
+      distanceMeters: 144,
+      state: "ACTIVE",
+      plannedStart: new Date("2026-08-20T00:00:00.000Z"),
+      plannedEnd: new Date("2026-09-02T00:00:00.000Z"),
+      actualCompletion: null,
+    }] as never);
+
+    const response = await request(app)
+      .get("/civic-works/nearby?latitude=12.93&longitude=77.58")
+      .set("Authorization", `Bearer ${accessToken("CITIZEN")}`)
+      .expect(200);
+
+    expect(Object.keys(response.body.works[0]).sort()).toEqual([
+      "agency", "approximateLocation", "completedAt", "completionStatus", "distanceMeters", "expectedCompletion",
+      "id", "plannedStart", "publicProgress", "referenceNumber", "status", "statusLabel", "workType",
+    ].sort());
+    expect(JSON.stringify(response.body)).not.toMatch(/engineer|attachment|evidence|dependency|conflict|comment|discussion|purpose/i);
+  });
+
+  it("does not expose the citizen Nearby Works endpoint to operational roles", async () => {
+    mockCurrentUser("PROJECT_HEAD");
+    await request(app)
+      .get("/civic-works/nearby?latitude=12.93&longitude=77.58")
+      .set("Authorization", `Bearer ${accessToken("PROJECT_HEAD")}`)
+      .expect(403);
+  });
+
   it("returns 403 to a citizen", async () => {
     mockCurrentUser("CITIZEN");
     await request(app)

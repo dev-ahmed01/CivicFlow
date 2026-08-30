@@ -18,6 +18,7 @@ import type {
   RoadConflict,
   ProjectListItem,
   ProjectState,
+  PublicCivicWork,
   SubmitValidationResult,
   UserRole,
   ValidationVote,
@@ -368,6 +369,25 @@ export async function submitCompletionEvidence(projectId: string, image: LocalIm
 export async function loadAgencies(): Promise<Array<{ id: string; name: string }>> {
   const result = await apiFetch<{ agencies: Array<{ id: string; name: string }> }>("/agencies");
   return result.agencies;
+}
+
+export type MobilePublicCivicWork = Omit<PublicCivicWork, "plannedStart" | "expectedCompletion" | "completedAt"> & {
+  plannedStart: string | null;
+  expectedCompletion: string | null;
+  completedAt: string | null;
+};
+
+export async function loadNearbyCivicWorks(
+  latitude: number,
+  longitude: number,
+  radiusMeters = 2_000,
+): Promise<{ works: MobilePublicCivicWork[]; radiusMeters: number }> {
+  const query = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    radiusMeters: String(radiusMeters),
+  });
+  return apiFetch(`/civic-works/nearby?${query.toString()}`);
 }
 
 export async function uploadFile(target: UploadTarget, image: LocalImage): Promise<void> {

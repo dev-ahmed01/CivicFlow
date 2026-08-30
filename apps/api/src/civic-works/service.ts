@@ -16,6 +16,9 @@ import type {
   CivicWorkPeriod,
   CreatePlannedCivicWork,
   ListCivicWorksQuery,
+  NearbyCivicWorksQuery,
+  PublicCivicWork,
+  PublicCivicWorkStatus,
   UpdateCivicWork,
   UserRole as SharedUserRole,
 } from "@civicos/shared";
@@ -76,6 +79,103 @@ export function assertCoordinationRead(actor: CivicWorkActor): void {
   if (actor.role !== UserRole.PROJECT_HEAD && actor.role !== UserRole.ADMIN) {
     throw new CivicWorkError(403, "The work calendar is limited to Project Heads and Administrators", "WORK_CALENDAR_FORBIDDEN");
   }
+}
+
+export function assertCitizenTransparencyRead(actor: CivicWorkActor): void {
+  if (actor.role !== UserRole.CITIZEN) {
+    throw new CivicWorkError(403, "Nearby Works is a citizen transparency view", "NEARBY_WORKS_FORBIDDEN");
+  }
+}
+
+export type PublicCivicWorkRow = {
+  id: string;
+  referenceNumber: string;
+  workType: string;
+  agency: string;
+  ward: string;
+  latitude: number;
+  longitude: number;
+  distanceMeters: number;
+  state: ProjectState;
+  plannedStart: Date | null;
+  plannedEnd: Date | null;
+  actualCompletion: Date | null;
+};
+
+const publicStatusByProjectState: Record<ProjectState, {
+  status: PublicCivicWorkStatus;
+  statusLabel: string;
+  publicProgress: string;
+  completionStatus: PublicCivicWork["completionStatus"];
+}> = {
+  CREATED: { status: "PLANNED", statusLabel: "Being prepared", publicProgress: "The agency is preparing this work.", completionStatus: "NOT_STARTED" },
+  PENDING_UPTAKE: { status: "PLANNED", statusLabel: "Being prepared", publicProgress: "The agency is preparing this work.", completionStatus: "NOT_STARTED" },
+  UPTAKEN: { status: "PLANNED", statusLabel: "Being prepared", publicProgress: "The work team is preparing the next steps.", completionStatus: "NOT_STARTED" },
+  TIMELINE_SET: { status: "SCHEDULED", statusLabel: "Scheduled", publicProgress: "The work has been scheduled.", completionStatus: "NOT_STARTED" },
+  CONFLICT_CHECKED: { status: "SCHEDULED", statusLabel: "Scheduled", publicProgress: "The work has been scheduled.", completionStatus: "NOT_STARTED" },
+  ACTIVE: { status: "IN_PROGRESS", statusLabel: "In progress", publicProgress: "Work is currently in progress.", completionStatus: "IN_PROGRESS" },
+  MODIFIED: { status: "IN_PROGRESS", statusLabel: "In progress", publicProgress: "Work is in progress with an updated plan.", completionStatus: "IN_PROGRESS" },
+  COMPLETED: { status: "COMPLETED", statusLabel: "Completed", publicProgress: "The agency has marked the work complete.", completionStatus: "COMPLETED" },
+  AWAITING_VERIFICATION: { status: "COMPLETED", statusLabel: "Completion check", publicProgress: "The completed work is being verified.", completionStatus: "COMPLETED" },
+  CLOSED: { status: "COMPLETED", statusLabel: "Completed", publicProgress: "The work is complete.", completionStatus: "COMPLETED" },
+  CANCELLED: { status: "PLANNED", statusLabel: "Not proceeding", publicProgress: "This work is not proceeding.", completionStatus: "NOT_STARTED" },
+};
+
+// Phase 5 citizen transparency boundary: construct every response field
+// explicitly. Never serialize a Project record into the citizen application.
+export function toPublicCivicWork(row: PublicCivicWorkRow): PublicCivicWork {
+  const presentation = publicStatusByProjectState[row.state];
+  return {
+    id: row.id,
+    referenceNumber: row.referenceNumber,
+    workType: row.workType,
+    agency: row.agency,
+    approximateLocation: {
+      ward: row.ward,
+      latitude: row.latitude,
+      longitude: row.longitude,
+    },
+    distanceMeters: Math.max(0, Math.round(row.distanceMeters)),
+    ...presentation,
+    plannedStart: row.plannedStart,
+    expectedCompletion: row.plannedEnd,
+    completedAt: row.actualCompletion,
+  };
+}
+
+export async function listNearbyCivicWorks(actor: CivicWorkActor, query: NearbyCivicWorksQuery) {
+  assertCitizenTransparencyRead(actor);
+  const rows = await prisma.$queryRaw<PublicCivicWorkRow[]>(Prisma.sql`
+    SELECT project."id",
+      project."referenceNumber",
+      category."name" AS "workType",
+      agency."name" AS "agency",
+      ward."name" AS "ward",
+      ROUND(ST_Y(ST_Centroid(project."geometry"))::numeric, 3)::double precision AS "latitude",
+      ROUND(ST_X(ST_Centroid(project."geometry"))::numeric, 3)::double precision AS "longitude",
+      ST_Distance(
+        project."geometry"::geography,
+        ST_SetSRID(ST_MakePoint(${query.longitude}, ${query.latitude}), 4326)::geography
+      )::double precision AS "distanceMeters",
+      project."state",
+      project."plannedStart",
+      project."plannedEnd",
+      project."actualCompletion"
+    FROM "Project" AS project
+    JOIN "Category" AS category ON category."id" = project."categoryId"
+    JOIN "Agency" AS agency ON agency."id" = project."agencyId"
+    JOIN "Ward" AS ward ON ward."id" = project."wardId"
+    WHERE project."geometry" IS NOT NULL
+      AND project."state" NOT IN ('CREATED', 'CANCELLED')
+      AND ST_DWithin(
+        project."geometry"::geography,
+        ST_SetSRID(ST_MakePoint(${query.longitude}, ${query.latitude}), 4326)::geography,
+        ${query.radiusMeters}
+      )
+    ORDER BY "distanceMeters" ASC, project."createdAt" DESC
+    LIMIT ${query.limit}
+  `);
+  return { works: rows.map(toPublicCivicWork), radiusMeters: query.radiusMeters };
 }
 
 const terminalProjectStates = new Set<ProjectState>([

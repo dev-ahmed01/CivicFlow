@@ -6,6 +6,7 @@ import {
   civicWorkLedgerQuerySchema,
   createPlannedCivicWorkSchema,
   listCivicWorksQuerySchema,
+  nearbyCivicWorksQuerySchema,
   updateCivicWorkSchema,
 } from "@civicos/shared";
 import { z } from "zod";
@@ -18,6 +19,7 @@ import {
   listCivicWorkCalendar,
   listCivicWorkLedger,
   listCivicWorks,
+  listNearbyCivicWorks,
   updateCivicWork,
   type CivicWorkActor,
 } from "./service";
@@ -95,6 +97,19 @@ export function createCivicWorksRouter(): Router {
         return;
       }
       response.json(await listCivicWorkLedger(actor(request), parsed.data));
+    }),
+  );
+
+  router.get(
+    "/civic-works/nearby",
+    requireRole(UserRole.CITIZEN),
+    asyncRoute(async (request, response) => {
+      const parsed = nearbyCivicWorksQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        response.status(400).json({ error: "Invalid nearby works location", details: parsed.error.flatten() });
+        return;
+      }
+      response.json(await listNearbyCivicWorks(actor(request), parsed.data));
     }),
   );
 
