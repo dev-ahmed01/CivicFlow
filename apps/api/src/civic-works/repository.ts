@@ -1,5 +1,11 @@
 import { Prisma, type PrismaClient } from "db";
-import { civicWorkGeometrySchema, type CivicWorkGeometry, type ListCivicWorksQuery } from "@civicos/shared";
+import {
+  civicWorkGeometrySchema,
+  type CivicWorkCalendarQuery,
+  type CivicWorkGeometry,
+  type CivicWorkLedgerQuery,
+  type ListCivicWorksQuery,
+} from "@civicos/shared";
 
 export type CivicWorkClient = PrismaClient | Prisma.TransactionClient;
 
@@ -45,6 +51,75 @@ export const civicWorkInclude = {
 } satisfies Prisma.ProjectInclude;
 
 export type CivicWorkRecord = Prisma.ProjectGetPayload<{ include: typeof civicWorkInclude }>;
+
+export const civicWorkCalendarInclude = {
+  category: { select: { id: true, name: true } },
+  agency: { select: { id: true, name: true, type: true } },
+  ward: { select: { id: true, name: true } },
+  engineer: { select: { id: true, email: true } },
+  intervention: {
+    include: {
+      segment: {
+        select: {
+          id: true,
+          roadName: true,
+          wardId: true,
+          surfaceType: true,
+          lastRestorationDate: true,
+          ward: { select: { id: true, name: true } },
+        },
+      },
+    },
+  },
+  dependencies: { select: { state: true } },
+  _count: {
+    select: {
+      evidence: true,
+      conflictLogs: true,
+      conflictingLogs: true,
+      roadConflictLogs: true,
+      conflictingRoadLogs: true,
+    },
+  },
+} satisfies Prisma.ProjectInclude;
+
+export type CivicWorkCalendarRecord = Prisma.ProjectGetPayload<{ include: typeof civicWorkCalendarInclude }>;
+
+export const civicWorkLedgerInclude = {
+  ...civicWorkCalendarInclude,
+  stateTransitions: {
+    orderBy: { createdAt: "desc" as const },
+    select: { id: true, toState: true, reason: true, createdAt: true },
+  },
+  auditEvents: {
+    orderBy: { createdAt: "desc" as const },
+    take: 100,
+    select: { id: true, action: true, metadata: true, createdAt: true },
+  },
+  evidence: {
+    orderBy: { createdAt: "desc" as const },
+    select: { id: true, kind: true, label: true, createdAt: true },
+  },
+  dependencies: {
+    select: {
+      id: true,
+      state: true,
+      requirement: true,
+      createdAt: true,
+      respondingAgency: { select: { id: true, name: true } },
+      stateTransitions: {
+        orderBy: { createdAt: "desc" as const },
+        select: { id: true, toState: true, reason: true, createdAt: true },
+      },
+    },
+  },
+  conflictLogs: { select: { id: true, createdAt: true, conflictingAgency: { select: { id: true, name: true } } } },
+  conflictingLogs: { select: { id: true, createdAt: true, projectAgency: { select: { id: true, name: true } } } },
+  roadConflictLogs: { select: { id: true, type: true, createdAt: true, conflictingAgency: { select: { id: true, name: true } } } },
+  conflictingRoadLogs: { select: { id: true, type: true, createdAt: true, projectAgency: { select: { id: true, name: true } } } },
+} satisfies Prisma.ProjectInclude;
+
+export type CivicWorkLedgerRecord = Prisma.ProjectGetPayload<{ include: typeof civicWorkLedgerInclude }>;
 
 type GeometryRow = { id: string; geometry: string | null };
 
@@ -160,6 +235,70 @@ export async function listCivicWorkRecords(
       where,
       include: civicWorkInclude,
       orderBy: [{ plannedStart: "asc" }, { createdAt: "desc" }],
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
+    }),
+    client.project.count({ where }),
+  ]);
+  return { records, total };
+}
+
+async function idsWithinCalendarBounds(client: CivicWorkClient, query: CivicWorkCalendarQuery): Promise<string[] | null> {
+  if (query.minLongitude === undefined || query.minLatitude === undefined || query.maxLongitude === undefined || query.maxLatitude === undefined) {
+    return null;
+  }
+  const rows = await client.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "Project"
+    WHERE "geometry" IS NOT NULL
+      AND "plannedStart" <= ${new Date(query.dateTo)}
+      AND "plannedEnd" >= ${new Date(query.dateFrom)}
+      AND ST_Intersects(
+        "geometry",
+        ST_MakeEnvelope(${query.minLongitude}, ${query.minLatitude}, ${query.maxLongitude}, ${query.maxLatitude}, 4326)
+      )
+  `;
+  return rows.map(({ id }) => id);
+}
+
+export async function listCivicWorkCalendarRecords(
+  client: CivicWorkClient,
+  query: CivicWorkCalendarQuery,
+): Promise<{ records: CivicWorkCalendarRecord[]; total: number }> {
+  const boundedIds = await idsWithinCalendarBounds(client, query);
+  const where: Prisma.ProjectWhereInput = {
+    plannedStart: { lte: new Date(query.dateTo) },
+    plannedEnd: { gte: new Date(query.dateFrom) },
+    ...(query.agencyId ? { agencyId: query.agencyId } : {}),
+    ...(query.wardId ? { wardId: query.wardId } : {}),
+    ...(query.roadSegmentId ? { intervention: { is: { segmentId: query.roadSegmentId } } } : {}),
+    ...(boundedIds ? { id: { in: boundedIds } } : {}),
+  };
+  const [records, total] = await Promise.all([
+    client.project.findMany({
+      where,
+      include: civicWorkCalendarInclude,
+      orderBy: [{ plannedStart: "asc" }, { id: "asc" }],
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
+    }),
+    client.project.count({ where }),
+  ]);
+  return { records, total };
+}
+
+export async function listCivicWorkLedgerRecords(
+  client: CivicWorkClient,
+  query: CivicWorkLedgerQuery,
+): Promise<{ records: CivicWorkLedgerRecord[]; total: number }> {
+  const where: Prisma.ProjectWhereInput = query.roadSegmentId
+    ? { intervention: { is: { segmentId: query.roadSegmentId } } }
+    : { wardId: query.wardId };
+  const [records, total] = await Promise.all([
+    client.project.findMany({
+      where,
+      include: civicWorkLedgerInclude,
+      orderBy: [{ plannedStart: "desc" }, { createdAt: "desc" }, { id: "asc" }],
       skip: (query.page - 1) * query.limit,
       take: query.limit,
     }),

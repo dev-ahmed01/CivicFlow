@@ -1,5 +1,6 @@
 import {
   CivicWorkOrigin,
+  DependencyState,
   Prisma,
   ProjectState,
   UserRole,
@@ -7,7 +8,12 @@ import {
 } from "db";
 import type {
   CancelCivicWork,
+  CivicWorkCalendarItem,
+  CivicWorkCalendarQuery,
   CivicWorkGeometry,
+  CivicWorkLedgerEvent,
+  CivicWorkLedgerQuery,
+  CivicWorkPeriod,
   CreatePlannedCivicWork,
   ListCivicWorksQuery,
   UpdateCivicWork,
@@ -19,10 +25,13 @@ import {
   copyRoadSegmentGeometry,
   findCivicWork,
   geometryIsCoveredByWard,
+  listCivicWorkCalendarRecords,
+  listCivicWorkLedgerRecords,
   listCivicWorkRecords,
   readCivicWorkGeometries,
   writeCivicWorkGeometry,
   type CivicWorkClient,
+  type CivicWorkCalendarRecord,
   type CivicWorkRecord,
 } from "./repository";
 
@@ -60,6 +69,87 @@ export function civicWorkReadScope(actor: CivicWorkActor): Prisma.ProjectWhereIn
   if (actor.role === UserRole.PROJECT_HEAD) return { agencyId };
   if (actor.role === UserRole.ENGINEER) return { agencyId, engineerId: actor.userId };
   throw new CivicWorkError(403, "Civic Work Registry access is limited to operational users", "CIVIC_WORK_FORBIDDEN");
+}
+
+export function assertCoordinationRead(actor: CivicWorkActor): void {
+  if (actor.role !== UserRole.PROJECT_HEAD && actor.role !== UserRole.ADMIN) {
+    throw new CivicWorkError(403, "The work calendar is limited to Project Heads and Administrators", "WORK_CALENDAR_FORBIDDEN");
+  }
+}
+
+const terminalProjectStates = new Set<ProjectState>([
+  ProjectState.COMPLETED,
+  ProjectState.AWAITING_VERIFICATION,
+  ProjectState.CLOSED,
+  ProjectState.CANCELLED,
+]);
+
+export function classifyCivicWorkPeriod(work: {
+  state: ProjectState;
+  plannedStart: Date | string | null;
+  plannedEnd: Date | string | null;
+  actualStart?: Date | string | null;
+  actualCompletion?: Date | string | null;
+  cancelledAt?: Date | string | null;
+}, asOf = new Date()): CivicWorkPeriod {
+  if (terminalProjectStates.has(work.state) || work.actualCompletion || work.cancelledAt) return "PAST";
+  const start = work.plannedStart ? new Date(work.plannedStart) : null;
+  const end = work.plannedEnd ? new Date(work.plannedEnd) : null;
+  if (start && start > asOf) return "FUTURE";
+  if (end && end < asOf) return "PAST";
+  return "CURRENT";
+}
+
+function calendarItem(record: CivicWorkCalendarRecord, geometry: CivicWorkGeometry, asOf: Date): CivicWorkCalendarItem {
+  const fulfilled = record.dependencies.filter(({ state }) => state === DependencyState.FULFILLED).length;
+  const openStates: DependencyState[] = [
+    DependencyState.REQUESTED,
+    DependencyState.PENDING_RESPONSE,
+    DependencyState.ASSIGNED,
+    DependencyState.ESCALATED,
+  ];
+  const open = record.dependencies.filter(({ state }) => openStates.includes(state)).length;
+  return {
+    id: record.id,
+    referenceNumber: record.referenceNumber,
+    title: record.title,
+    description: record.description,
+    locationLabel: record.locationLabel,
+    origin: record.origin,
+    priority: record.priority,
+    state: record.state,
+    plannedStart: record.plannedStart,
+    plannedEnd: record.plannedEnd,
+    actualStart: record.actualStart,
+    actualCompletion: record.actualCompletion,
+    cancelledAt: record.cancelledAt,
+    geometry,
+    period: classifyCivicWorkPeriod(record, asOf),
+    category: record.category,
+    agency: record.agency,
+    ward: record.ward,
+    engineer: record.engineer,
+    roadSegment: record.intervention?.segment ?? null,
+    evidenceCount: record._count.evidence,
+    dependencySummary: { total: record.dependencies.length, open, fulfilled },
+    conflictCount: record._count.conflictLogs + record._count.conflictingLogs,
+    roadConflictCount: record._count.roadConflictLogs + record._count.conflictingRoadLogs,
+  };
+}
+
+function eventDetail(metadata: Prisma.JsonValue): string | null {
+  if (!metadata || Array.isArray(metadata) || typeof metadata !== "object") return null;
+  for (const key of ["reason", "note", "changedFields"]) {
+    const value = metadata[key];
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string").join(", ") || null;
+  }
+  return null;
+}
+
+function eventTitle(value: string): string {
+  const normalized = value.replaceAll("_", " ").toLowerCase();
+  return normalized ? `${normalized[0]?.toUpperCase()}${normalized.slice(1)}` : value;
 }
 
 function assertDateRange(start: Date, end: Date): void {
@@ -272,6 +362,146 @@ export async function listCivicWorks(actor: CivicWorkActor, query: ListCivicWork
       limit: query.limit,
       total,
       totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    },
+  };
+}
+
+export async function listCivicWorkCalendar(actor: CivicWorkActor, query: CivicWorkCalendarQuery) {
+  assertCoordinationRead(actor);
+  const { records, total } = await listCivicWorkCalendarRecords(prisma, query);
+  const geometries = await readCivicWorkGeometries(prisma, records.map(({ id }) => id));
+  const asOf = new Date();
+  const works = records.flatMap((record) => {
+    const geometry = geometries.get(record.id);
+    return geometry ? [calendarItem(record, geometry, asOf)] : [];
+  });
+  return {
+    works,
+    asOf,
+    pagination: {
+      page: query.page,
+      limit: query.limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    },
+  };
+}
+
+export async function listCivicWorkLedger(actor: CivicWorkActor, query: CivicWorkLedgerQuery) {
+  assertCoordinationRead(actor);
+  const [result, location] = await Promise.all([
+    listCivicWorkLedgerRecords(prisma, query),
+    query.roadSegmentId
+      ? prisma.roadSegment.findUnique({
+        where: { id: query.roadSegmentId },
+        select: { id: true, roadName: true, surfaceType: true, lastRestorationDate: true, ward: { select: { id: true, name: true } } },
+      })
+      : prisma.ward.findUnique({ where: { id: query.wardId! }, select: { id: true, name: true } }),
+  ]);
+  if (!location) throw new CivicWorkError(404, "Ledger location not found", "LEDGER_LOCATION_NOT_FOUND");
+  const geometries = await readCivicWorkGeometries(prisma, result.records.map(({ id }) => id));
+  const asOf = new Date();
+  const works = result.records.flatMap((record) => {
+    const geometry = geometries.get(record.id);
+    if (!geometry) return [];
+    const events: CivicWorkLedgerEvent[] = [
+      ...record.stateTransitions.map((event) => ({
+        id: `status:${event.id}`,
+        kind: "STATUS" as const,
+        title: eventTitle(event.reason),
+        detail: `Status changed to ${eventTitle(event.toState)}`,
+        at: event.createdAt,
+        agency: record.agency,
+        state: event.toState,
+      })),
+      ...record.evidence.map((event) => ({
+        id: `evidence:${event.id}`,
+        kind: "EVIDENCE" as const,
+        title: `Evidence added: ${event.label}`,
+        detail: eventTitle(event.kind),
+        at: event.createdAt,
+        agency: record.agency,
+        state: null,
+      })),
+      ...record.auditEvents.map((event) => ({
+        id: `audit:${event.id}`,
+        kind: "AUDIT" as const,
+        title: eventTitle(event.action),
+        detail: eventDetail(event.metadata),
+        at: event.createdAt,
+        agency: record.agency,
+        state: null,
+      })),
+      ...record.dependencies.flatMap((dependency) => [
+        {
+          id: `dependency:${dependency.id}`,
+          kind: "DEPENDENCY" as const,
+          title: `Coordination requested from ${dependency.respondingAgency.name}`,
+          detail: dependency.requirement,
+          at: dependency.createdAt,
+          agency: dependency.respondingAgency,
+          state: dependency.state,
+        },
+        ...dependency.stateTransitions.map((event) => ({
+          id: `dependency-status:${event.id}`,
+          kind: "DEPENDENCY" as const,
+          title: `${dependency.respondingAgency.name}: ${eventTitle(event.toState)}`,
+          detail: eventTitle(event.reason),
+          at: event.createdAt,
+          agency: dependency.respondingAgency,
+          state: event.toState,
+        })),
+      ]),
+      ...record.conflictLogs.map((event) => ({
+        id: `conflict:${event.id}`,
+        kind: "COORDINATION" as const,
+        title: `Advisory overlap with ${event.conflictingAgency.name}`,
+        detail: "Conflict warning recorded; work remains actionable.",
+        at: event.createdAt,
+        agency: event.conflictingAgency,
+        state: "ADVISORY",
+      })),
+      ...record.conflictingLogs.map((event) => ({
+        id: `conflicting:${event.id}`,
+        kind: "COORDINATION" as const,
+        title: `Advisory overlap with ${event.projectAgency.name}`,
+        detail: "Conflict warning recorded; work remains actionable.",
+        at: event.createdAt,
+        agency: event.projectAgency,
+        state: "ADVISORY",
+      })),
+      ...record.roadConflictLogs.map((event) => ({
+        id: `road-conflict:${event.id}`,
+        kind: "COORDINATION" as const,
+        title: `${eventTitle(event.type)} with ${event.conflictingAgency?.name ?? "another agency"}`,
+        detail: "Road-sequencing warning recorded; work remains actionable.",
+        at: event.createdAt,
+        agency: event.conflictingAgency,
+        state: "ADVISORY",
+      })),
+      ...record.conflictingRoadLogs.map((event) => ({
+        id: `road-conflicting:${event.id}`,
+        kind: "COORDINATION" as const,
+        title: `${eventTitle(event.type)} with ${event.projectAgency.name}`,
+        detail: "Road-sequencing warning recorded; work remains actionable.",
+        at: event.createdAt,
+        agency: event.projectAgency,
+        state: "ADVISORY",
+      })),
+    ].sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime());
+    return [{ ...calendarItem(record, geometry, asOf), events }];
+  });
+  const normalizedLocation = "roadName" in location
+    ? { kind: "ROAD" as const, id: location.id, name: location.roadName, ward: location.ward, surfaceType: location.surfaceType, lastRestorationDate: location.lastRestorationDate }
+    : { kind: "WARD" as const, id: location.id, name: location.name, ward: location, surfaceType: null, lastRestorationDate: null };
+  return {
+    location: normalizedLocation,
+    works,
+    pagination: {
+      page: query.page,
+      limit: query.limit,
+      total: result.total,
+      totalPages: Math.max(1, Math.ceil(result.total / query.limit)),
     },
   };
 }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   citizenLoginSchema,
+  civicWorkCalendarQuerySchema,
   civicWorkGeometrySchema,
+  civicWorkLedgerQuerySchema,
   createPlannedCivicWorkSchema,
   createTicketSchema,
   internalLoginSchema,
@@ -101,5 +103,14 @@ describe("shared schemas", () => {
     expect(listCivicWorksQuerySchema.safeParse({
       minLongitude: "77.60", minLatitude: "12.90", maxLongitude: "77.62", maxLatitude: "12.92",
     }).success).toBe(true);
+  });
+
+  it("requires bounded calendar and ledger reads", () => {
+    const dates = { dateFrom: "2026-01-01T00:00:00.000Z", dateTo: "2026-12-31T23:59:59.999Z" };
+    expect(civicWorkCalendarQuerySchema.safeParse(dates).success).toBe(false);
+    expect(civicWorkCalendarQuerySchema.safeParse({ ...dates, wardId: "10000000-0000-4000-8000-000000000004" }).success).toBe(true);
+    expect(civicWorkCalendarQuerySchema.safeParse({ ...dates, wardId: "10000000-0000-4000-8000-000000000004", dateTo: "2028-01-02T00:00:00.000Z" }).success).toBe(false);
+    expect(civicWorkLedgerQuerySchema.safeParse({}).success).toBe(false);
+    expect(civicWorkLedgerQuerySchema.safeParse({ roadSegmentId: "80000000-0000-4000-8000-000000000001" }).success).toBe(true);
   });
 });

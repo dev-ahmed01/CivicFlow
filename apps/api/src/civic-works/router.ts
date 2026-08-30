@@ -2,6 +2,8 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import { UserRole } from "db";
 import {
   cancelCivicWorkSchema,
+  civicWorkCalendarQuerySchema,
+  civicWorkLedgerQuerySchema,
   createPlannedCivicWorkSchema,
   listCivicWorksQuerySchema,
   updateCivicWorkSchema,
@@ -13,6 +15,8 @@ import {
   CivicWorkError,
   createPlannedCivicWork,
   getCivicWork,
+  listCivicWorkCalendar,
+  listCivicWorkLedger,
   listCivicWorks,
   updateCivicWork,
   type CivicWorkActor,
@@ -65,6 +69,32 @@ export function createCivicWorksRouter(): Router {
         return;
       }
       response.json(await listCivicWorks(actor(request), parsed.data));
+    }),
+  );
+
+  router.get(
+    "/civic-works/calendar",
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ADMIN),
+    asyncRoute(async (request, response) => {
+      const parsed = civicWorkCalendarQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        response.status(400).json({ error: "Invalid work calendar filters", details: parsed.error.flatten() });
+        return;
+      }
+      response.json(await listCivicWorkCalendar(actor(request), parsed.data));
+    }),
+  );
+
+  router.get(
+    "/civic-works/ledger",
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ADMIN),
+    asyncRoute(async (request, response) => {
+      const parsed = civicWorkLedgerQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        response.status(400).json({ error: "Invalid work ledger location", details: parsed.error.flatten() });
+        return;
+      }
+      response.json(await listCivicWorkLedger(actor(request), parsed.data));
     }),
   );
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import request from "supertest";
 import { prisma } from "db";
-import { civicWorkSchema } from "@civicos/shared";
+import { civicWorkCalendarItemSchema, civicWorkLedgerItemSchema, civicWorkSchema } from "@civicos/shared";
 import { createApp } from "../src/app";
 
 process.env.NODE_ENV = "test";
@@ -93,6 +93,49 @@ async function main(): Promise<void> {
       .expect(200);
     assert.ok((filtered.body.works as Array<{ id: string }>).some(({ id }) => id === work.id));
 
+    const calendar = await request(app)
+      .get("/civic-works/calendar")
+      .query({
+        wardId: btmWardId,
+        dateFrom: "2026-01-01T00:00:00.000Z",
+        dateTo: "2026-12-31T23:59:59.999Z",
+        minLongitude: 77.60,
+        minLatitude: 12.90,
+        maxLongitude: 77.62,
+        maxLatitude: 12.92,
+      })
+      .set("Authorization", `Bearer ${headToken}`)
+      .expect(200);
+    const calendarWork = (calendar.body.works as unknown[]).map((item) => civicWorkCalendarItemSchema.parse(item)).find(({ id }) => id === work.id);
+    assert.ok(calendarWork, "bounded calendar must include the created spatial/date match");
+    assert.equal(calendarWork.period, "FUTURE");
+
+    const ledger = await request(app)
+      .get("/civic-works/ledger")
+      .query({ wardId: btmWardId, limit: 25 })
+      .set("Authorization", `Bearer ${headToken}`)
+      .expect(200);
+    const ledgerWork = (ledger.body.works as unknown[]).map((item) => civicWorkLedgerItemSchema.parse(item)).find(({ id }) => id === work.id);
+    assert.ok(ledgerWork, "ward ledger must retain the created work");
+    assert.ok(ledgerWork.events.some(({ kind }) => kind === "STATUS" || kind === "AUDIT"));
+    assert.equal(ledger.body.location.id, btmWardId);
+
+    await request(app)
+      .get("/civic-works/calendar")
+      .query({ dateFrom: "2026-01-01T00:00:00.000Z", dateTo: "2026-12-31T23:59:59.999Z" })
+      .set("Authorization", `Bearer ${headToken}`)
+      .expect(400);
+    await request(app)
+      .get("/civic-works/ledger")
+      .query({ wardId: btmWardId })
+      .set("Authorization", `Bearer ${engineerToken}`)
+      .expect(403);
+    await request(app)
+      .get("/civic-works/calendar")
+      .query({ wardId: btmWardId, dateFrom: "2026-01-01T00:00:00.000Z", dateTo: "2026-12-31T23:59:59.999Z" })
+      .set("Authorization", `Bearer ${citizenToken}`)
+      .expect(403);
+
     await request(app)
       .post("/civic-works/planned")
       .set("Authorization", `Bearer ${engineerToken}`)
@@ -141,7 +184,7 @@ async function main(): Promise<void> {
       .expect(200);
     assert.equal(cancelled.body.work.state, "CANCELLED");
     assert.ok(cancelled.body.work.cancelledAt);
-    console.log("Civic Work Registry verification passed: creation, RBAC, dates, PostGIS, filters, linkage, update, and cancellation.");
+    console.log("Civic Work Registry verification passed: creation, RBAC, dates, PostGIS, spatial calendar, location ledger, linkage, update, and cancellation.");
   } finally {
     await cleanup();
     await prisma.$disconnect();

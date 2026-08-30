@@ -447,6 +447,60 @@ export const listCivicWorksQuerySchema = z.object({
   }
 });
 
+export const civicWorkPeriodSchema = z.enum(["PAST", "CURRENT", "FUTURE"]);
+
+const spatialBoundsSchema = z.object({
+  minLongitude: z.coerce.number().min(-180).max(180).optional(),
+  minLatitude: z.coerce.number().min(-90).max(90).optional(),
+  maxLongitude: z.coerce.number().min(-180).max(180).optional(),
+  maxLatitude: z.coerce.number().min(-90).max(90).optional(),
+});
+
+// Phase 2 — calendar reads must always be bounded in both space and time.
+export const civicWorkCalendarQuerySchema = spatialBoundsSchema.extend({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+  wardId: idSchema.optional(),
+  roadSegmentId: idSchema.optional(),
+  agencyId: idSchema.optional(),
+  dateFrom: z.string().datetime(),
+  dateTo: z.string().datetime(),
+}).superRefine((value, context) => {
+  const from = new Date(value.dateFrom);
+  const to = new Date(value.dateTo);
+  if (to < from) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["dateTo"], message: "Date range end must be on or after its start" });
+  }
+  if (to.getTime() - from.getTime() > 366 * 86_400_000) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["dateTo"], message: "Calendar date range cannot exceed 366 days" });
+  }
+  const bounds = [value.minLongitude, value.minLatitude, value.maxLongitude, value.maxLatitude];
+  const hasAnyBounds = bounds.some((coordinate) => coordinate !== undefined);
+  const hasAllBounds = bounds.every((coordinate) => coordinate !== undefined);
+  if (hasAnyBounds && !hasAllBounds) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["minLongitude"], message: "All four bounding-box coordinates are required" });
+  }
+  if (!value.wardId && !value.roadSegmentId && !hasAllBounds) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["wardId"], message: "Choose a ward, road, or map region" });
+  }
+  if (value.minLongitude !== undefined && value.maxLongitude !== undefined && value.maxLongitude <= value.minLongitude) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["maxLongitude"], message: "Maximum longitude must exceed minimum longitude" });
+  }
+  if (value.minLatitude !== undefined && value.maxLatitude !== undefined && value.maxLatitude <= value.minLatitude) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["maxLatitude"], message: "Maximum latitude must exceed minimum latitude" });
+  }
+});
+
+export const civicWorkLedgerQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(25).default(10),
+  wardId: idSchema.optional(),
+  roadSegmentId: idSchema.optional(),
+}).refine((value) => Boolean(value.roadSegmentId || value.wardId), {
+  message: "Choose a road or ward for its work ledger",
+  path: ["wardId"],
+});
+
 export const updateProjectTimelineSchema = z.object({
   plannedStart: z.string().datetime(),
   plannedEnd: z.string().datetime(),
@@ -888,6 +942,61 @@ export const civicWorkSchema = projectSchema.extend({
   audit: z.array(civicWorkAuditEventSchema),
 });
 
+export const civicWorkCalendarItemSchema = projectSchema.pick({
+  id: true,
+  referenceNumber: true,
+  title: true,
+  description: true,
+  locationLabel: true,
+  origin: true,
+  priority: true,
+  state: true,
+  plannedStart: true,
+  plannedEnd: true,
+  actualStart: true,
+  actualCompletion: true,
+  cancelledAt: true,
+}).extend({
+  geometry: civicWorkGeometrySchema,
+  period: civicWorkPeriodSchema,
+  category: categorySummarySchema.pick({ id: true, name: true }).nullable(),
+  agency: agencySchema.pick({ id: true, name: true, type: true }),
+  ward: wardSummarySchema.nullable(),
+  engineer: engineerSummarySchema.nullable(),
+  roadSegment: roadSegmentSummarySchema.nullable(),
+  evidenceCount: z.number().int().nonnegative(),
+  dependencySummary: z.object({
+    total: z.number().int().nonnegative(),
+    open: z.number().int().nonnegative(),
+    fulfilled: z.number().int().nonnegative(),
+  }),
+  conflictCount: z.number().int().nonnegative(),
+  roadConflictCount: z.number().int().nonnegative(),
+});
+
+export const civicWorkLedgerEventSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["STATUS", "EVIDENCE", "DEPENDENCY", "COORDINATION", "AUDIT"]),
+  title: z.string().min(1),
+  detail: z.string().nullable(),
+  at: dateSchema,
+  agency: agencySchema.pick({ id: true, name: true }).nullable(),
+  state: z.string().nullable(),
+});
+
+export const civicWorkLedgerItemSchema = civicWorkCalendarItemSchema.extend({
+  events: z.array(civicWorkLedgerEventSchema),
+});
+
+export const civicWorkLedgerLocationSchema = z.object({
+  kind: z.enum(["ROAD", "WARD"]),
+  id: idSchema,
+  name: z.string().min(1),
+  ward: wardSummarySchema,
+  surfaceType: z.string().nullable(),
+  lastRestorationDate: dateSchema.nullable(),
+});
+
 export const roadInterventionHistoryItemSchema = interventionSchema.extend({
   requestingAgency: agencySchema.pick({ id: true, name: true }),
   project: z.object({
@@ -1047,6 +1156,13 @@ export type SubmitValidation = z.infer<typeof submitValidationSchema>;
 export type SubmitValidationResult = z.infer<typeof submitValidationResultSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type CivicWork = z.infer<typeof civicWorkSchema>;
+export type CivicWorkPeriod = z.infer<typeof civicWorkPeriodSchema>;
+export type CivicWorkCalendarItem = z.infer<typeof civicWorkCalendarItemSchema>;
+export type CivicWorkCalendarQuery = z.infer<typeof civicWorkCalendarQuerySchema>;
+export type CivicWorkLedgerEvent = z.infer<typeof civicWorkLedgerEventSchema>;
+export type CivicWorkLedgerItem = z.infer<typeof civicWorkLedgerItemSchema>;
+export type CivicWorkLedgerLocation = z.infer<typeof civicWorkLedgerLocationSchema>;
+export type CivicWorkLedgerQuery = z.infer<typeof civicWorkLedgerQuerySchema>;
 export type CreatePlannedCivicWork = z.infer<typeof createPlannedCivicWorkSchema>;
 export type UpdateCivicWork = z.infer<typeof updateCivicWorkSchema>;
 export type CancelCivicWork = z.infer<typeof cancelCivicWorkSchema>;
