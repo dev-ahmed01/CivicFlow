@@ -16,6 +16,7 @@ import {
   coordinationRequestTypes,
   createCoordinationDraft,
 } from "./service";
+import { coordinationConflictsForProject } from "./conflicts";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -53,8 +54,21 @@ const coordinationInclude = {
       referenceNumber: true,
       title: true,
       locationLabel: true,
+      plannedStart: true,
+      plannedEnd: true,
       ticket: { select: { id: true, title: true, address: true } },
       ward: { select: { id: true, name: true } },
+    },
+  },
+  conflictingProject: {
+    select: {
+      id: true,
+      referenceNumber: true,
+      title: true,
+      locationLabel: true,
+      plannedStart: true,
+      plannedEnd: true,
+      agency: { select: { id: true, name: true, type: true } },
     },
   },
   entries: {
@@ -113,6 +127,23 @@ export function createCoordinationRouter(storage: ImageStorage): Router {
       prisma.agency.findMany({ where: { id: { not: ownAgencyId } }, orderBy: { name: "asc" }, select: { id: true, name: true, type: true } }),
     ]);
     response.json({ requestTypes, agencies });
+  }));
+
+  router.get("/projects/:id/coordination-conflicts", asyncRoute(async (request, response) => {
+    const scopedAgencyId = agencyId(request);
+    const project = await prisma.project.findFirst({
+      where: {
+        id: routeId(request),
+        agencyId: scopedAgencyId,
+        ...(request.auth!.role === UserRole.ENGINEER ? { engineerId: request.auth!.userId } : {}),
+      },
+      select: { id: true },
+    });
+    if (!project) {
+      response.status(404).json({ error: "Civic work not found" });
+      return;
+    }
+    response.json({ conflicts: await coordinationConflictsForProject(prisma, project.id) });
   }));
 
   router.post("/projects/:id/coordination-requests", requireRole(UserRole.PROJECT_HEAD), asyncRoute(async (request, response) => {

@@ -28,7 +28,7 @@ export function WorkTimeline({ works, selectedId, onSelect }: { works: CivicWork
             <span className="work-timeline-title" role="cell"><strong>{work.title}</strong><code>{work.referenceNumber}</code></span>
             <span role="cell"><strong>{work.agency.name}</strong><small>{work.locationLabel ?? work.roadSegment?.roadName ?? work.ward?.name ?? "Mapped location"}</small></span>
             <span role="cell"><strong>{dateRange(work)}</strong><small>{work.category?.name ?? "Civic work"}</small></span>
-            <span role="cell"><strong>{work.state.replaceAll("_", " ").toLowerCase()}</strong><small>{work.dependencySummary.open > 0 ? `${work.dependencySummary.open} open dependencies` : "No open dependencies"}{work.conflictCount + work.roadConflictCount > 0 ? ` · ${work.conflictCount + work.roadConflictCount} advisory` : ""}</small></span>
+            <span role="cell"><strong>{work.dependencySummary.blocked ? "Blocked by dependency" : work.state.replaceAll("_", " ").toLowerCase()}</strong><small>{work.dependencySummary.blocked ? `Awaiting ${work.dependencySummary.blockedBy.map(({ name }) => name).join(", ")}` : "No open dependencies"}{work.conflictCount + work.roadConflictCount > 0 ? ` · ${work.conflictCount + work.roadConflictCount} advisory` : ""}</small></span>
           </button>)}
         </div> : <p className="work-timeline-none">No {section.title.toLowerCase()} in this filtered view.</p>}
       </section>;

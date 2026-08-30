@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { apiFetch, evidenceContentType, getSession, uploadFile } from "../../_lib/api";
 
-type ActionName = "SEND" | "ACKNOWLEDGE" | "REPLY" | "REQUEST_CLARIFICATION" | "REQUEST_INSPECTION" | "ASSIGN_ENGINEER" | "PROPOSE_DATETIME" | "ACCEPT" | "START_PROGRESS" | "COMPLETE" | "REJECT" | "CLOSE";
+type ActionName = "SEND" | "ACKNOWLEDGE" | "REPLY" | "REQUEST_CLARIFICATION" | "REQUEST_INSPECTION" | "ASSIGN_ENGINEER" | "PROPOSE_DATETIME" | "ACCEPT" | "START_PROGRESS" | "INSPECTION_COMPLETE" | "COMPLETE" | "REJECT" | "CLOSE";
 type UploadResponse = { attachmentId: string; upload: { uploadUrl: string; headers: Record<string, string> } };
 
 function label(value: string): string {
@@ -13,7 +13,7 @@ function label(value: string): string {
 }
 
 function actionNeedsMessage(action: ActionName): boolean {
-  return ["REPLY", "REQUEST_CLARIFICATION", "REQUEST_INSPECTION", "COMPLETE", "REJECT"].includes(action);
+  return ["REPLY", "REQUEST_CLARIFICATION", "REQUEST_INSPECTION", "INSPECTION_COMPLETE", "COMPLETE", "REJECT"].includes(action);
 }
 
 export function CoordinationDetailClient({ requestId }: { requestId: string }) {
@@ -37,7 +37,9 @@ export function CoordinationDetailClient({ requestId }: { requestId: string }) {
   }, [requestId]);
 
   useEffect(() => { void load(); }, [load]);
-  const receiving = record?.respondingAgency.id === getSession()?.user.agencyId;
+  const session = getSession();
+  const receiving = record?.respondingAgency.id === session?.user.agencyId;
+  const assignedEngineer = Boolean(session && record?.assignedEngineer?.id === session.user.id);
   useEffect(() => {
     if (!receiving) return;
     void apiFetch<{ engineers: EngineerSummary[] }>("/project-head/engineers").then((result) => setEngineers(result.engineers)).catch(() => setEngineers([]));
@@ -49,6 +51,11 @@ export function CoordinationDetailClient({ requestId }: { requestId: string }) {
     if (record.status === "CLOSED") return [];
     if (!receiving) return ["COMPLETED", "REJECTED"].includes(record.status) ? ["REPLY", "CLOSE"] : ["REPLY"];
     if (["COMPLETED", "REJECTED"].includes(record.status)) return [];
+    if (assignedEngineer) {
+      if (record.status === "ENGINEER_ASSIGNED") return ["REPLY", "START_PROGRESS", "INSPECTION_COMPLETE", "COMPLETE"];
+      if (record.status === "INSPECTION_REQUIRED" || record.status === "IN_PROGRESS") return ["REPLY", "INSPECTION_COMPLETE", "COMPLETE"];
+      return ["REPLY"];
+    }
     const common: ActionName[] = ["REPLY", "PROPOSE_DATETIME"];
     if (record.status === "SENT") return ["ACKNOWLEDGE", ...common, "REQUEST_CLARIFICATION", "REQUEST_INSPECTION", "ASSIGN_ENGINEER", "ACCEPT", "REJECT"];
     if (record.status === "ACKNOWLEDGED") return [...common, "REQUEST_CLARIFICATION", "REQUEST_INSPECTION", "ASSIGN_ENGINEER", "ACCEPT", "START_PROGRESS", "REJECT"];
@@ -58,7 +65,7 @@ export function CoordinationDetailClient({ requestId }: { requestId: string }) {
     if (record.status === "ACCEPTED") return [...common, "REQUEST_INSPECTION", "ASSIGN_ENGINEER", "START_PROGRESS", "COMPLETE"];
     if (record.status === "IN_PROGRESS") return [...common, "COMPLETE"];
     return common;
-  }, [receiving, record]);
+  }, [assignedEngineer, receiving, record]);
 
   useEffect(() => {
     const firstAction = availableActions[0];
@@ -77,7 +84,7 @@ export function CoordinationDetailClient({ requestId }: { requestId: string }) {
           ? { action, proposedAt: new Date(proposedAt).toISOString(), ...(message.trim() ? { message: message.trim() } : {}) }
           : action === "REJECT"
             ? { action, reason: message.trim() }
-            : action === "COMPLETE"
+            : action === "COMPLETE" || action === "INSPECTION_COMPLETE"
               ? { action, notes: message.trim() }
               : { action, ...(message.trim() ? { message: message.trim() } : {}) };
       const result = await apiFetch<{ entry: { id: string } }>(`/coordination-requests/${record.id}/actions`, { method: "POST", body: JSON.stringify(body) });
@@ -114,7 +121,7 @@ export function CoordinationDetailClient({ requestId }: { requestId: string }) {
         </section>
         {availableActions.length > 0 ? <form className="portal-panel coordination-action-form" onSubmit={(event) => void submit(event)}><div><p className="eyebrow">Record an action</p><h2>Update this request</h2></div><label>Action<select value={action} onChange={(event) => setAction(event.target.value as ActionName)}>{availableActions.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>{action === "ASSIGN_ENGINEER" ? <label>Engineer<select required value={engineerId} onChange={(event) => setEngineerId(event.target.value)}><option value="">Choose Engineer</option>{engineers.map((engineer) => <option key={engineer.id} value={engineer.id}>{engineer.email}</option>)}</select></label> : null}{action === "PROPOSE_DATETIME" ? <label>Proposed date and time<input required type="datetime-local" value={proposedAt} onChange={(event) => setProposedAt(event.target.value)} /></label> : null}<label>{needsMessage ? action === "REJECT" ? "Reason" : action === "COMPLETE" ? "Completion notes" : "Message" : "Message (optional)"}<textarea minLength={needsMessage ? 2 : undefined} required={needsMessage} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Add context that should remain in the work record." /></label><label>Attach report or evidence<input accept="application/pdf,image/jpeg,image/png,image/webp,image/heic" onChange={(event) => setFile(event.target.files?.[0])} type="file" /><small>PDF or image, up to 20 MB.</small></label><button className="portal-primary-button" disabled={busy || !formReady || action === "ASSIGN_ENGINEER" && !engineerId || action === "PROPOSE_DATETIME" && !proposedAt} type="submit">{busy ? "Recording…" : `Record ${label(action)}`}</button></form> : null}
       </main>
-      <aside className="coordination-metadata portal-panel"><p className="eyebrow">Request metadata</p><h2>Operational context</h2><dl><div><dt>Requesting agency</dt><dd>{record.requestingAgency.name}</dd></div><div><dt>Receiving agency</dt><dd>{record.respondingAgency.name}</dd></div><div><dt>Related work</dt><dd><Link href={`/project-head/projects/${record.project.id}`}>{record.project.referenceNumber} · {record.project.title}</Link></dd></div><div><dt>Location</dt><dd>{location}</dd></div><div><dt>Status</dt><dd>{label(record.status)}</dd></div><div><dt>Response deadline</dt><dd>{new Date(record.responseDeadline).toLocaleString("en-IN")}</dd></div><div><dt>Assigned people</dt><dd>{record.assignedEngineer?.email ?? "Not assigned"}</dd></div><div><dt>Inspection</dt><dd>{record.inspectionCompletedAt ? `Completed ${new Date(record.inspectionCompletedAt).toLocaleString("en-IN")}` : record.inspectionNeeded ? "Required" : "Not required"}</dd></div><div><dt>Engineer required</dt><dd>{record.engineerRequired ? "Yes" : "No"}</dd></div><div><dt>Proposed date/time</dt><dd>{record.proposedAt ? new Date(record.proposedAt).toLocaleString("en-IN") : "Not proposed"}</dd></div><div><dt>Formal dependency</dt><dd>{record.dependencyId ?? "Created when sent"}</dd></div></dl></aside>
+      <aside className="coordination-metadata portal-panel"><p className="eyebrow">Request metadata</p><h2>Operational context</h2><dl><div><dt>Requesting agency</dt><dd>{record.requestingAgency.name}</dd></div><div><dt>Receiving agency</dt><dd>{record.respondingAgency.name}</dd></div><div><dt>Related work</dt><dd><Link href={`/project-head/projects/${record.project.id}`}>{record.project.referenceNumber} · {record.project.title}</Link></dd></div>{record.conflictingProject ? <div><dt>Conflicting work</dt><dd>{record.conflictingProject.referenceNumber} · {record.conflictingProject.title}<br />{record.conflictingProject.agency.name}</dd></div> : null}<div><dt>Location</dt><dd>{location}</dd></div><div><dt>Status</dt><dd>{label(record.status)}</dd></div><div><dt>Response deadline</dt><dd>{new Date(record.responseDeadline).toLocaleString("en-IN")}</dd></div><div><dt>Assigned people</dt><dd>{record.assignedEngineer?.email ?? "Not assigned"}</dd></div><div><dt>Inspection</dt><dd>{record.inspectionCompletedAt ? `Completed ${new Date(record.inspectionCompletedAt).toLocaleString("en-IN")}` : record.inspectionNeeded ? "Required" : "Not required"}</dd></div><div><dt>Engineer required</dt><dd>{record.engineerRequired ? "Yes" : "No"}</dd></div><div><dt>Proposed date/time</dt><dd>{record.proposedAt ? new Date(record.proposedAt).toLocaleString("en-IN") : "Not proposed"}</dd></div><div><dt>Formal dependency</dt><dd>{record.dependencyId ?? "Created when sent"}</dd></div></dl>{record.conflictingProject ? <p className="portal-muted">Accepted road dependencies feed the existing advisory, rule-traced sequencing engine.</p> : null}</aside>
     </div>
   </div>;
 }

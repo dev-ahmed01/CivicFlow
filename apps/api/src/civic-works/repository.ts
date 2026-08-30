@@ -71,7 +71,18 @@ export const civicWorkCalendarInclude = {
       },
     },
   },
-  dependencies: { select: { state: true } },
+  dependencies: {
+    select: {
+      state: true,
+      respondingAgency: { select: { id: true, name: true } },
+    },
+  },
+  auditEvents: {
+    where: { action: "SEQUENCING_TIMELINE_REVISED" },
+    orderBy: { createdAt: "asc" as const },
+    take: 1,
+    select: { metadata: true },
+  },
   _count: {
     select: {
       evidence: true,

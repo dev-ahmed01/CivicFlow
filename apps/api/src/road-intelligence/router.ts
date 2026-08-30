@@ -4,6 +4,7 @@ import { sequencingRecommendationActionSchema, type ProjectConflict, type RoadCo
 import { z } from "zod";
 import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/middleware";
 import { checkProjectConflicts } from "../conflicts/service";
+import { createNotifications } from "../notifications/service";
 import { checkRoadConflicts, isRoadCategory, recommendationsForSegment } from "./service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
@@ -183,7 +184,10 @@ export function createRoadIntelligenceRouter(): Router {
         const recommendation = await transaction.sequencingRecommendation.findUnique({ where: { id: routeId(request) } });
         if (!recommendation) return { kind: "missing" as const };
         const projectIds = jsonStringArray(recommendation.projectIds);
-        const ownedProjects = await transaction.project.findMany({ where: { id: { in: projectIds }, agencyId: actorAgency(request) }, select: { id: true, state: true } });
+        const ownedProjects = await transaction.project.findMany({
+          where: { id: { in: projectIds }, agencyId: actorAgency(request) },
+          select: { id: true, state: true, plannedStart: true, plannedEnd: true },
+        });
         if (ownedProjects.length === 0) return { kind: "missing" as const };
 
         const order = parsed.data.proposedOrder ?? recommendation.proposedOrder;
@@ -196,6 +200,21 @@ export function createRoadIntelligenceRouter(): Router {
           revisedProjectId = owned.id;
           await transaction.project.update({ where: { id: owned.id }, data: { plannedStart: start, plannedEnd: end, ...(owned.state === ProjectState.ACTIVE ? { state: ProjectState.MODIFIED } : {}) } });
           await transaction.intervention.update({ where: { projectId: owned.id }, data: { plannedStart: start, plannedEnd: end } });
+          // Phase 4 — the calendar shows the revision while this immutable
+          // audit payload preserves the originally proposed dates.
+          await transaction.projectAuditEvent.create({ data: {
+            projectId: owned.id,
+            action: "SEQUENCING_TIMELINE_REVISED",
+            actorId: request.auth!.userId,
+            metadata: {
+              sequencingRecommendationId: recommendation.id,
+              outcome: parsed.data.outcome,
+              originalPlannedStart: owned.plannedStart?.toISOString() ?? null,
+              originalPlannedEnd: owned.plannedEnd?.toISOString() ?? null,
+              revisedPlannedStart: start.toISOString(),
+              revisedPlannedEnd: end.toISOString(),
+            },
+          } });
           if (owned.state === ProjectState.ACTIVE) {
             await transaction.projectStateTransition.create({ data: { projectId: owned.id, fromState: ProjectState.ACTIVE, toState: ProjectState.MODIFIED, reason: `SEQUENCING_RECOMMENDATION_${parsed.data.outcome}`, actedById: request.auth!.userId } });
           }
@@ -207,6 +226,31 @@ export function createRoadIntelligenceRouter(): Router {
           outcome: parsed.data.outcome,
           actedById: request.auth!.userId,
         } });
+
+        const involvedProjects = await transaction.project.findMany({
+          where: { id: { in: projectIds } },
+          select: { id: true, agencyId: true, engineerId: true },
+        });
+        const involvedUsers = await transaction.user.findMany({
+          where: {
+            id: { not: request.auth!.userId },
+            OR: [
+              { role: UserRole.PROJECT_HEAD, agencyId: { in: [...new Set(involvedProjects.map(({ agencyId }) => agencyId))] } },
+              { role: UserRole.ENGINEER, id: { in: involvedProjects.flatMap(({ engineerId }) => engineerId ? [engineerId] : []) } },
+            ],
+          },
+          select: { id: true, agencyId: true },
+        });
+        await createNotifications(transaction, involvedUsers.map((user) => ({
+          userId: user.id,
+          type: "SEQUENCE_CHANGED",
+          payload: {
+            sequencingRecommendationId: recommendation.id,
+            segmentId: recommendation.segmentId,
+            projectId: involvedProjects.find((project) => project.agencyId === user.agencyId || project.engineerId === user.id)?.id ?? revisedProjectId ?? projectIds[0] ?? null,
+            outcome: parsed.data.outcome,
+          },
+        })));
 
         let genericConflicts: ProjectConflict[] = [];
         let roadConflicts: RoadConflict[] = [];

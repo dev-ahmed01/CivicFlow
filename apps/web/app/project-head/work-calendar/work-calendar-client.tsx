@@ -220,7 +220,8 @@ export function WorkCalendarClient() {
             <div><dt>Timing</dt><dd>{selected.plannedStart && selected.plannedEnd ? `${new Date(selected.plannedStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} – ${new Date(selected.plannedEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}` : "Timeline pending"}</dd></div>
             <div><dt>Status</dt><dd>{selected.state.replaceAll("_", " ").toLowerCase()}</dd></div>
             <div><dt>Evidence</dt><dd>{selected.evidenceCount > 0 ? `${selected.evidenceCount} available` : "None available"}</dd></div>
-            <div><dt>Dependencies</dt><dd>{selected.dependencySummary.total === 0 ? "None" : `${selected.dependencySummary.open} open · ${selected.dependencySummary.fulfilled} fulfilled`}</dd></div>
+            <div><dt>Dependencies</dt><dd>{selected.dependencySummary.total === 0 ? "None" : selected.dependencySummary.blocked ? `Blocked by ${selected.dependencySummary.blockedBy.map(({ name }) => name).join(", ")}` : `${selected.dependencySummary.fulfilled} fulfilled`}</dd></div>
+            {selected.originalPlannedStart && selected.originalPlannedEnd ? <div><dt>Original dates</dt><dd>{new Date(selected.originalPlannedStart).toLocaleDateString("en-IN")} – {new Date(selected.originalPlannedEnd).toLocaleDateString("en-IN")}</dd></div> : null}
             <div><dt>Coordination</dt><dd>{selected.conflictCount + selected.roadConflictCount > 0 ? `${selected.conflictCount + selected.roadConflictCount} advisory warning${selected.conflictCount + selected.roadConflictCount === 1 ? "" : "s"}` : "No warnings"}</dd></div>
           </dl>
           {selected.description ? <div className="work-detail-scope"><h3>Work scope</h3><p>{selected.description}</p></div> : null}

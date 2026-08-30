@@ -30,7 +30,8 @@
     "verify:phase15": "pnpm --filter api verify:phase15",
     "verify:demo100": "pnpm --filter api verify:demo100",
     "verify:civic-work-registry": "pnpm --filter api verify:civic-work-registry",
-    "verify:coordination": "pnpm --filter api verify:coordination"
+    "verify:coordination": "pnpm --filter api verify:coordination",
+    "verify:phase4-workflow": "pnpm --filter api verify:phase4-workflow"
   },
   "devDependencies": {
     "@civicos/config": "workspace:*",

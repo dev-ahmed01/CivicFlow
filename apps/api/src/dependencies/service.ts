@@ -56,6 +56,7 @@ export async function createDependencyRequests(
   inputs: DependencyInput[],
   actedById: string,
   now = new Date(),
+  options: { notify?: boolean } = {},
 ) {
   if (inputs.length === 0) return [];
   const respondingAgencyIds = inputs.map((input) => input.respondingAgencyId);
@@ -91,9 +92,11 @@ export async function createDependencyRequests(
     where: { agencyId: { in: respondingAgencyIds }, role: { in: [UserRole.PROJECT_HEAD, UserRole.ENGINEER] } },
     select: { id: true, agencyId: true },
   });
-  await createNotifications(client, requests.flatMap(({ id, input, deadline }) => recipients
-    .filter((recipient) => recipient.agencyId === input.respondingAgencyId)
-    .map(({ id: userId }) => ({ userId, type: "DEPENDENCY_REQUEST", payload: { dependencyId: id, projectId, deadline: deadline.toISOString() } }))));
+  if (options.notify !== false) {
+    await createNotifications(client, requests.flatMap(({ id, input, deadline }) => recipients
+      .filter((recipient) => recipient.agencyId === input.respondingAgencyId)
+      .map(({ id: userId }) => ({ userId, type: "DEPENDENCY_REQUEST", payload: { dependencyId: id, projectId, deadline: deadline.toISOString() } }))));
+  }
   const project = await client.project.findUniqueOrThrow({ where: { id: projectId }, select: { ticketId: true } });
   for (const request of requests) {
     const responsibleUserId = await firstResponsibleUser(client, request.input.respondingAgencyId, [UserRole.PROJECT_HEAD, UserRole.ENGINEER]);
@@ -141,7 +144,7 @@ export async function respondToDependency(
       await transition(transaction, dependency.id, DependencyState.REQUESTED, DependencyState.PENDING_RESPONSE, "RE_SENT_TO_RESPONDING_AGENCY", actor.userId);
       const updated = await transaction.dependency.update({
         where: { id: dependency.id },
-        data: { state: DependencyState.PENDING_RESPONSE, deadline, respondedAt: null, escalatedAt: null, assignedEngineerId: null },
+        data: { state: DependencyState.PENDING_RESPONSE, deadline, respondedAt: null, escalatedAt: null, deadlineReminderSentAt: null, assignedEngineerId: null },
       });
       await notifyAgency(transaction, dependency.respondingAgencyId, [UserRole.PROJECT_HEAD, UserRole.ENGINEER], "DEPENDENCY_REQUEST_RE_SENT", { dependencyId, projectId: dependency.projectId, deadline: deadline.toISOString() });
       const responsibleUserId = await firstResponsibleUser(transaction, dependency.respondingAgencyId, [UserRole.PROJECT_HEAD, UserRole.ENGINEER]);
@@ -227,7 +230,26 @@ export async function respondToDependency(
   });
 }
 
-export async function runDependencyEscalationJob(now = new Date()): Promise<{ escalated: number }> {
+export async function runDependencyEscalationJob(now = new Date()): Promise<{ escalated: number; reminders: number }> {
+  const reminderThreshold = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const approaching = await prisma.dependency.findMany({
+    where: { state: DependencyState.PENDING_RESPONSE, deadlineReminderSentAt: null, deadline: { gt: now, lte: reminderThreshold } },
+    orderBy: { deadline: "asc" },
+    select: { id: true },
+    take: 50,
+  });
+  let reminders = 0;
+  for (const item of approaching) {
+    const sent = await prisma.$transaction(async (transaction) => {
+      const dependency = await transaction.dependency.findUnique({ where: { id: item.id } });
+      if (!dependency || dependency.state !== DependencyState.PENDING_RESPONSE || dependency.deadlineReminderSentAt || dependency.deadline <= now || dependency.deadline > reminderThreshold) return false;
+      const marked = await transaction.dependency.updateMany({ where: { id: dependency.id, deadlineReminderSentAt: null }, data: { deadlineReminderSentAt: now } });
+      if (marked.count === 0) return false;
+      await notifyAgency(transaction, dependency.respondingAgencyId, [UserRole.PROJECT_HEAD], "DEPENDENCY_DEADLINE_APPROACHING", { dependencyId: dependency.id, projectId: dependency.projectId, deadline: dependency.deadline.toISOString() });
+      return true;
+    });
+    if (sent) reminders += 1;
+  }
   const due = await prisma.dependency.findMany({
     where: { state: DependencyState.PENDING_RESPONSE, deadline: { lte: now } },
     orderBy: { deadline: "asc" },
@@ -251,7 +273,7 @@ export async function runDependencyEscalationJob(now = new Date()): Promise<{ es
     });
     if (changed) escalated += 1;
   }
-  return { escalated };
+  return { escalated, reminders };
 }
 
 export function startDependencyEscalationScheduler(intervalMinutes: number): NodeJS.Timeout {

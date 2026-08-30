@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agency } from "@civicos/shared";
+import type { Agency, CreateCoordinationDraft } from "@civicos/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { apiFetch, evidenceContentType, uploadFile } from "../_lib/api";
@@ -19,18 +19,28 @@ function typeLabel(key: string): string {
   return key.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
-export function CoordinationComposer({ projectId, agencies, requestTypes, onCancel }: {
+export type CoordinationPrefill = {
+  respondingAgencyId: string;
+  requestTypeKey: string;
+  subject: string;
+  details: string;
+  initialMessage: string;
+  conflictSource: NonNullable<CreateCoordinationDraft["conflictSource"]>;
+};
+
+export function CoordinationComposer({ projectId, agencies, requestTypes, onCancel, prefill }: {
   projectId: string;
   agencies: Agency[];
   requestTypes: string[];
   onCancel: () => void;
+  prefill?: CoordinationPrefill;
 }) {
   const router = useRouter();
-  const [respondingAgencyId, setRespondingAgencyId] = useState("");
-  const [requestTypeKey, setRequestTypeKey] = useState(requestTypes[0] ?? "");
-  const [subject, setSubject] = useState("");
-  const [details, setDetails] = useState("");
-  const [initialMessage, setInitialMessage] = useState("");
+  const [respondingAgencyId, setRespondingAgencyId] = useState(prefill?.respondingAgencyId ?? "");
+  const [requestTypeKey, setRequestTypeKey] = useState(prefill?.requestTypeKey ?? requestTypes[0] ?? "");
+  const [subject, setSubject] = useState(prefill?.subject ?? "");
+  const [details, setDetails] = useState(prefill?.details ?? "");
+  const [initialMessage, setInitialMessage] = useState(prefill?.initialMessage ?? "");
   const [responseDeadline, setResponseDeadline] = useState(() => new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16));
   const [inspectionNeeded, setInspectionNeeded] = useState(false);
   const [engineerRequired, setEngineerRequired] = useState(false);
@@ -59,6 +69,7 @@ export function CoordinationComposer({ projectId, agencies, requestTypes, onCanc
           responseDeadline: new Date(responseDeadline).toISOString(),
           inspectionNeeded,
           engineerRequired,
+          ...(prefill ? { conflictSource: prefill.conflictSource } : {}),
         }),
       });
       if (file) {
@@ -82,7 +93,7 @@ export function CoordinationComposer({ projectId, agencies, requestTypes, onCanc
   };
 
   return <form className="portal-panel coordination-composer" onSubmit={(event) => void submit(event)}>
-    <div className="coordination-form-heading"><div><p className="eyebrow">Work-linked agency request</p><h2>Coordinate with agency</h2><p>This request and every response will remain attached to this civic work record.</p></div><button className="secondary" onClick={onCancel} type="button">Cancel</button></div>
+    <div className="coordination-form-heading"><div><p className="eyebrow">Work-linked agency request</p><h2>Coordinate with agency</h2><p>{prefill ? "Conflict, opposing work, location, and relevant dates are pre-filled from the advisory warning." : "This request and every response will remain attached to this civic work record."}</p></div><button className="secondary" onClick={onCancel} type="button">Cancel</button></div>
     <div className="coordination-form-grid">
       <label>Receiving agency<select required value={respondingAgencyId} onChange={(event) => setRespondingAgencyId(event.target.value)}><option value="">Choose agency</option>{agencies.map((agency) => <option key={agency.id} value={agency.id}>{agency.name} · {agency.type}</option>)}</select></label>
       <label>Request type<select required value={requestTypeKey} onChange={(event) => setRequestTypeKey(event.target.value)}>{requestTypes.map((key) => <option key={key} value={key}>{typeLabel(key)}</option>)}</select></label>

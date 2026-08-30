@@ -5,6 +5,8 @@ import {
   Prisma,
   PrismaClient,
   ProjectState,
+  RoadConflictSeverity,
+  RoadConflictType,
   TicketState,
   UserRole,
   ValidationVote,
@@ -42,6 +44,14 @@ const ids = {
   },
   roadSegments: {
     flagship: "80000000-0000-4000-8000-000000000001",
+    btmCoordination: "80000000-0000-4000-8000-000000000002",
+  },
+  phase4Coordination: {
+    resurfacingProject: "8b000000-0000-4000-8000-000000000001",
+    pipelineProject: "8b000000-0000-4000-8000-000000000002",
+    resurfacingIntervention: "8c000000-0000-4000-8000-000000000001",
+    pipelineIntervention: "8c000000-0000-4000-8000-000000000002",
+    conflict: "8d000000-0000-4000-8000-000000000001",
   },
   generalDemo: {
     ticket: "90000000-0000-4000-8000-000000000001",
@@ -556,6 +566,80 @@ async function seedRoadCuttingDemo(): Promise<void> {
   }
 }
 
+// Phase 4 — deterministic BTM handoff starts at the conflict-review step.
+// The demo operator can then perform request → reply → assignment/inspection →
+// dependency acceptance → advisory sequence/date update in the web workspace.
+async function seedPhase4CoordinationDemo(): Promise<void> {
+  const fixture = ids.phase4Coordination;
+  const projectIds = [fixture.resurfacingProject, fixture.pipelineProject];
+  await prisma.coordinationRequest.deleteMany({ where: { projectId: { in: projectIds } } });
+  await prisma.dependency.deleteMany({ where: { projectId: { in: projectIds } } });
+  await prisma.sequencingRecommendation.deleteMany({ where: { segmentId: ids.roadSegments.btmCoordination } });
+  await prisma.roadConflictLog.deleteMany({ where: { segmentId: ids.roadSegments.btmCoordination } });
+
+  await prisma.$executeRaw`
+    INSERT INTO "RoadSegment" ("id", "roadName", "geometry", "wardId", "surfaceType", "lastRestorationDate")
+    VALUES (${ids.roadSegments.btmCoordination}::uuid, '16th Main Road · BTM Layout 2nd Stage',
+      ST_GeomFromText('LINESTRING(77.6075 12.9142,77.6125 12.9142)', 4326),
+      ${ids.wards.btmLayout}::uuid, 'Asphalt', NULL)
+    ON CONFLICT ("id") DO UPDATE SET "roadName" = EXCLUDED."roadName", "geometry" = EXCLUDED."geometry",
+      "wardId" = EXCLUDED."wardId", "surfaceType" = EXCLUDED."surfaceType", "lastRestorationDate" = NULL
+  `;
+
+  const works = [
+    {
+      id: fixture.resurfacingProject,
+      interventionId: fixture.resurfacingIntervention,
+      agencyId: ids.agencies.pwd,
+      ownerId: "40000000-0000-4000-8000-000000000101",
+      engineerId: "40000000-0000-4000-8000-000000000201",
+      title: "BTM 16th Main road resurfacing",
+      purpose: "resurfacing",
+      start: new Date("2026-11-08T03:30:00.000Z"),
+      end: new Date("2026-11-15T12:30:00.000Z"),
+    },
+    {
+      id: fixture.pipelineProject,
+      interventionId: fixture.pipelineIntervention,
+      agencyId: ids.agencies.bwssb,
+      ownerId: "40000000-0000-4000-8000-000000000102",
+      engineerId: "40000000-0000-4000-8000-000000000202",
+      title: "BWSSB pipeline replacement · BTM 16th Main",
+      purpose: "pipeline",
+      start: new Date("2026-11-05T03:30:00.000Z"),
+      end: new Date("2026-11-12T12:30:00.000Z"),
+    },
+  ] as const;
+
+  for (const item of works) {
+    await prisma.project.upsert({
+      where: { id: item.id },
+      update: { categoryId: categories[0].id, agencyId: item.agencyId, ownerProjectHeadId: item.ownerId, createdById: item.ownerId, updatedById: item.ownerId, origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, description: "Phase 4 BTM coordination demonstration on the same road chainage.", locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru", wardId: ids.wards.btmLayout, state: ProjectState.TIMELINE_SET, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title, engineerId: item.engineerId },
+      create: { id: item.id, categoryId: categories[0].id, agencyId: item.agencyId, ownerProjectHeadId: item.ownerId, createdById: item.ownerId, updatedById: item.ownerId, origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, description: "Phase 4 BTM coordination demonstration on the same road chainage.", locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru", wardId: ids.wards.btmLayout, state: ProjectState.TIMELINE_SET, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title, engineerId: item.engineerId },
+    });
+    await prisma.intervention.upsert({
+      where: { projectId: item.id },
+      update: { segmentId: ids.roadSegments.btmCoordination, requestingAgencyId: item.agencyId, purpose: item.purpose, plannedStart: item.start, plannedEnd: item.end, affectedLengthM: 380, startOffsetM: 20, dependencyRefs: [] },
+      create: { id: item.interventionId, projectId: item.id, segmentId: ids.roadSegments.btmCoordination, requestingAgencyId: item.agencyId, purpose: item.purpose, plannedStart: item.start, plannedEnd: item.end, affectedLengthM: 380, startOffsetM: 20, dependencyRefs: [] },
+    });
+    await prisma.$executeRaw`UPDATE "Project" SET "geometry" = (SELECT "geometry" FROM "RoadSegment" WHERE "id" = ${ids.roadSegments.btmCoordination}::uuid) WHERE "id" = ${item.id}::uuid`;
+  }
+
+  const fingerprint = "4444444444444444444444444444444444444444444444444444444444444444";
+  await prisma.roadConflictLog.create({ data: {
+    id: fixture.conflict,
+    projectId: fixture.resurfacingProject,
+    conflictingProjectId: fixture.pipelineProject,
+    segmentId: ids.roadSegments.btmCoordination,
+    projectAgencyId: ids.agencies.pwd,
+    conflictingAgencyId: ids.agencies.bwssb,
+    type: RoadConflictType.RESTORATION_TOO_EARLY,
+    severity: RoadConflictSeverity.HIGH,
+    reason: "Road resurfacing begins before the scheduled BWSSB pipeline excavation is complete on the same segment. Advisory only.",
+    fingerprint,
+  } });
+}
+
 // Phase 1 — standalone registry fixtures prove work no longer needs a citizen
 // complaint. The first two deliberately overlap in BTM Layout for a later
 // geographic/temporal conflict demonstration; warnings remain advisory.
@@ -722,12 +806,14 @@ async function main(): Promise<void> {
   await seedEngineerWorkflowDemo();
   await seedGeneralEndToEndDemo();
   await seedRoadCuttingDemo();
+  await seedPhase4CoordinationDemo();
   await seedPlannedCivicWorks();
 
   console.log(`Seeded ${demoWards.length} wards, ${agencies.length} agencies, ${categories.length} categories, and ${users.length} users.`);
   console.log(`Seeded ${engineerDemoProjects.length} Executive Engineer demo projects.`);
   console.log("Seeded the Part I §31 closed streetlight lifecycle with validation, dependency, execution, and citizen verification history.");
   console.log("Seeded Segment X flagship road-cutting scenario (PWD, BWSSB, BESCOM).");
+  console.log("Seeded the Phase 4 BTM conflict-to-coordination scenario (PWD resurfacing and BWSSB pipeline work).");
   console.log("Seeded three standalone planned works in BTM Layout, including an intentional overlapping pair.");
   console.log(process.env.NODE_ENV === "production"
     ? "Internal demo-user password loaded from DEMO_INTERNAL_PASSWORD."

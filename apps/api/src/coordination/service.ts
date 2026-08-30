@@ -3,6 +3,7 @@ import type { CoordinationAction, CreateCoordinationDraft, UserRole as SharedUse
 import { createWorkflowAction, firstResponsibleUser } from "../deadlines/service";
 import { createDependencyRequests } from "../dependencies/service";
 import { createNotifications } from "../notifications/service";
+import { checkRoadConflicts, recommendationsForSegment } from "../road-intelligence/service";
 
 type DatabaseClient = Prisma.TransactionClient;
 
@@ -51,10 +52,95 @@ async function notifyAgency(
   payload: Prisma.InputJsonValue,
 ): Promise<void> {
   const recipients = await client.user.findMany({
-    where: { agencyId, role: { in: [UserRole.PROJECT_HEAD, UserRole.ENGINEER] } },
+    where: { agencyId, role: UserRole.PROJECT_HEAD },
     select: { id: true },
   });
   await createNotifications(client, recipients.map(({ id: userId }) => ({ userId, type, payload })));
+}
+
+async function resolveConflictSource(
+  projectId: string,
+  respondingAgencyId: string,
+  source: CreateCoordinationDraft["conflictSource"],
+): Promise<{ conflictLogId?: string; roadConflictLogId?: string; conflictingProjectId?: string }> {
+  if (!source) return {};
+  if (source.kind === "PROJECT") {
+    const conflict = await prisma.conflictLog.findUnique({
+      where: { id: source.conflictId },
+      select: { id: true, projectId: true, conflictingProjectId: true, projectAgencyId: true, conflictingAgencyId: true },
+    });
+    if (!conflict || projectId !== conflict.projectId && projectId !== conflict.conflictingProjectId) {
+      throw new CoordinationActionError("The selected conflict does not belong to this civic work", 422);
+    }
+    const opposingProjectId = projectId === conflict.projectId ? conflict.conflictingProjectId : conflict.projectId;
+    const opposingAgencyId = projectId === conflict.projectId ? conflict.conflictingAgencyId : conflict.projectAgencyId;
+    if (source.conflictingProjectId !== opposingProjectId || respondingAgencyId !== opposingAgencyId) {
+      throw new CoordinationActionError("The receiving agency and conflicting work must match the selected conflict", 422);
+    }
+    return { conflictLogId: conflict.id, conflictingProjectId: opposingProjectId };
+  }
+  const conflict = await prisma.roadConflictLog.findUnique({
+    where: { id: source.conflictId },
+    select: { id: true, projectId: true, conflictingProjectId: true, projectAgencyId: true, conflictingAgencyId: true },
+  });
+  if (!conflict?.conflictingProjectId || !conflict.conflictingAgencyId || projectId !== conflict.projectId && projectId !== conflict.conflictingProjectId) {
+    throw new CoordinationActionError("The selected road conflict does not belong to this civic work", 422);
+  }
+  const opposingProjectId = projectId === conflict.projectId ? conflict.conflictingProjectId : conflict.projectId;
+  const opposingAgencyId = projectId === conflict.projectId ? conflict.conflictingAgencyId : conflict.projectAgencyId;
+  if (source.conflictingProjectId !== opposingProjectId || respondingAgencyId !== opposingAgencyId) {
+    throw new CoordinationActionError("The receiving agency and conflicting work must match the selected road conflict", 422);
+  }
+  return { roadConflictLogId: conflict.id, conflictingProjectId: opposingProjectId };
+}
+
+function jsonIds(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+// Phase 4 — an accepted road coordination becomes an explicit intervention
+// dependency. The deterministic road engine remains the sole sequence author.
+async function connectAcceptedRoadDependency(
+  client: DatabaseClient,
+  request: { id: string; projectId: string; conflictingProjectId: string | null },
+  actorId: string,
+) {
+  if (!request.conflictingProjectId) return null;
+  const interventions = await client.intervention.findMany({
+    where: { projectId: { in: [request.projectId, request.conflictingProjectId] } },
+    select: { id: true, projectId: true, segmentId: true, purpose: true, dependencyRefs: true },
+  });
+  if (interventions.length !== 2 || interventions[0]!.segmentId !== interventions[1]!.segmentId) return null;
+  const source = interventions.find((item) => item.projectId === request.projectId)!;
+  const opposing = interventions.find((item) => item.projectId === request.conflictingProjectId)!;
+  const sourceRestoration = source.purpose.toLowerCase() === "resurfacing";
+  const opposingRestoration = opposing.purpose.toLowerCase() === "resurfacing";
+  const dependent = sourceRestoration ? source : opposingRestoration ? opposing : source;
+  const prerequisite = dependent.id === source.id ? opposing : source;
+  const dependencyRefs = jsonIds(dependent.dependencyRefs);
+  if (!dependencyRefs.includes(prerequisite.id)) {
+    await client.intervention.update({
+      where: { id: dependent.id },
+      data: { dependencyRefs: [...dependencyRefs, prerequisite.id] },
+    });
+  }
+  await checkRoadConflicts(client, dependent.projectId);
+  const recommendations = await recommendationsForSegment(client, dependent.segmentId);
+  const recommendation = recommendations[0] ?? null;
+  await client.projectAuditEvent.create({
+    data: {
+      projectId: request.projectId,
+      action: "COORDINATION_DEPENDENCY_ACCEPTED",
+      actorId,
+      metadata: {
+        coordinationRequestId: request.id,
+        dependentProjectId: dependent.projectId,
+        prerequisiteProjectId: prerequisite.projectId,
+        sequencingRecommendationId: recommendation?.id ?? null,
+      },
+    },
+  });
+  return recommendation;
 }
 
 export async function createCoordinationDraft(
@@ -78,11 +164,13 @@ export async function createCoordinationDraft(
   }
   const deadline = new Date(input.responseDeadline);
   if (deadline <= new Date()) throw new CoordinationActionError("Response deadline must be in the future", 422);
+  const conflictSource = await resolveConflictSource(projectId, input.respondingAgencyId, input.conflictSource);
 
   return prisma.$transaction(async (transaction) => {
     const request = await transaction.coordinationRequest.create({
       data: {
         projectId,
+        ...conflictSource,
         requestingAgencyId: actor.agencyId,
         respondingAgencyId: input.respondingAgencyId,
         createdById: actor.userId,
@@ -122,7 +210,7 @@ async function sendDraft(client: DatabaseClient, request: Awaited<ReturnType<typ
       respondingAgencyId: request.respondingAgencyId,
       requirement: `${request.subject}\n\n${request.details}`,
       deadline: request.responseDeadline.toISOString(),
-    }], actor.userId, now);
+    }], actor.userId, now, { notify: false });
     dependency = created[0] ?? null;
     if (!dependency) throw new CoordinationActionError("Could not create the linked dependency", 422);
   } else {
@@ -135,6 +223,7 @@ async function sendDraft(client: DatabaseClient, request: Awaited<ReturnType<typ
         state: DependencyState.PENDING_RESPONSE,
         respondedAt: null,
         escalatedAt: null,
+        deadlineReminderSentAt: null,
         assignedEngineerId: null,
       },
     });
@@ -155,8 +244,8 @@ async function sendDraft(client: DatabaseClient, request: Awaited<ReturnType<typ
       responsibleAgencyId: request.respondingAgencyId,
       explicitDeadline: request.responseDeadline,
     }, now);
-    await notifyAgency(client, request.respondingAgencyId, "COORDINATION_REQUEST", { coordinationRequestId: request.id, dependencyId: dependency.id, projectId: request.projectId });
   }
+  await notifyAgency(client, request.respondingAgencyId, "COORDINATION_REQUEST", { coordinationRequestId: request.id, dependencyId: dependency!.id, projectId: request.projectId });
   const updated = await client.coordinationRequest.update({
     where: { id: request.id },
     data: { dependencyId: dependency!.id, status: CoordinationStatus.SENT, sentAt: now },
@@ -215,6 +304,7 @@ export async function actOnCoordinationRequest(
     let assignedEngineerId: string | undefined;
     let inspectionCompletedAt: Date | undefined;
     let closedAt: Date | undefined;
+    let sequencingRecommendation: Awaited<ReturnType<typeof connectAcceptedRoadDependency>> = null;
 
     if (input.action === "REPLY") {
       message = input.message;
@@ -262,6 +352,7 @@ export async function actOnCoordinationRequest(
         await transaction.dependencyStateTransition.create({ data: { dependencyId: request.dependency.id, fromState: DependencyState.PENDING_RESPONSE, toState: DependencyState.ASSIGNED, reason: "COORDINATION_ACCEPTED", actedById: actor.userId } });
         await transaction.workflowAction.updateMany({ where: { dependencyId: request.dependency.id, type: WorkflowActionType.RESPOND_DEPENDENCY, respondedAt: null }, data: { respondedAt: now } });
       }
+      sequencingRecommendation = await connectAcceptedRoadDependency(transaction, request, actor.userId);
     } else if (input.action === "REJECT") {
       if (!isResponder || actor.role !== UserRole.PROJECT_HEAD) throw new CoordinationActionError("Only the receiving agency Project Head can reject this dependency", 403);
       nextStatus = CoordinationStatus.REJECTED;
@@ -324,7 +415,14 @@ export async function actOnCoordinationRequest(
       },
     });
     await audit(transaction, request.projectId, `COORDINATION_${input.action}`, actor.userId, request.id, { fromStatus: request.status, toStatus: nextStatus });
-    await notifyAgency(transaction, isRequester ? request.respondingAgencyId : request.requestingAgencyId, `COORDINATION_${input.action}`, { coordinationRequestId: request.id, projectId: request.projectId, status: nextStatus });
-    return { request: updated, entry };
+    const notificationType = input.action === "ACCEPT" ? "DEPENDENCY_ACCEPTED" : `COORDINATION_${input.action}`;
+    await notifyAgency(transaction, isRequester ? request.respondingAgencyId : request.requestingAgencyId, notificationType, {
+      coordinationRequestId: request.id,
+      dependencyId: request.dependencyId,
+      projectId: request.projectId,
+      status: nextStatus,
+      sequencingRecommendationId: sequencingRecommendation?.id ?? null,
+    });
+    return { request: updated, entry, sequencingRecommendation };
   });
 }

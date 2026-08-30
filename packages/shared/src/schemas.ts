@@ -576,6 +576,10 @@ export const createCoordinationDraftSchema = z.object({
   responseDeadline: z.string().datetime(),
   inspectionNeeded: z.boolean().default(false),
   engineerRequired: z.boolean().default(false),
+  conflictSource: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("PROJECT"), conflictId: idSchema, conflictingProjectId: idSchema }),
+    z.object({ kind: z.literal("ROAD"), conflictId: idSchema, conflictingProjectId: idSchema }),
+  ]).optional(),
 });
 
 export const coordinationActionSchema = z.discriminatedUnion("action", [
@@ -747,6 +751,7 @@ export const projectHeadDashboardCountsSchema = z.object({
 });
 export const projectListItemSchema = z.object({
   id: idSchema,
+  title: z.string().min(1),
   ticketId: idSchema.nullable(),
   agencyId: idSchema,
   state: projectStateSchema,
@@ -958,6 +963,9 @@ export const coordinationRequestSchema = z.object({
   id: idSchema,
   projectId: idSchema,
   dependencyId: idSchema.nullable(),
+  conflictLogId: idSchema.nullable(),
+  roadConflictLogId: idSchema.nullable(),
+  conflictingProjectId: idSchema.nullable(),
   requestTypeKey: z.string(),
   subject: z.string(),
   details: z.string(),
@@ -982,7 +990,44 @@ export const coordinationRequestSchema = z.object({
     ticket: z.object({ id: idSchema, title: z.string(), address: z.string() }).nullable(),
     ward: z.object({ id: idSchema, name: z.string() }).nullable(),
   }),
+  conflictingProject: z.object({
+    id: idSchema,
+    referenceNumber: z.string(),
+    title: z.string(),
+    locationLabel: z.string().nullable(),
+    plannedStart: dateSchema.nullable(),
+    plannedEnd: dateSchema.nullable(),
+    agency: agencySchema.pick({ id: true, name: true, type: true }),
+  }).nullable(),
   entries: z.array(coordinationEntrySchema),
+});
+
+const coordinationConflictWorkSchema = z.object({
+  id: idSchema,
+  referenceNumber: z.string(),
+  title: z.string(),
+  agency: agencySchema.pick({ id: true, name: true }),
+  plannedStart: dateSchema.nullable(),
+  plannedEnd: dateSchema.nullable(),
+});
+
+export const coordinationConflictSchema = z.object({
+  id: idSchema,
+  kind: z.enum(["PROJECT", "ROAD"]),
+  sourceWork: coordinationConflictWorkSchema,
+  conflictingWork: coordinationConflictWorkSchema,
+  locationDescription: z.string().min(1),
+  temporalRelationship: z.string().min(1),
+  reason: z.string().min(1),
+  severity: z.string().min(1),
+  roadConflictType: roadConflictTypeSchema.nullable(),
+  advisory: z.literal(true),
+  detectedAt: dateSchema,
+  coordination: z.object({
+    requestId: idSchema,
+    dependencyId: idSchema.nullable(),
+    status: coordinationStatusSchema,
+  }).nullable(),
 });
 
 export const engineerProjectDetailSchema = projectListItemSchema.extend({
@@ -1075,7 +1120,11 @@ export const civicWorkCalendarItemSchema = projectSchema.pick({
     total: z.number().int().nonnegative(),
     open: z.number().int().nonnegative(),
     fulfilled: z.number().int().nonnegative(),
+    blocked: z.boolean(),
+    blockedBy: z.array(agencySchema.pick({ id: true, name: true })),
   }),
+  originalPlannedStart: dateSchema.nullable(),
+  originalPlannedEnd: dateSchema.nullable(),
   conflictCount: z.number().int().nonnegative(),
   roadConflictCount: z.number().int().nonnegative(),
 });
@@ -1288,6 +1337,7 @@ export type CoordinationAttachmentRequest = z.infer<typeof coordinationAttachmen
 export type CoordinationAttachment = z.infer<typeof coordinationAttachmentSchema>;
 export type CoordinationEntry = z.infer<typeof coordinationEntrySchema>;
 export type CoordinationRequest = z.infer<typeof coordinationRequestSchema>;
+export type CoordinationConflict = z.infer<typeof coordinationConflictSchema>;
 export type RoadSegment = z.infer<typeof roadSegmentSchema>;
 export type Intervention = z.infer<typeof interventionSchema>;
 export type RoadSegmentSummary = z.infer<typeof roadSegmentSummarySchema>;

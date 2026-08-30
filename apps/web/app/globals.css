@@ -94,6 +94,10 @@ code { background: var(--cv-surface-alt); border-radius: 6px; color: var(--cv-ac
 .road-intelligence-stack { display: grid; gap: 18px; margin-bottom: 22px; }
 .road-conflict-panel { border-top: 4px solid var(--cv-warning-text); margin-bottom: 0; }
 .conflict-item.road-high { border-left-color: var(--cv-warning-text); border-left-width: 8px; }
+.conflict-work-pair { display: grid !important; gap: 10px !important; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 14px 0; }
+.conflict-work-pair section { background: var(--cv-warning-bg); border-radius: 9px; display: grid; gap: 4px; padding: 11px; }
+.conflict-work-pair section > small { font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+.conflict-work-pair section > span, .conflict-work-pair section > time { font-size: 12px; }
 .conflict-item.road-medium-high { border-left-color: var(--cv-warning-text); border-left-width: 6px; }
 .sequencing-card { background: var(--cv-info-bg); border-color: var(--cv-info-text); }
 .sequencing-heading { align-items: flex-start; display: flex; gap: 20px; justify-content: space-between; }

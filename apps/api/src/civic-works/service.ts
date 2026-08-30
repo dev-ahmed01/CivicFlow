@@ -20,7 +20,8 @@ import type {
   UserRole as SharedUserRole,
 } from "@civicos/shared";
 import { createNotification } from "../notifications/service";
-import { isRoadCategory } from "../road-intelligence/service";
+import { checkProjectConflicts } from "../conflicts/service";
+import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
 import {
   copyRoadSegmentGeometry,
   findCivicWork,
@@ -109,6 +110,16 @@ function calendarItem(record: CivicWorkCalendarRecord, geometry: CivicWorkGeomet
     DependencyState.ESCALATED,
   ];
   const open = record.dependencies.filter(({ state }) => openStates.includes(state)).length;
+  const blockedBy = [...new Map(record.dependencies
+    .filter(({ state }) => openStates.includes(state))
+    .map(({ respondingAgency }) => [respondingAgency.id, respondingAgency])).values()];
+  const revisionMetadata = record.auditEvents[0]?.metadata;
+  const originalStartValue = revisionMetadata && !Array.isArray(revisionMetadata) && typeof revisionMetadata === "object"
+    ? revisionMetadata.originalPlannedStart
+    : null;
+  const originalEndValue = revisionMetadata && !Array.isArray(revisionMetadata) && typeof revisionMetadata === "object"
+    ? revisionMetadata.originalPlannedEnd
+    : null;
   return {
     id: record.id,
     referenceNumber: record.referenceNumber,
@@ -131,7 +142,9 @@ function calendarItem(record: CivicWorkCalendarRecord, geometry: CivicWorkGeomet
     engineer: record.engineer,
     roadSegment: record.intervention?.segment ?? null,
     evidenceCount: record._count.evidence,
-    dependencySummary: { total: record.dependencies.length, open, fulfilled },
+    dependencySummary: { total: record.dependencies.length, open, fulfilled, blocked: open > 0, blockedBy },
+    originalPlannedStart: typeof originalStartValue === "string" ? new Date(originalStartValue) : null,
+    originalPlannedEnd: typeof originalEndValue === "string" ? new Date(originalEndValue) : null,
     conflictCount: record._count.conflictLogs + record._count.conflictingLogs,
     roadConflictCount: record._count.roadConflictLogs + record._count.conflictingRoadLogs,
   };
@@ -319,6 +332,10 @@ export async function createPlannedCivicWork(actor: CivicWorkActor, input: Creat
         payload: { projectId: project.id, plannedWork: true },
       });
     }
+    // Phase 4 — registry entry immediately enters both existing advisory
+    // checks. Neither result blocks registration or engineer assignment.
+    await checkProjectConflicts(transaction, project.id);
+    await checkRoadConflicts(transaction, project.id);
     return project.id;
   });
 

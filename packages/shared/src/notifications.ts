@@ -28,7 +28,13 @@ const presentations: Record<string, NotificationPresentation> = {
   DEPENDENCY_RESPONSE: { icon: "↔", tone: "warning", category: "dependencies", message: "An agency responded to your dependency request." },
   DEPENDENCY_FULFILLED: { icon: "↔", tone: "warning", category: "dependencies", message: "A dependency was marked fulfilled." },
   DEPENDENCY_ESCALATED: { icon: "!", tone: "danger", category: "dependencies", message: "A dependency request passed its response deadline." },
+  DEPENDENCY_DEADLINE_APPROACHING: { icon: "!", tone: "warning", category: "dependencies", message: "A coordination response deadline is approaching." },
   DEPENDENCY_ASSIGNMENT: { icon: "↓", tone: "info", category: "assignments", message: "A dependency task was assigned to you." },
+  COORDINATION_REQUEST: { icon: "↔", tone: "warning", category: "dependencies", message: "Your agency received a coordination request." },
+  COORDINATION_REPLY: { icon: "i", tone: "info", category: "dependencies", message: "A coordination request has a new reply." },
+  COORDINATION_ENGINEER_ASSIGNED: { icon: "↓", tone: "info", category: "assignments", message: "You were assigned to an inter-agency coordination action." },
+  DEPENDENCY_ACCEPTED: { icon: "✓", tone: "success", category: "dependencies", message: "An agency accepted the formal dependency." },
+  SEQUENCE_CHANGED: { icon: "i", tone: "info", category: "conflicts", message: "An agreed work sequence or planned date changed." },
   PROJECT_ASSIGNMENT: { icon: "↓", tone: "info", category: "assignments", message: "A project was assigned to you." },
   PROJECT_TIMELINE_MODIFIED: { icon: "i", tone: "info", category: "assignments", message: "A project timeline was updated." },
   CONFLICT_DETECTED: { icon: "⚠", tone: "warning", category: "conflicts", message: "A non-blocking project conflict needs review." },
@@ -61,10 +67,12 @@ function value(payload: Record<string, unknown>, key: string): string | undefine
 }
 
 export function notificationDestination(notification: Pick<Notification, "type" | "payload">, role: UserRole): string | undefined {
+  const coordinationRequestId = value(notification.payload, "coordinationRequestId");
   const dependencyId = value(notification.payload, "dependencyId");
   const projectId = value(notification.payload, "projectId");
   const ticketId = value(notification.payload, "ticketId");
   const grievanceId = value(notification.payload, "grievanceId");
+  if (coordinationRequestId && role === "PROJECT_HEAD") return `/project-head/coordination/${coordinationRequestId}`;
   if (grievanceId) {
     if (role === "PROJECT_HEAD") return `/project-head/grievances?grievance=${grievanceId}`;
     if (role === "ADMIN") return `/admin/grievances?grievance=${grievanceId}`;
