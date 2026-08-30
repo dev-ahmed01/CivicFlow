@@ -57,6 +57,7 @@ const requiredConfigKeys = new Set([
   "conflict.radius_meters",
   "road.category_id",
   "road.repeated_excavation_days",
+  "coordination.request_types",
 ]);
 
 const positiveIntegerConfigKeys = new Set([
@@ -77,6 +78,7 @@ async function configValueError(key: string, value: unknown): Promise<string | n
   if (positiveNumberConfigKeys.has(key) && (typeof value !== "number" || !Number.isFinite(value) || value <= 0)) return `${key} must be a positive number`;
   if (ratioConfigKeys.has(key) && (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1)) return `${key} must be between 0 and 1`;
   if (key === "demo.web_auto_route_enabled" && typeof value !== "boolean") return `${key} must be true or false`;
+  if (key === "coordination.request_types" && (!Array.isArray(value) || value.length === 0 || value.length > 30 || value.some((item) => typeof item !== "string" || !/^[a-z0-9-]{2,80}$/.test(item)))) return `${key} must be a non-empty list of lowercase request-type keys`;
   if (key === "road.category_id") {
     if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) return `${key} must reference a category ID`;
     if (!(await prisma.category.findUnique({ where: { id: value }, select: { id: true } }))) return `${key} references a category that does not exist`;

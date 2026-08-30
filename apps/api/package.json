@@ -23,7 +23,8 @@
     "verify:phase12": "tsc -p tsconfig.json && node dist/scripts/verify-phase12.js",
     "verify:phase15": "tsc -p tsconfig.json && node dist/scripts/verify-phase15.js",
     "verify:civic-work-registry": "tsc -p tsconfig.json && node dist/scripts/verify-civic-work-registry.js",
-    "verify:demo100": "tsc -p tsconfig.json && node dist/scripts/verify-demo100.js"
+    "verify:demo100": "tsc -p tsconfig.json && node dist/scripts/verify-demo100.js",
+    "verify:coordination": "tsc -p tsconfig.json && node dist/scripts/verify-coordination.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1120.0",

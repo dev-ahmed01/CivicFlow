@@ -117,6 +117,20 @@ enum DependencyState {
   FULFILLED
 }
 
+enum CoordinationStatus {
+  DRAFT
+  SENT
+  ACKNOWLEDGED
+  CLARIFICATION_REQUESTED
+  INSPECTION_REQUIRED
+  ENGINEER_ASSIGNED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CLOSED
+  REJECTED
+}
+
 enum ValidationVote {
   CONFIRM
   NOT_SURE
@@ -193,6 +207,10 @@ model User {
   responsibleActions             WorkflowAction[]                @relation("WorkflowActionResponsibleUser")
   grievancesRaised               Grievance[]                     @relation("GrievanceRaisedBy")
   responsibleGrievances          Grievance[]                     @relation("GrievanceResponsibleUser")
+  coordinationRequestsCreated    CoordinationRequest[]           @relation("CoordinationCreator")
+  coordinationAssignments        CoordinationRequest[]           @relation("CoordinationEngineer")
+  coordinationEntries            CoordinationEntry[]
+  coordinationAttachments        CoordinationAttachment[]
 
   @@index([agencyId])
   @@index([wardId])
@@ -220,17 +238,20 @@ model Agency {
   users                  User[]
   primaryCategories      Category[]
   routingDependencies    RoutingRule[]
-  assignedTickets        Ticket[]          @relation("TicketAssignedAgency")
+  assignedTickets        Ticket[]              @relation("TicketAssignedAgency")
   projects               Project[]
-  requestedDependencies  Dependency[]      @relation("DependencyRequestingAgency")
-  respondingDependencies Dependency[]      @relation("DependencyRespondingAgency")
+  requestedDependencies  Dependency[]          @relation("DependencyRequestingAgency")
+  respondingDependencies Dependency[]          @relation("DependencyRespondingAgency")
   requestedInterventions Intervention[]
-  projectConflictLogs    ConflictLog[]     @relation("ConflictLogProjectAgency")
-  conflictingProjectLogs ConflictLog[]     @relation("ConflictLogConflictingAgency")
-  roadConflictLogs       RoadConflictLog[] @relation("RoadConflictProjectAgency")
-  conflictingRoadLogs    RoadConflictLog[] @relation("RoadConflictConflictingAgency")
+  projectConflictLogs    ConflictLog[]         @relation("ConflictLogProjectAgency")
+  conflictingProjectLogs ConflictLog[]         @relation("ConflictLogConflictingAgency")
+  roadConflictLogs       RoadConflictLog[]     @relation("RoadConflictProjectAgency")
+  conflictingRoadLogs    RoadConflictLog[]     @relation("RoadConflictConflictingAgency")
   workflowActions        WorkflowAction[]
   grievances             Grievance[]
+  requestedCoordinations CoordinationRequest[] @relation("CoordinationRequestingAgency")
+  receivedCoordinations  CoordinationRequest[] @relation("CoordinationRespondingAgency")
+  coordinationEntries    CoordinationEntry[]
 }
 
 model Category {
@@ -448,27 +469,28 @@ model Project {
   createdAt          DateTime                                @default(now())
   updatedAt          DateTime                                @updatedAt
 
-  ticket              Ticket?                  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
-  category            Category?                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  agency              Agency                   @relation(fields: [agencyId], references: [id], onDelete: Restrict)
-  ward                Ward?                    @relation(fields: [wardId], references: [id], onDelete: Restrict)
-  ownerProjectHead    User?                    @relation("ProjectOwner", fields: [ownerProjectHeadId], references: [id], onDelete: SetNull)
-  createdBy           User?                    @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy           User?                    @relation("ProjectUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
-  engineer            User?                    @relation("ProjectEngineer", fields: [engineerId], references: [id], onDelete: SetNull)
-  dependencies        Dependency[]
-  intervention        Intervention?
-  stateTransitions    ProjectStateTransition[]
-  workNotes           ProjectWorkNote[]
-  evidence            ProjectEvidence[]
-  auditEvents         ProjectAuditEvent[]
-  completionEvidence  CompletionEvidence[]
-  conflictLogs        ConflictLog[]            @relation("ConflictLogProject")
-  conflictingLogs     ConflictLog[]            @relation("ConflictLogConflictingProject")
-  roadConflictLogs    RoadConflictLog[]        @relation("RoadConflictProject")
-  conflictingRoadLogs RoadConflictLog[]        @relation("RoadConflictConflictingProject")
-  workflowActions     WorkflowAction[]
-  grievances          Grievance[]
+  ticket               Ticket?                  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  category             Category?                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  agency               Agency                   @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  ward                 Ward?                    @relation(fields: [wardId], references: [id], onDelete: Restrict)
+  ownerProjectHead     User?                    @relation("ProjectOwner", fields: [ownerProjectHeadId], references: [id], onDelete: SetNull)
+  createdBy            User?                    @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy            User?                    @relation("ProjectUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  engineer             User?                    @relation("ProjectEngineer", fields: [engineerId], references: [id], onDelete: SetNull)
+  dependencies         Dependency[]
+  intervention         Intervention?
+  stateTransitions     ProjectStateTransition[]
+  workNotes            ProjectWorkNote[]
+  evidence             ProjectEvidence[]
+  auditEvents          ProjectAuditEvent[]
+  completionEvidence   CompletionEvidence[]
+  conflictLogs         ConflictLog[]            @relation("ConflictLogProject")
+  conflictingLogs      ConflictLog[]            @relation("ConflictLogConflictingProject")
+  roadConflictLogs     RoadConflictLog[]        @relation("RoadConflictProject")
+  conflictingRoadLogs  RoadConflictLog[]        @relation("RoadConflictConflictingProject")
+  workflowActions      WorkflowAction[]
+  grievances           Grievance[]
+  coordinationRequests CoordinationRequest[]
 
   @@index([ticketId])
   @@index([categoryId])
@@ -648,13 +670,14 @@ model Dependency {
   escalatedAt        DateTime?
   createdAt          DateTime        @default(now())
 
-  project          Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  requestingAgency Agency                      @relation("DependencyRequestingAgency", fields: [requestingAgencyId], references: [id], onDelete: Restrict)
-  respondingAgency Agency                      @relation("DependencyRespondingAgency", fields: [respondingAgencyId], references: [id], onDelete: Restrict)
-  assignedEngineer User?                       @relation("DependencyEngineer", fields: [assignedEngineerId], references: [id], onDelete: SetNull)
-  stateTransitions DependencyStateTransition[]
-  workflowActions  WorkflowAction[]
-  grievances       Grievance[]
+  project              Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requestingAgency     Agency                      @relation("DependencyRequestingAgency", fields: [requestingAgencyId], references: [id], onDelete: Restrict)
+  respondingAgency     Agency                      @relation("DependencyRespondingAgency", fields: [respondingAgencyId], references: [id], onDelete: Restrict)
+  assignedEngineer     User?                       @relation("DependencyEngineer", fields: [assignedEngineerId], references: [id], onDelete: SetNull)
+  stateTransitions     DependencyStateTransition[]
+  workflowActions      WorkflowAction[]
+  grievances           Grievance[]
+  coordinationRequests CoordinationRequest[]
 
   @@unique([projectId, respondingAgencyId])
   @@index([projectId])
@@ -663,6 +686,85 @@ model Dependency {
   @@index([assignedEngineerId])
   @@index([state])
   @@index([state, deadline])
+}
+
+model CoordinationRequest {
+  id                    String             @id @default(uuid()) @db.Uuid
+  projectId             String             @db.Uuid
+  dependencyId          String?            @db.Uuid
+  requestingAgencyId    String             @db.Uuid
+  respondingAgencyId    String             @db.Uuid
+  createdById           String             @db.Uuid
+  assignedEngineerId    String?            @db.Uuid
+  requestTypeKey        String             @db.VarChar(80)
+  subject               String             @db.VarChar(180)
+  details               String
+  responseDeadline      DateTime
+  inspectionNeeded      Boolean            @default(false)
+  engineerRequired      Boolean            @default(false)
+  proposedAt            DateTime?
+  inspectionCompletedAt DateTime?
+  status                CoordinationStatus @default(DRAFT)
+  sentAt                DateTime?
+  closedAt              DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  project          Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dependency       Dependency?              @relation(fields: [dependencyId], references: [id], onDelete: SetNull)
+  requestingAgency Agency                   @relation("CoordinationRequestingAgency", fields: [requestingAgencyId], references: [id], onDelete: Restrict)
+  respondingAgency Agency                   @relation("CoordinationRespondingAgency", fields: [respondingAgencyId], references: [id], onDelete: Restrict)
+  createdBy        User                     @relation("CoordinationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  assignedEngineer User?                    @relation("CoordinationEngineer", fields: [assignedEngineerId], references: [id], onDelete: SetNull)
+  entries          CoordinationEntry[]
+  attachments      CoordinationAttachment[]
+
+  @@index([projectId, createdAt])
+  @@index([dependencyId])
+  @@index([requestingAgencyId, status, responseDeadline], map: "CoordinationRequest_requestingAgencyId_status_responseDeadline_")
+  @@index([respondingAgencyId, status, responseDeadline], map: "CoordinationRequest_respondingAgencyId_status_responseDeadline_")
+  @@index([assignedEngineerId, status])
+}
+
+model CoordinationEntry {
+  id             String              @id @default(uuid()) @db.Uuid
+  requestId      String              @db.Uuid
+  senderId       String              @db.Uuid
+  senderAgencyId String              @db.Uuid
+  action         String              @db.VarChar(80)
+  message        String?
+  fromStatus     CoordinationStatus?
+  toStatus       CoordinationStatus?
+  createdAt      DateTime            @default(now())
+
+  request      CoordinationRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sender       User                     @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  senderAgency Agency                   @relation(fields: [senderAgencyId], references: [id], onDelete: Restrict)
+  attachments  CoordinationAttachment[]
+
+  @@index([requestId, createdAt])
+  @@index([senderId])
+}
+
+model CoordinationAttachment {
+  id           String    @id @default(uuid()) @db.Uuid
+  requestId    String    @db.Uuid
+  entryId      String    @db.Uuid
+  uploadedById String    @db.Uuid
+  fileName     String    @db.VarChar(200)
+  objectKey    String    @unique
+  contentType  String    @db.VarChar(100)
+  sizeBytes    Int?
+  uploadedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  request    CoordinationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  entry      CoordinationEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  uploadedBy User                @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([requestId, createdAt])
+  @@index([entryId])
+  @@index([uploadedById])
 }
 
 model DependencyStateTransition {

@@ -8,6 +8,8 @@ import type {
   CompletionVerificationDecision,
   DependencyListItem,
   DependencyResponse,
+  CoordinationAction,
+  CoordinationRequest,
   EngineerProjectDetail,
   Notification,
   PendingValidation,
@@ -282,6 +284,33 @@ export async function respondToDependency(dependencyId: string, response: Depend
   await apiFetch(`/dependencies/${dependencyId}/respond`, {
     method: "POST",
     body: JSON.stringify(response),
+  });
+}
+
+export async function loadCoordinationRequests(): Promise<CoordinationRequest[]> {
+  const result = await apiFetch<{ requests: CoordinationRequest[] }>("/coordination-requests?direction=received");
+  return result.requests;
+}
+
+export async function actOnCoordinationRequest(requestId: string, action: CoordinationAction): Promise<string> {
+  const result = await apiFetch<{ entry: { id: string } }>(`/coordination-requests/${requestId}/actions`, {
+    method: "POST",
+    body: JSON.stringify(action),
+  });
+  return result.entry.id;
+}
+
+export async function uploadCoordinationEvidence(requestId: string, entryId: string, image: LocalImage): Promise<void> {
+  const info = await FileSystem.getInfoAsync(image.uri);
+  const sizeBytes = info.exists && "size" in info && typeof info.size === "number" ? info.size : 1;
+  const target = await apiFetch<{ attachmentId: string; upload: UploadTarget }>(`/coordination-requests/${requestId}/attachments`, {
+    method: "POST",
+    body: JSON.stringify({ action: "presign", entryId, fileName: image.fileName, contentType: image.contentType, sizeBytes }),
+  });
+  await uploadFile(target.upload, image);
+  await apiFetch(`/coordination-requests/${requestId}/attachments`, {
+    method: "POST",
+    body: JSON.stringify({ action: "complete", attachmentId: target.attachmentId }),
   });
 }
 

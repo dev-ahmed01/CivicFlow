@@ -12,7 +12,7 @@ const workLinks: Array<{ href: string; label: string; icon: CitizenIconName; act
   { href: "/project-head/tickets", label: "Ticket queue", icon: "clipboard", active: (path) => path.startsWith("/project-head/tickets") },
   { href: "/project-head/projects", label: "Projects", icon: "location", active: (path) => path.startsWith("/project-head/projects") },
   { href: "/project-head/work-calendar", label: "Work calendar", icon: "clock", active: (path) => path.startsWith("/project-head/work-calendar") },
-  { href: "/project-head/dependencies", label: "Dependencies", icon: "refresh", active: (path) => path.startsWith("/project-head/dependencies") },
+  { href: "/project-head/dependencies", label: "Coordination", icon: "refresh", active: (path) => path.startsWith("/project-head/dependencies") || path.startsWith("/project-head/coordination") },
   { href: "/project-head/grievances", label: "Grievances", icon: "clipboard", active: (path) => path.startsWith("/project-head/grievances") },
 ];
 

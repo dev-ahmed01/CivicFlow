@@ -1,130 +1,127 @@
 import { useCallback, useEffect, useState } from "react";
-import type { DependencyListItem, DependencyResponse } from "@civicos/shared";
-import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { loadDependencies, respondToDependency } from "./api";
+import type { CoordinationAction, CoordinationRequest } from "@civicos/shared";
+import * as ImagePicker from "expo-image-picker";
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { actOnCoordinationRequest, loadCoordinationRequests, uploadCoordinationEvidence, type LocalImage } from "./api";
+import { PrimaryButton, SecondaryButton } from "./components";
 import { Shell } from "./screens";
 import { useResponsiveMetrics } from "./screen-shell";
 import { internal as colors } from "./theme";
 
-type Direction = "received" | "sent";
-
-const responseActions: Array<{ label: string; response: DependencyResponse }> = [
-  { label: "Assign to me", response: { action: "ASSIGN_ENGINEER" } },
-  { label: "Unavailable", response: { action: "DECLINE_UNAVAILABLE" } },
-  { label: "Not Our Scope", response: { action: "DECLINE_NOT_CONCERNED" } },
-];
-
-function countdown(deadline: string | Date, now: number): string {
-  const remaining = new Date(deadline).getTime() - now;
-  if (remaining <= 0) return "Response overdue";
-  const hours = Math.floor(remaining / 3_600_000);
-  const minutes = Math.floor((remaining % 3_600_000) / 60_000);
-  return `${hours}h ${minutes}m remaining`;
+function label(value: string): string {
+  const normalized = value.replaceAll("_", " ").replaceAll("-", " ").toLowerCase();
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-function DependencyCard({ dependency, direction, currentUserId, now, busy, onRespond }: {
-  dependency: DependencyListItem;
-  direction: Direction;
-  currentUserId: string;
-  now: number;
-  busy: boolean;
-  onRespond: (response: DependencyResponse) => void;
-}) {
-  const agency = direction === "received" ? dependency.requestingAgency : dependency.respondingAgency;
-  const pending = dependency.state === "PENDING_RESPONSE";
-  const assignedToMe = direction === "received" && dependency.state === "ASSIGNED" && dependency.assignedEngineer?.id === currentUserId;
+function localImage(asset: ImagePicker.ImagePickerAsset): LocalImage {
+  const contentType = asset.mimeType === "image/png" || asset.mimeType === "image/webp" || asset.mimeType === "image/heic" ? asset.mimeType : "image/jpeg";
+  return { uri: asset.uri, fileName: asset.fileName ?? `coordination-${Date.now()}.${contentType === "image/jpeg" ? "jpg" : contentType.split("/")[1]}`, contentType };
+}
 
+function CoordinationTask({ item, expanded, busy, onToggle, onRefresh }: {
+  item: CoordinationRequest;
+  expanded: boolean;
+  busy: boolean;
+  onToggle: () => void;
+  onRefresh: () => Promise<void>;
+}) {
+  const [notes, setNotes] = useState("");
+  const [evidence, setEvidence] = useState<LocalImage>();
+  const [submitting, setSubmitting] = useState(false);
+
+  const pickEvidence = async () => {
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.85 });
+    if (!result.canceled && result.assets[0]) setEvidence(localImage(result.assets[0]));
+  };
+
+  const perform = async (action: CoordinationAction) => {
+    setSubmitting(true);
+    try {
+      const entryId = await actOnCoordinationRequest(item.id, action);
+      if (evidence) await uploadCoordinationEvidence(item.id, entryId, evidence);
+      setNotes("");
+      setEvidence(undefined);
+      await onRefresh();
+    } catch (caught) {
+      Alert.alert("Couldn’t update coordination task", caught instanceof Error ? caught.message : "Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const location = item.project.locationLabel ?? item.project.ticket?.address ?? item.project.ward?.name ?? "Location not recorded";
   return <View style={styles.card}>
-    <View style={styles.cardTop}>
-      <View style={styles.cardHeading}><Text style={styles.ticket}>{dependency.project.ticket?.id ?? dependency.project.id}</Text><Text style={styles.title}>{agency.name}</Text></View>
-      <Text style={[styles.badge, dependency.state === "ESCALATED" && styles.badgeWarning]}>{dependency.state.replaceAll("_", " ")}</Text>
-    </View>
-    <Text style={styles.requirement}>{dependency.requirement}</Text>
-    <Text style={styles.meta}>Deadline {new Date(dependency.deadline).toLocaleString()}</Text>
-    {pending ? <Text style={styles.countdown}>{countdown(dependency.deadline, now)}</Text> : null}
-    {direction === "received" && pending ? <View accessibilityLabel="Dependency response choices" style={styles.actions}>
-      {responseActions.map((item) => <Pressable accessibilityRole="button" disabled={busy} key={item.label} onPress={() => onRespond(item.response)} style={({ pressed }) => [styles.action, pressed && styles.pressed, busy && styles.disabled]}><Text style={styles.actionLabel}>{item.label}</Text></Pressable>)}
+    <Pressable accessibilityRole="button" onPress={onToggle} style={styles.cardPressable}>
+      <View style={styles.cardHeader}><View style={styles.cardTitleGroup}><Text style={styles.kicker}>{label(item.requestTypeKey)}</Text><Text style={styles.title}>{item.subject}</Text></View><Text style={styles.badge}>{label(item.status)}</Text></View>
+      <Text style={styles.body}>{item.details}</Text>
+      <View style={styles.metadata}><Text style={styles.meta}>{item.requestingAgency.name} → {item.respondingAgency.name}</Text><Text style={styles.meta}>{item.project.referenceNumber} · {location}</Text><Text style={styles.deadline}>Response due {new Date(item.responseDeadline).toLocaleString()}</Text></View>
+      <Text style={styles.openLabel}>{expanded ? "Hide work record" : "Open work record"}</Text>
+    </Pressable>
+    {expanded ? <View style={styles.expanded}>
+      <Text style={styles.sectionLabel}>Conversation and activity</Text>
+      {item.entries.map((entry) => <View key={entry.id} style={styles.entry}><View style={styles.entryHeader}><Text style={styles.entrySender}>{entry.sender.email ?? label(entry.sender.role)}</Text><Text style={styles.entryTime}>{new Date(entry.createdAt).toLocaleString()}</Text></View><Text style={styles.entryAction}>{label(entry.action)}</Text>{entry.message ? <Text style={styles.entryMessage}>{entry.message}</Text> : null}{entry.attachments.map((attachment) => <Text key={attachment.id} style={styles.attachment}>Evidence · {attachment.fileName}</Text>)}</View>)}
+      {!(["COMPLETED", "CLOSED", "REJECTED"] as string[]).includes(item.status) ? <View style={styles.actionPanel}><Text style={styles.sectionLabel}>Field update</Text><TextInput accessibilityLabel="Inspection or coordination notes" multiline onChangeText={setNotes} placeholder="Add inspection findings, response, or completion notes" placeholderTextColor={colors.muted} style={styles.input} value={notes} /><SecondaryButton disabled={submitting} onPress={() => void pickEvidence()}>{evidence ? "Evidence photo ready" : "Take evidence photo"}</SecondaryButton><View style={styles.actionStack}><SecondaryButton disabled={submitting} onPress={() => void perform({ action: "START_PROGRESS", ...(notes.trim() ? { message: notes.trim() } : {}) })}>Start work</SecondaryButton><SecondaryButton disabled={busy || submitting || notes.trim().length < 2 || item.inspectionNeeded && !evidence} onPress={() => void perform({ action: "INSPECTION_COMPLETE", notes: notes.trim() })}>Mark inspection complete</SecondaryButton><PrimaryButton disabled={busy || submitting || notes.trim().length < 2} onPress={() => void perform({ action: "COMPLETE", notes: notes.trim() })}>Mark requested action completed</PrimaryButton></View>{item.inspectionNeeded ? <Text style={styles.help}>Inspection completion requires notes and an evidence photo.</Text> : null}</View> : null}
     </View> : null}
-    {assignedToMe ? <Pressable accessibilityRole="button" disabled={busy} onPress={() => onRespond({ action: "FULFILL" })} style={[styles.fulfill, busy && styles.disabled]}><Text style={styles.fulfillLabel}>Mark my portion complete</Text></Pressable> : null}
   </View>;
 }
 
-export function EngineerDependenciesApp({ currentUserId, onBack }: { currentUserId: string; onBack?: () => void }) {
-  const [direction, setDirection] = useState<Direction>("received");
-  const [dependencies, setDependencies] = useState<DependencyListItem[]>([]);
+export function EngineerDependenciesApp({ onBack }: { currentUserId: string; onBack?: () => void }) {
+  const [requests, setRequests] = useState<CoordinationRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
-  const [busyId, setBusyId] = useState<string>();
-  const [now, setNow] = useState(Date.now());
+  const [expandedId, setExpandedId] = useState<string>();
   const { horizontalPadding } = useResponsiveMetrics();
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(timer);
-  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    setError(undefined);
-    try { setDependencies(await loadDependencies(direction)); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "Could not load dependencies"); }
+    try { setRequests(await loadCoordinationRequests()); setError(undefined); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Could not load coordination tasks"); }
     finally { setLoading(false); }
-  }, [direction]);
-
+  }, []);
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const visibleCount = dependencies.length;
-
-  const respond = async (dependencyId: string, response: DependencyResponse) => {
-    setBusyId(dependencyId);
-    try {
-      await respondToDependency(dependencyId, response);
-      await refresh();
-    } catch (caught) {
-      Alert.alert("Couldn’t update dependency", caught instanceof Error ? caught.message : "Please try again.");
-    } finally { setBusyId(undefined); }
-  };
-
-  return <Shell><View style={[styles.screen, { paddingHorizontal: horizontalPadding }]}>
-    <View style={styles.header}>{onBack ? <Pressable accessibilityRole="button" onPress={onBack}><Text style={styles.back}>‹ Back</Text></Pressable> : null}<Text style={styles.eyebrow}>Executive Engineer</Text><Text style={styles.heading}>Dependencies</Text><Text style={styles.intro}>Coordinate work requested by your agency and partner agencies.</Text></View>
-    <View style={styles.tabs}>
-      {(["received", "sent"] as const).map((item) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: direction === item }} key={item} onPress={() => setDirection(item)} style={[styles.tab, direction === item && styles.tabActive]}><Text style={[styles.tabLabel, direction === item && styles.tabLabelActive]}>{item === "received" ? "Inbox" : "Outbox"}{direction === item ? ` (${visibleCount})` : ""}</Text></Pressable>)}
-    </View>
+  return <Shell><ScrollView contentContainerStyle={[styles.screen, { paddingHorizontal: horizontalPadding }]} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void refresh()} tintColor={colors.primary} />}>
+    <View style={styles.header}>{onBack ? <Pressable accessibilityRole="button" onPress={onBack}><Text style={styles.back}>‹ Back</Text></Pressable> : null}<Text style={styles.eyebrow}>Executive Engineer</Text><Text style={styles.heading}>Coordination tasks</Text><Text style={styles.intro}>Assigned inspections and inter-agency actions remain linked to their civic work record.</Text></View>
     {error ? <Text style={styles.error}>{error}</Text> : null}
-    {loading && dependencies.length === 0 ? <ActivityIndicator color={colors.primary} /> : <FlatList data={dependencies} keyExtractor={(item) => item.id} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void refresh()} tintColor={colors.primary} />} contentContainerStyle={styles.list} ListEmptyComponent={<Text style={styles.empty}>No {direction} dependency requests.</Text>} renderItem={({ item }) => <DependencyCard dependency={item} direction={direction} currentUserId={currentUserId} now={now} busy={busyId === item.id} onRespond={(response) => void respond(item.id, response)} />} />}
-  </View></Shell>;
+    {loading && requests.length === 0 ? <ActivityIndicator color={colors.primary} /> : null}
+    {requests.map((item) => <CoordinationTask busy={loading} expanded={expandedId === item.id} item={item} key={item.id} onRefresh={refresh} onToggle={() => setExpandedId((current) => current === item.id ? undefined : item.id)} />)}
+    {!loading && requests.length === 0 ? <View style={styles.empty}><Text style={styles.emptyTitle}>No assigned coordination tasks.</Text><Text style={styles.meta}>Tasks appear here after your agency’s Project Head assigns you.</Text></View> : null}
+  </ScrollView></Shell>;
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, gap: 16, padding: 20, paddingTop: 28 },
-  header: { gap: 6 },
+  screen: { gap: 14, paddingBottom: 40, paddingTop: 28 },
+  header: { gap: 6, marginBottom: 4 },
   back: { color: colors.primary, fontSize: 14, fontWeight: "500", marginBottom: 8 },
-  eyebrow: { color: colors.primary, fontSize: 12, fontWeight: "500" },
-  heading: { color: colors.ink, fontSize: 22, fontWeight: "500" },
+  eyebrow: { color: colors.primary, fontSize: 12, fontWeight: "600" },
+  heading: { color: colors.ink, fontSize: 24, fontWeight: "600" },
   intro: { color: colors.muted, fontSize: 15, lineHeight: 22 },
-  tabs: { backgroundColor: colors.surface, borderRadius: 14, flexDirection: "row", padding: 4 },
-  tab: { alignItems: "center", borderRadius: 11, flex: 1, paddingVertical: 11 },
-  tabActive: { backgroundColor: colors.primary },
-  tabLabel: { color: colors.muted, fontSize: 14, fontWeight: "500" },
-  tabLabelActive: { color: "white" },
-  list: { gap: 12, paddingBottom: 36 },
-  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 12, borderWidth: 1, gap: 12, padding: 17 },
-  cardTop: { alignItems: "flex-start", flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "space-between" },
-  cardHeading: { flex: 1, gap: 3 },
-  ticket: { color: colors.primary, fontSize: 12, fontWeight: "500" },
-  title: { color: colors.ink, fontSize: 16, fontWeight: "500" },
-  badge: { backgroundColor: colors.infoBg, borderRadius: 20, color: colors.infoText, fontSize: 12, fontWeight: "500", overflow: "hidden", paddingHorizontal: 8, paddingVertical: 5 },
-  badgeWarning: { backgroundColor: colors.warningBg, color: colors.warningText },
-  requirement: { color: colors.ink, fontSize: 15, lineHeight: 22 },
-  meta: { color: colors.muted, fontSize: 12 },
-  countdown: { color: colors.warningText, fontSize: 13, fontWeight: "500" },
-  actions: { gap: 8 },
-  action: { alignItems: "center", borderColor: colors.primary, borderRadius: 12, borderWidth: 1, padding: 11 },
-  actionLabel: { color: colors.primary, fontSize: 14, fontWeight: "500" },
-  fulfill: { alignItems: "center", backgroundColor: colors.primary, borderRadius: 12, padding: 12 },
-  fulfillLabel: { color: colors.surface, fontSize: 14, fontWeight: "500" },
-  pressed: { opacity: 0.75 },
-  disabled: { opacity: 0.5 },
+  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, overflow: "hidden" },
+  cardPressable: { gap: 12, padding: 17 },
+  cardHeader: { alignItems: "flex-start", flexDirection: "row", gap: 10, justifyContent: "space-between" },
+  cardTitleGroup: { flex: 1, gap: 4 },
+  kicker: { color: colors.primary, fontSize: 11, fontWeight: "600" },
+  title: { color: colors.ink, fontSize: 17, fontWeight: "600", lineHeight: 23 },
+  badge: { backgroundColor: colors.infoBg, borderRadius: 20, color: colors.infoText, fontSize: 11, fontWeight: "600", overflow: "hidden", paddingHorizontal: 8, paddingVertical: 5 },
+  body: { color: colors.ink, fontSize: 14, lineHeight: 21 },
+  metadata: { backgroundColor: colors.canvas, borderRadius: 10, gap: 4, padding: 11 },
+  meta: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+  deadline: { color: colors.warningText, fontSize: 12, fontWeight: "600" },
+  openLabel: { color: colors.primary, fontSize: 13, fontWeight: "600" },
+  expanded: { borderTopColor: colors.border, borderTopWidth: 1, gap: 12, padding: 17 },
+  sectionLabel: { color: colors.ink, fontSize: 13, fontWeight: "600" },
+  entry: { borderLeftColor: colors.primary, borderLeftWidth: 2, gap: 5, paddingLeft: 12, paddingVertical: 5 },
+  entryHeader: { flexDirection: "row", gap: 8, justifyContent: "space-between" },
+  entrySender: { color: colors.ink, flex: 1, fontSize: 12, fontWeight: "600" },
+  entryTime: { color: colors.muted, fontSize: 10 },
+  entryAction: { color: colors.primary, fontSize: 10, fontWeight: "600" },
+  entryMessage: { color: colors.ink, fontSize: 13, lineHeight: 19 },
+  attachment: { backgroundColor: colors.canvas, borderRadius: 8, color: colors.primary, fontSize: 11, padding: 8 },
+  actionPanel: { borderTopColor: colors.border, borderTopWidth: 1, gap: 10, paddingTop: 14 },
+  input: { backgroundColor: colors.canvas, borderColor: colors.border, borderRadius: 11, borderWidth: 1, color: colors.ink, minHeight: 96, padding: 12, textAlignVertical: "top" },
+  actionStack: { gap: 8 },
+  help: { color: colors.muted, fontSize: 11, lineHeight: 17 },
   error: { color: colors.danger, fontSize: 14 },
-  empty: { color: colors.muted, fontSize: 16, paddingVertical: 40, textAlign: "center" },
+  empty: { alignItems: "center", gap: 7, paddingVertical: 42 },
+  emptyTitle: { color: colors.ink, fontSize: 16, fontWeight: "600" },
 });

@@ -4,6 +4,10 @@ import {
   civicWorkCalendarQuerySchema,
   civicWorkGeometrySchema,
   civicWorkLedgerQuerySchema,
+  coordinationActionSchema,
+  coordinationAttachmentRequestSchema,
+  coordinationStatusSchema,
+  createCoordinationDraftSchema,
   createPlannedCivicWorkSchema,
   createTicketSchema,
   internalLoginSchema,
@@ -112,5 +116,27 @@ describe("shared schemas", () => {
     expect(civicWorkCalendarQuerySchema.safeParse({ ...dates, wardId: "10000000-0000-4000-8000-000000000004", dateTo: "2028-01-02T00:00:00.000Z" }).success).toBe(false);
     expect(civicWorkLedgerQuerySchema.safeParse({}).success).toBe(false);
     expect(civicWorkLedgerQuerySchema.safeParse({ roadSegmentId: "80000000-0000-4000-8000-000000000001" }).success).toBe(true);
+  });
+
+  it("validates structured coordination lifecycle, deadlines, and attachment bounds", () => {
+    expect(coordinationStatusSchema.options).toEqual([
+      "DRAFT", "SENT", "ACKNOWLEDGED", "CLARIFICATION_REQUESTED", "INSPECTION_REQUIRED",
+      "ENGINEER_ASSIGNED", "ACCEPTED", "IN_PROGRESS", "COMPLETED", "CLOSED", "REJECTED",
+    ]);
+    const request = {
+      respondingAgencyId: "20000000-0000-4000-8000-000000000001",
+      requestTypeKey: "utility-clearance",
+      subject: "Confirm utility clearance",
+      details: "Confirm the utility alignment before the planned excavation begins.",
+      initialMessage: "Please review the attached inspection record.",
+      responseDeadline: "2026-09-03T10:00:00.000Z",
+      inspectionNeeded: true,
+      engineerRequired: true,
+    };
+    expect(createCoordinationDraftSchema.safeParse(request).success).toBe(true);
+    expect(createCoordinationDraftSchema.safeParse({ ...request, requestTypeKey: "Utility Clearance" }).success).toBe(false);
+    expect(coordinationActionSchema.safeParse({ action: "REJECT" }).success).toBe(false);
+    expect(coordinationActionSchema.safeParse({ action: "REJECT", reason: "No safe shutdown window is available." }).success).toBe(true);
+    expect(coordinationAttachmentRequestSchema.safeParse({ action: "presign", entryId: "50000000-0000-4000-8000-000000000001", fileName: "report.pdf", contentType: "application/pdf", sizeBytes: 21 * 1024 * 1024 }).success).toBe(false);
   });
 });

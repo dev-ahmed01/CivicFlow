@@ -118,6 +118,7 @@ const adminConfigs = [
   { key: "conflict.radius_meters", value: 200, description: "Default generic project conflict radius" },
   { key: "road.category_id", value: categories[0].id, description: "Admin-configured category that enables Road-Cutting Intelligence" },
   { key: "road.repeated_excavation_days", value: 90, description: "Days after restoration during which a new excavation receives an advisory warning" },
+  { key: "coordination.request_types", value: ["utility-clearance", "dependency-request", "joint-inspection", "engineer-assistance", "document-information-request", "schedule-coordination", "road-cut-excavation-coordination", "other"], description: "Configurable structured request types for inter-agency coordination" },
 ] as const;
 
 // Part III §9.3 — deterministic, progressively farther Jayanagar citizens

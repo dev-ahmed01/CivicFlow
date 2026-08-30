@@ -738,6 +738,60 @@ body:not(:has(.portal-shell, .login-shell)) .cv-primary-button { background: var
 .work-ledger-events small { color: var(--cf-text-muted); font-size: 9px; }
 .work-ledger-events > li > span { background: #eef2ef; border-radius: 999px; color: #58685e; font-size: 8px; font-weight: 750; justify-self: start; padding: 4px 6px; text-transform: uppercase; }
 .work-ledger-events span[data-kind="coordination"] { background: #fff2dc; color: #8a5e12; }
+
+/* Phase 3 — structured inter-agency coordination workspace. */
+.coordination-composer { display: grid; gap: 22px; margin-bottom: 22px; }
+.coordination-form-heading { align-items: flex-start; display: flex; gap: 24px; justify-content: space-between; }
+.coordination-form-heading h2, .coordination-form-heading p { margin-bottom: 6px; }
+.coordination-form-grid { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.coordination-form-span { grid-column: 1 / -1; }
+.coordination-composer textarea { min-height: 110px; }
+.coordination-composer small, .coordination-action-form small { color: var(--cv-text-secondary); display: block; font-size: 11px; margin-top: 5px; }
+.coordination-checks { display: flex; flex-wrap: wrap; gap: 22px; }
+.coordination-checks label { align-items: center; display: flex; gap: 8px; }
+.coordination-checks input { margin: 0; width: auto; }
+.coordination-filter { grid-template-columns: minmax(220px, 340px); }
+.coordination-request-list { display: grid; gap: 15px; }
+.coordination-request-card { background: var(--cv-surface); border: 1px solid var(--cv-border); border-radius: 16px; display: grid; gap: 26px; grid-template-columns: minmax(0, 1fr) minmax(230px, 300px); padding: 24px; }
+.coordination-card-kicker { align-items: center; display: flex; gap: 10px; }
+.coordination-card-kicker > span:first-child { color: var(--cv-text-secondary); font-size: 12px; font-weight: 650; }
+.coordination-status { background: var(--cv-info-bg); border-radius: 999px; color: var(--cv-info-text); display: inline-flex; font-size: 11px; font-weight: 700; padding: 6px 9px; }
+.coordination-status.status-clarification_requested, .coordination-status.status-inspection_required, .coordination-status.status-rejected { background: var(--cv-warning-bg); color: var(--cv-warning-text); }
+.coordination-status.status-completed, .coordination-status.status-closed, .coordination-status.status-accepted { background: var(--cv-success-bg); color: var(--cv-success-text); }
+.coordination-request-main h2 { font-size: 19px; margin: 14px 0 8px; }
+.coordination-request-main > p { color: var(--cv-text-secondary); line-height: 1.55; margin: 0; }
+.coordination-request-main dl { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 20px 0 0; }
+.coordination-request-main dt, .coordination-request-card aside span { color: var(--cv-text-secondary); font-size: 11px; }
+.coordination-request-main dd { font-size: 12px; font-weight: 650; margin: 4px 0 0; }
+.coordination-request-card aside { align-content: start; background: var(--cv-surface-alt); border-radius: 12px; display: grid; gap: 14px; padding: 16px; }
+.coordination-request-card aside > div { display: grid; gap: 3px; }
+.coordination-request-card aside strong { font-size: 12px; }
+.coordination-request-card .portal-primary-button { color: white; text-align: center; text-decoration: none; }
+.coordination-layout { align-items: start; display: grid; gap: 22px; grid-template-columns: minmax(0, 1fr) minmax(300px, 370px); }
+.coordination-thread-column { display: grid; gap: 18px; }
+.coordination-request-brief h2 { margin-bottom: 12px; }
+.coordination-thread .panel-title-row > span { color: var(--cv-text-secondary); font-size: 12px; }
+.coordination-thread-list { display: grid; margin-top: 18px; }
+.coordination-thread-entry { display: grid; gap: 14px; grid-template-columns: 12px minmax(0, 1fr); padding-bottom: 24px; position: relative; }
+.coordination-thread-entry:not(:last-child)::before { background: var(--cv-border); content: ""; height: calc(100% - 8px); left: 5px; position: absolute; top: 12px; width: 2px; }
+.coordination-thread-marker { background: var(--primary); border: 3px solid var(--cv-surface); border-radius: 50%; box-shadow: 0 0 0 1px var(--cv-border); height: 12px; margin-top: 4px; position: relative; width: 12px; z-index: 1; }
+.coordination-thread-entry header { align-items: flex-start; display: flex; gap: 18px; justify-content: space-between; }
+.coordination-thread-entry header > div { display: grid; gap: 3px; }
+.coordination-thread-entry header span, .coordination-thread-entry time { color: var(--cv-text-secondary); font-size: 11px; }
+.coordination-thread-entry > div:last-child > p { line-height: 1.55; }
+.coordination-entry-action { color: var(--primary); font-size: 11px; font-weight: 700; letter-spacing: .02em; margin: 8px 0; text-transform: uppercase; }
+.coordination-attachments { display: grid; gap: 7px; margin-top: 10px; }
+.coordination-attachments a { background: var(--cv-surface-alt); border: 1px solid var(--cv-border); border-radius: 10px; display: grid; gap: 2px; padding: 10px 12px; text-decoration: none; }
+.coordination-attachments small { color: var(--cv-text-secondary); }
+.coordination-action-form { display: grid; gap: 15px; }
+.coordination-action-form textarea { min-height: 100px; }
+.coordination-metadata { position: sticky; top: 24px; }
+.coordination-metadata dl { display: grid; margin: 0; }
+.coordination-metadata dl > div { border-top: 1px solid var(--cv-border); display: grid; gap: 5px; padding: 12px 0; }
+.coordination-metadata dt { color: var(--cv-text-secondary); font-size: 11px; }
+.coordination-metadata dd { font-size: 13px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 1000px) { .coordination-layout, .coordination-request-card { grid-template-columns: 1fr; }.coordination-metadata { position: static; }.coordination-request-main dl { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .coordination-form-grid { grid-template-columns: 1fr; }.coordination-form-span { grid-column: auto; }.coordination-form-heading { flex-direction: column; } }
 .work-ledger-events span[data-kind="evidence"] { background: #e8f1fa; color: #1c6099; }
 .work-ledger-events strong { font-size: 11px; }
 .work-ledger-events p { color: var(--cf-text-muted); font-size: 10px; line-height: 1.45; margin: 3px 0 0; }

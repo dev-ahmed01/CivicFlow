@@ -99,6 +99,20 @@ export const dependencyStateSchema = z.enum([
   "FULFILLED",
 ]);
 
+export const coordinationStatusSchema = z.enum([
+  "DRAFT",
+  "SENT",
+  "ACKNOWLEDGED",
+  "CLARIFICATION_REQUESTED",
+  "INSPECTION_REQUIRED",
+  "ENGINEER_ASSIGNED",
+  "ACCEPTED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "CLOSED",
+  "REJECTED",
+]);
+
 export const validationVoteSchema = z.enum(["CONFIRM", "NOT_SURE", "REJECT"]);
 export const interventionPurposeSchema = z.enum(["pipeline", "cable", "OFC", "resurfacing", "other"]);
 export const roadConflictTypeSchema = z.enum([
@@ -551,6 +565,46 @@ export const dependencyResponseSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("FULFILL") }),
 ]);
 
+const coordinationMessageSchema = z.string().trim().min(2).max(5000);
+
+export const createCoordinationDraftSchema = z.object({
+  respondingAgencyId: idSchema,
+  requestTypeKey: z.string().trim().min(2).max(80).regex(/^[a-z0-9-]+$/),
+  subject: z.string().trim().min(5).max(180),
+  details: z.string().trim().min(10).max(10_000),
+  initialMessage: coordinationMessageSchema,
+  responseDeadline: z.string().datetime(),
+  inspectionNeeded: z.boolean().default(false),
+  engineerRequired: z.boolean().default(false),
+});
+
+export const coordinationActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("SEND") }),
+  z.object({ action: z.literal("ACKNOWLEDGE"), message: coordinationMessageSchema.optional() }),
+  z.object({ action: z.literal("REPLY"), message: coordinationMessageSchema }),
+  z.object({ action: z.literal("REQUEST_CLARIFICATION"), message: coordinationMessageSchema }),
+  z.object({ action: z.literal("REQUEST_INSPECTION"), message: coordinationMessageSchema }),
+  z.object({ action: z.literal("ASSIGN_ENGINEER"), engineerId: idSchema, message: coordinationMessageSchema.optional() }),
+  z.object({ action: z.literal("PROPOSE_DATETIME"), proposedAt: z.string().datetime(), message: coordinationMessageSchema.optional() }),
+  z.object({ action: z.literal("ACCEPT"), message: coordinationMessageSchema.optional() }),
+  z.object({ action: z.literal("REJECT"), reason: coordinationMessageSchema }),
+  z.object({ action: z.literal("START_PROGRESS"), message: coordinationMessageSchema.optional() }),
+  z.object({ action: z.literal("INSPECTION_COMPLETE"), notes: coordinationMessageSchema }),
+  z.object({ action: z.literal("COMPLETE"), notes: coordinationMessageSchema }),
+  z.object({ action: z.literal("CLOSE"), message: coordinationMessageSchema.optional() }),
+]);
+
+export const coordinationAttachmentRequestSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("presign"),
+    entryId: idSchema,
+    fileName: z.string().trim().min(1).max(200),
+    contentType: z.enum(["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"]),
+    sizeBytes: z.number().int().positive().max(20 * 1024 * 1024),
+  }),
+  z.object({ action: z.literal("complete"), attachmentId: idSchema }),
+]);
+
 export const updateCategoryRoutingSchema = z.object({ primaryAgencyId: idSchema });
 export const updateRoutingRulesSchema = z.object({ dependencyAgencyIds: z.array(idSchema).max(50) });
 
@@ -879,6 +933,58 @@ export const dependencyListItemSchema = dependencySchema.extend({
   grievance: grievanceSummarySchema.pick({ id: true, status: true, reason: true, createdAt: true }).nullable(),
 });
 
+export const coordinationAttachmentSchema = z.object({
+  id: idSchema,
+  fileName: z.string(),
+  contentType: z.string(),
+  sizeBytes: z.number().int().nullable(),
+  url: z.string().url(),
+  uploadedAt: dateSchema,
+});
+
+export const coordinationEntrySchema = z.object({
+  id: idSchema,
+  action: z.string(),
+  message: z.string().nullable(),
+  fromStatus: coordinationStatusSchema.nullable(),
+  toStatus: coordinationStatusSchema.nullable(),
+  createdAt: dateSchema,
+  sender: z.object({ id: idSchema, email: z.string().email().nullable(), role: userRoleSchema }),
+  senderAgency: agencySchema,
+  attachments: z.array(coordinationAttachmentSchema),
+});
+
+export const coordinationRequestSchema = z.object({
+  id: idSchema,
+  projectId: idSchema,
+  dependencyId: idSchema.nullable(),
+  requestTypeKey: z.string(),
+  subject: z.string(),
+  details: z.string(),
+  responseDeadline: dateSchema,
+  inspectionNeeded: z.boolean(),
+  engineerRequired: z.boolean(),
+  proposedAt: dateSchema.nullable(),
+  inspectionCompletedAt: dateSchema.nullable(),
+  status: coordinationStatusSchema,
+  sentAt: dateSchema.nullable(),
+  closedAt: dateSchema.nullable(),
+  createdAt: dateSchema,
+  updatedAt: dateSchema,
+  requestingAgency: agencySchema,
+  respondingAgency: agencySchema,
+  assignedEngineer: engineerSummarySchema.nullable(),
+  project: z.object({
+    id: idSchema,
+    referenceNumber: z.string(),
+    title: z.string(),
+    locationLabel: z.string().nullable(),
+    ticket: z.object({ id: idSchema, title: z.string(), address: z.string() }).nullable(),
+    ward: z.object({ id: idSchema, name: z.string() }).nullable(),
+  }),
+  entries: z.array(coordinationEntrySchema),
+});
+
 export const engineerProjectDetailSchema = projectListItemSchema.extend({
   editable: z.boolean(),
   ticket: z.object({
@@ -1132,6 +1238,7 @@ export type CivicWorkOrigin = z.infer<typeof civicWorkOriginSchema>;
 export type CivicWorkPriority = z.infer<typeof civicWorkPrioritySchema>;
 export type CivicWorkGeometry = z.infer<typeof civicWorkGeometrySchema>;
 export type DependencyState = z.infer<typeof dependencyStateSchema>;
+export type CoordinationStatus = z.infer<typeof coordinationStatusSchema>;
 export type ValidationVote = z.infer<typeof validationVoteSchema>;
 export type InterventionPurpose = z.infer<typeof interventionPurposeSchema>;
 export type RoadConflictType = z.infer<typeof roadConflictTypeSchema>;
@@ -1175,6 +1282,12 @@ export type Dependency = z.infer<typeof dependencySchema>;
 export type DependencyListItem = z.infer<typeof dependencyListItemSchema>;
 export type DependencyResponse = z.infer<typeof dependencyResponseSchema>;
 export type CreateDependencyRequests = z.infer<typeof createDependencyRequestsSchema>;
+export type CreateCoordinationDraft = z.infer<typeof createCoordinationDraftSchema>;
+export type CoordinationAction = z.infer<typeof coordinationActionSchema>;
+export type CoordinationAttachmentRequest = z.infer<typeof coordinationAttachmentRequestSchema>;
+export type CoordinationAttachment = z.infer<typeof coordinationAttachmentSchema>;
+export type CoordinationEntry = z.infer<typeof coordinationEntrySchema>;
+export type CoordinationRequest = z.infer<typeof coordinationRequestSchema>;
 export type RoadSegment = z.infer<typeof roadSegmentSchema>;
 export type Intervention = z.infer<typeof interventionSchema>;
 export type RoadSegmentSummary = z.infer<typeof roadSegmentSummarySchema>;
