@@ -30,6 +30,26 @@ export function PrimaryButton({ children, className = "", ...props }: ButtonHTML
   return <button className={`cv-primary-button ${className}`.trim()} {...props}>{children}</button>;
 }
 
+export function PageHeader({ eyebrow, title, description, action }: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  action?: ReactNode;
+}) {
+  return <header className="portal-heading"><div>{eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}<h1>{title}</h1>{description ? <p>{description}</p> : null}</div>{action}</header>;
+}
+
+export function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
+  return <div className="empty-state" role="status"><strong>{title}</strong><span>{description}</span>{action}</div>;
+}
+
+export function WorkTabs({ active }: { active: "intake" | "delivery" }) {
+  return <nav aria-label="Works views" className="portal-tabs">
+    <Link aria-current={active === "delivery" ? "page" : undefined} href="/project-head/projects">Delivery works</Link>
+    <Link aria-current={active === "intake" ? "page" : undefined} href="/project-head/tickets">Intake queue</Link>
+  </nav>;
+}
+
 export function ActionButton({ children, href, onClick, expanded, className = "" }: {
   children: ReactNode;
   href?: string;
@@ -37,7 +57,7 @@ export function ActionButton({ children, href, onClick, expanded, className = ""
   expanded?: boolean;
   className?: string;
 }) {
-  const content = <>{children}<span aria-hidden="true">→</span></>;
+  const content = <>{children}</>;
   const classes = `cf-action-button ${className}`.trim();
   return href
     ? <Link className={classes} href={href}>{content}</Link>

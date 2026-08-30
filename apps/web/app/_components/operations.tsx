@@ -19,8 +19,8 @@ export function NextActionButton({ children, href, onClick, busy = false, second
   secondary?: boolean;
 }) {
   const className = `next-action-button ${secondary ? "secondary" : "primary"}`;
-  if (href) return <Link className={className} href={href}>{children}<span aria-hidden="true">→</span></Link>;
-  return <button className={className} disabled={busy} onClick={onClick} type="button">{busy ? "Working…" : children}<span aria-hidden="true">→</span></button>;
+  if (href) return <Link className={className} href={href}>{children}</Link>;
+  return <button className={className} disabled={busy} onClick={onClick} type="button">{busy ? "Working…" : children}</button>;
 }
 
 export function ProjectActionCard({ project, action, children }: {

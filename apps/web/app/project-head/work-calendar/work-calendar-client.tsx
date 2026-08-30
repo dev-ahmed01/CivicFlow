@@ -173,7 +173,7 @@ export function WorkCalendarClient() {
 
   return <div className="work-calendar-page">
     <header className="work-calendar-heading">
-      <div><p className="eyebrow">Spatial coordination</p><h1>Civic work calendar</h1><p>See who is doing what, where and when—across past work, active delivery, and upcoming plans.</p></div>
+      <div><p className="eyebrow">Spatial coordination</p><h1>Map & calendar</h1><p>See who is doing what, where and when across past work, active delivery, and upcoming plans.</p></div>
       <div className="work-calendar-result"><strong>{resultTotal}</strong><span>works in view</span></div>
     </header>
 
@@ -226,7 +226,7 @@ export function WorkCalendarClient() {
           </dl>
           {selected.description ? <div className="work-detail-scope"><h3>Work scope</h3><p>{selected.description}</p></div> : null}
           {selected.agency.id === ownAgencyId ? <a className="work-detail-link" href={`/project-head/projects/${selected.id}`}>Open project record →</a> : <p className="work-detail-readonly">Cross-agency record · read only</p>}
-        </> : <div className="work-detail-placeholder"><span aria-hidden="true">⌖</span><h2>Select a civic work</h2><p>Choose a mapped work or timeline row to inspect agency, timing, status, evidence, and coordination state.</p></div>}
+        </> : <div className="work-detail-placeholder"><h2>Select a civic work</h2><p>Choose a mapped work or timeline row to inspect agency, timing, status, evidence, and coordination state.</p></div>}
       </aside>
     </div>}
   </div>;

@@ -1,81 +1,64 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
-import type { PaginationMeta, ProjectHeadDashboardCounts } from "@civicos/shared";
-import { ConflictIndicator } from "../_components/operations";
+import { useCallback, useMemo, useState } from "react";
+import type { PaginationMeta, ProjectHeadDashboardCounts, ProjectListItem } from "@civicos/shared";
+import { EmptyState, PageHeader, PortalStatePill, relativeDate } from "../_components/ui";
 import { usePortalPolling } from "../_lib/portal-refresh";
 import { apiFetch } from "./_lib/api";
 
 type DashboardResponse = {
   agency: { id: string; name: string };
   counts: ProjectHeadDashboardCounts;
-  performance: {
-    ticketsResolved: number;
-    resolutionRatePercent: number;
-    averageInspectionHours: number | null;
-    dependencyEscalationRatePercent: number;
-    reworkRatePercent: number;
-    roadConflicts: number;
-    simulatedRestorationCostSaved: { amountInr: number; label: "Simulated/Illustrative" };
-  };
+  performance: { roadConflicts: number; simulatedRestorationCostSaved: { amountInr: number; label: "Simulated/Illustrative" } };
 };
+
+type AttentionRow = { label: string; count: number; context: string; href: string; priority: number };
 
 export default function ProjectHeadDashboardPage() {
   const [data, setData] = useState<DashboardResponse>();
+  const [recent, setRecent] = useState<ProjectListItem[]>([]);
   const [workflowCounts, setWorkflowCounts] = useState({ readyToCreate: 0, readyToAssign: 0, awaitingVerification: 0 });
   const [error, setError] = useState<string>();
   const load = useCallback(async () => {
     try {
-      const [dashboard, readyToCreate, readyToAssign, awaitingVerification] = await Promise.all([
+      const [dashboard, readyToCreate, readyToAssign, awaitingVerification, projects] = await Promise.all([
         apiFetch<DashboardResponse>("/project-head/dashboard"),
         apiFetch<{ pagination: PaginationMeta }>("/tickets?status=INSPECTION_COMPLETE&limit=1"),
         apiFetch<{ pagination: PaginationMeta }>("/projects?status=CREATED&limit=1"),
         apiFetch<{ pagination: PaginationMeta }>("/projects?status=AWAITING_VERIFICATION&limit=1"),
+        apiFetch<{ projects: ProjectListItem[] }>("/projects?limit=6"),
       ]);
       setData(dashboard);
-      setWorkflowCounts({
-        readyToCreate: readyToCreate.pagination.total,
-        readyToAssign: readyToAssign.pagination.total,
-        awaitingVerification: awaitingVerification.pagination.total,
-      });
+      setRecent([...projects.projects].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()).slice(0, 5));
+      setWorkflowCounts({ readyToCreate: readyToCreate.pagination.total, readyToAssign: readyToAssign.pagination.total, awaitingVerification: awaitingVerification.pagination.total });
       setError(undefined);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load dashboard");
+      setError(reason instanceof Error ? reason.message : "Could not load the operations overview");
     }
   }, []);
   usePortalPolling(load);
 
-  const attentionItems = data ? [
-    { label: "Ready for inspection", action: "Inspect", value: data.counts.newValidatedTickets + data.counts.inspectionsDue, href: "/project-head/tickets" },
-    { label: "Ready to create project", action: "Create Project", value: workflowCounts.readyToCreate, href: "/project-head/projects" },
-    { label: "Ready to assign engineer", action: "Assign Engineer", value: workflowCounts.readyToAssign, href: "/project-head/projects" },
-    { label: "Pending dependencies", action: "Review Dependency", value: data.counts.dependencyRequestsPending, href: "/project-head/dependencies" },
-    { label: "Coordination warnings", action: "Review Coordination", value: data.performance.roadConflicts, href: "/project-head/projects" },
-    { label: "Awaiting verification", action: "Track Closure", value: workflowCounts.awaitingVerification, href: "/project-head/projects?status=AWAITING_VERIFICATION" },
-    { label: "Deadline attention", action: "Respond Now", value: data.counts.attentionActions, href: "/project-head/notifications" },
-    { label: "Open grievances", action: "Review Grievance", value: data.counts.openGrievances, href: "/project-head/grievances" },
-  ] : [];
+  const attention = useMemo<AttentionRow[]>(() => data ? [
+    { label: "Inspection queue", count: data.counts.newValidatedTickets + data.counts.inspectionsDue, context: "Validated tickets awaiting site review", href: "/project-head/tickets", priority: 1 },
+    { label: "Project setup", count: workflowCounts.readyToCreate + workflowCounts.readyToAssign, context: "Inspected work to create or assign", href: "/project-head/projects", priority: 2 },
+    { label: "Coordination", count: data.counts.dependencyRequestsPending, context: "Requests awaiting an agency response", href: "/project-head/dependencies", priority: 3 },
+    { label: "Conflicts", count: data.performance.roadConflicts, context: "Advisory overlaps requiring review", href: "/project-head/conflicts", priority: 4 },
+    { label: "Approaching deadlines", count: data.counts.attentionActions, context: "Workflow responses due or overdue", href: "/project-head/notifications", priority: 5 },
+    { label: "Closure checks", count: workflowCounts.awaitingVerification, context: "Completed work awaiting citizen verification", href: "/project-head/projects?status=AWAITING_VERIFICATION", priority: 6 },
+  ].filter((item) => item.count > 0).sort((left, right) => left.priority - right.priority) : [], [data, workflowCounts]);
 
   return <>
-    <header className="portal-heading"><div><p className="eyebrow">Operations overview</p><h1>{data?.agency.name ?? "Your agency"}</h1><p>Live workload across validation, inspection, dependencies, and delivery.</p></div><Link className="primary-link" href="/project-head/tickets/new">Create agency ticket</Link></header>
+    <PageHeader eyebrow="Operations overview" title={data?.agency.name ?? "Agency operations"} description="Work needing a decision, coordination, or deadline response." action={<Link className="primary-link" href="/project-head/tickets/new">Create agency ticket</Link>} />
     {error ? <p className="error" role="alert">{error}</p> : null}
-    {!data && !error ? <p className="portal-muted">Loading live counts…</p> : null}
-    <section className="attention-zone" aria-labelledby="attention-title">
-      <div className="zone-heading"><div><p className="eyebrow">Current workload</p><h2 id="attention-title">Needs your attention</h2></div>{data ? <ConflictIndicator count={data.performance.roadConflicts} href="/project-head/projects" /> : null}</div>
-      <div className="attention-grid operations-attention-grid">{attentionItems.map((item) => <Link className={`attention-card ${item.value > 0 ? "actionable" : "receded"}`} href={item.href} key={item.label}><span>{item.label}</span><strong>{item.value}</strong><small>{item.value > 0 ? `${item.action} →` : "Nothing waiting"}</small></Link>)}</div>
-    </section>
-    {data ? <section className="portal-panel analytics-summary delivery-performance" aria-labelledby="agency-performance-title">
-      <div><p className="eyebrow">Delivery performance</p><h2 id="agency-performance-title">Agency delivery indicators</h2><p>Lagging indicators from completed and in-progress work.</p></div>
-      <div className="analytics-mini-grid">
-        <div><span>Resolved</span><strong>{data.performance.ticketsResolved}</strong><small>{data.performance.resolutionRatePercent}% of created tickets</small></div>
-        <div><span>Avg. inspection time</span><strong>{data.performance.averageInspectionHours ?? "—"}</strong><small>hours from ticket creation</small></div>
-        <div><span>Dependency escalation</span><strong>{data.performance.dependencyEscalationRatePercent}%</strong><small>of dependency requests</small></div>
-        <div><span>Citizen “not resolved”</span><strong>{data.performance.reworkRatePercent}%</strong><small>completion responses</small></div>
-        <div><span>Road conflicts</span><strong>{data.performance.roadConflicts}</strong><small>recorded advisory detections</small></div>
-        <div className="simulated-metric"><span>Restoration cost saved</span><strong>₹{data.performance.simulatedRestorationCostSaved.amountInr.toLocaleString("en-IN")}</strong><small>{data.performance.simulatedRestorationCostSaved.label}</small></div>
-      </div>
-    </section> : null}
-    <section className="portal-panel quick-actions"><div><p className="eyebrow">Next actions</p><h2>Keep work moving</h2></div><div><Link href="/project-head/tickets">Review validated queue</Link><Link href="/project-head/projects">Track active projects</Link></div></section>
+    {!data && !error ? <p className="portal-muted" role="status">Loading live operations…</p> : null}
+    {data ? <div className="overview-layout">
+      <section className="operations-list" aria-labelledby="attention-title">
+        <header><div><p className="eyebrow">Today</p><h2 id="attention-title">Requires attention</h2></div><span>{attention.reduce((total, item) => total + item.count, 0)} open items</span></header>
+        {attention.length ? <ol>{attention.map((item) => <li key={item.label}><div><strong>{item.label}</strong><span>{item.context}</span></div><b>{item.count}</b><Link href={item.href}>Review</Link></li>)}</ol> : <EmptyState title="No immediate actions" description="New assigned work and coordination requests will appear here." />}
+      </section>
+      <aside className="deadline-summary" aria-labelledby="deadline-title"><p className="eyebrow">Deadlines</p><h2 id="deadline-title">Response watch</h2><strong>{data.counts.attentionActions}</strong><p>workflow actions currently approaching or past their response deadline</p><Link href="/project-head/notifications">Open deadline updates</Link></aside>
+      <section className="recent-activity" aria-labelledby="activity-title"><header><div><p className="eyebrow">Execution</p><h2 id="activity-title">Recent work activity</h2></div><Link href="/project-head/projects">View all works</Link></header>{recent.length ? <div className="table-scroll"><table><thead><tr><th>Work</th><th>Status</th><th>Responsible</th><th>Last updated</th></tr></thead><tbody>{recent.map((project) => <tr key={project.id}><td><Link href={`/project-head/projects/${project.id}`}><strong>{project.ticket?.title ?? project.title}</strong><small>{project.ticket?.ward.name ?? "Location pending"}</small></Link></td><td><PortalStatePill state={project.state} /></td><td>{project.engineer?.email ?? "Unassigned"}</td><td>{relativeDate(project.updatedAt)}</td></tr>)}</tbody></table></div> : <EmptyState title="No recent execution activity" description="Created and assigned works will be recorded here." />}</section>
+    </div> : null}
   </>;
 }
