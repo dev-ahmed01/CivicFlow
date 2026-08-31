@@ -118,9 +118,8 @@ async function requestForActor(requestId: string, request: Request) {
 
 export function createCoordinationRouter(storage: ImageStorage): Router {
   const router = Router();
-  router.use(requireAuth, requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), requirePasswordResetComplete);
 
-  router.get("/coordination-options", asyncRoute(async (request, response) => {
+  router.get("/coordination-options", requireAuth, requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
     const ownAgencyId = agencyId(request);
     const [requestTypes, agencies] = await Promise.all([
       coordinationRequestTypes(),
@@ -129,7 +128,7 @@ export function createCoordinationRouter(storage: ImageStorage): Router {
     response.json({ requestTypes, agencies });
   }));
 
-  router.get("/projects/:id/coordination-conflicts", asyncRoute(async (request, response) => {
+  router.get("/projects/:id/coordination-conflicts", requireAuth, requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
     const scopedAgencyId = agencyId(request);
     const project = await prisma.project.findFirst({
       where: {
@@ -146,7 +145,7 @@ export function createCoordinationRouter(storage: ImageStorage): Router {
     response.json({ conflicts: await coordinationConflictsForProject(prisma, project.id) });
   }));
 
-  router.post("/projects/:id/coordination-requests", requireRole(UserRole.PROJECT_HEAD), asyncRoute(async (request, response) => {
+  router.post("/projects/:id/coordination-requests", requireAuth, requireRole(UserRole.PROJECT_HEAD), requirePasswordResetComplete, asyncRoute(async (request, response) => {
     const parsed = createCoordinationDraftSchema.safeParse(request.body);
     if (!parsed.success) {
       response.status(400).json({ error: "Invalid coordination request", details: parsed.error.flatten() });
@@ -163,7 +162,7 @@ export function createCoordinationRouter(storage: ImageStorage): Router {
     }
   }));
 
-  router.get("/coordination-requests", asyncRoute(async (request, response) => {
+  router.get("/coordination-requests", requireAuth, requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
     const direction = dependencyDirectionSchema.safeParse(request.query.direction);
     const status = request.query.status ? coordinationStatusSchema.safeParse(request.query.status) : null;
     if (!direction.success || status && !status.success) {
@@ -183,7 +182,7 @@ export function createCoordinationRouter(storage: ImageStorage): Router {
     response.json({ requests: records.map((record) => serializeRequest(storage, record)) });
   }));
 
-  router.get("/coordination-requests/:id", asyncRoute(async (request, response) => {
+  router.get("/coordination-requests/:id", requireAuth, requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
     try {
       response.json({ request: serializeRequest(storage, await requestForActor(routeId(request), request)) });
     } catch (error) {
@@ -191,7 +190,7 @@ export function createCoordinationRouter(storage: ImageStorage): Router {
     }
   }));
 
-  router.post("/coordination-requests/:id/actions", asyncRoute(async (request, response) => {
+  router.post("/coordination-requests/:id/actions", requireAuth, requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
     const parsed = coordinationActionSchema.safeParse(request.body);
     if (!parsed.success) {
       response.status(400).json({ error: "Invalid coordination action", details: parsed.error.flatten() });
@@ -210,7 +209,7 @@ export function createCoordinationRouter(storage: ImageStorage): Router {
     }
   }));
 
-  router.post("/coordination-requests/:id/attachments", asyncRoute(async (request, response) => {
+  router.post("/coordination-requests/:id/attachments", requireAuth, requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
     const parsed = coordinationAttachmentRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       response.status(400).json({ error: "Invalid coordination attachment", details: parsed.error.flatten() });

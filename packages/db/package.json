@@ -20,9 +20,6 @@
     "lint": "eslint src scripts seed.ts --max-warnings 0",
     "test": "vitest run"
   },
-  "prisma": {
-    "seed": "pnpm run seed:run"
-  },
   "dependencies": {
     "@prisma/client": "6.19.0",
     "bcrypt": "6.0.0"

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { DEMO_WARD_SRID, demoWards } from "../src/demo-wards";
 
+process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
+
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {

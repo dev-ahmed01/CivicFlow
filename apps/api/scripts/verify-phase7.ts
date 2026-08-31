@@ -5,6 +5,8 @@ import { ProjectState, TicketState, prisma } from "db";
 import { projectConflictSchema } from "@civicos/shared";
 import { createApp } from "../src/app";
 
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
 process.env.JWT_ACCESS_SECRET ??= "test-access-secret-that-is-at-least-32-characters";
@@ -21,7 +23,7 @@ const actors = {
 } as const;
 
 async function login(app: ReturnType<typeof createApp>, email: string): Promise<string> {
-  const response = await request(app).post("/auth/internal/login").send({ email, password: "CivicOS@123" }).expect(200);
+  const response = await request(app).post("/auth/internal/login").send({ email, password: demoInternalPassword }).expect(200);
   return response.body.accessToken as string;
 }
 

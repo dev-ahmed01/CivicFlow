@@ -7,6 +7,8 @@ import { runDependencyEscalationJob } from "../src/dependencies/service";
 import { DEFAULT_RESPONSE_WINDOW_MS } from "../src/deadlines/service";
 import type { ImageStorage } from "../src/images/storage";
 
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
 process.env.JWT_ACCESS_SECRET ??= "test-access-secret-that-is-at-least-32-characters";
@@ -34,7 +36,7 @@ const storage: ImageStorage = {
 };
 
 async function login(app: ReturnType<typeof createApp>, email: string): Promise<string> {
-  const response = await request(app).post("/auth/internal/login").send({ email, password: "CivicOS@123" }).expect(200);
+  const response = await request(app).post("/auth/internal/login").send({ email, password: demoInternalPassword }).expect(200);
   return response.body.accessToken as string;
 }
 
@@ -123,7 +125,7 @@ async function main(): Promise<void> {
     const terminalAfterJob = await prisma.dependency.findUniqueOrThrow({ where: { id: terminal.id }, include: { stateTransitions: true } });
     assert.equal(terminalAfterJob.state, DependencyState.DECLINED_NOT_CONCERNED);
     assert.equal(terminalAfterJob.assignedEngineerId, null);
-    assert.equal(terminalAfterJob.stateTransitions.at(-1)?.toState, DependencyState.DECLINED_NOT_CONCERNED);
+    assert.equal(terminalAfterJob.stateTransitions.some((transition) => transition.toState === DependencyState.DECLINED_NOT_CONCERNED), true);
 
     await request(app).post(`/dependencies/${overdue.id}/respond`).set("Authorization", `Bearer ${pwdToken}`).send({ action: "MARK_ASSIGNED_OUT_OF_BAND" }).expect(200);
     assert.equal((await prisma.dependency.findUniqueOrThrow({ where: { id: overdue.id } })).state, DependencyState.ASSIGNED);

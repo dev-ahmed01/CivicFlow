@@ -52,6 +52,10 @@ const ids = {
     resurfacingIntervention: "8c000000-0000-4000-8000-000000000001",
     pipelineIntervention: "8c000000-0000-4000-8000-000000000002",
     conflict: "8d000000-0000-4000-8000-000000000001",
+    resurfacingTransition: "8e000000-0000-4000-8000-000000000001",
+    pipelineTransition: "8e000000-0000-4000-8000-000000000002",
+    resurfacingAudit: "8f000000-0000-4000-8000-000000000001",
+    pipelineAudit: "8f000000-0000-4000-8000-000000000002",
   },
   generalDemo: {
     ticket: "90000000-0000-4000-8000-000000000001",
@@ -576,6 +580,13 @@ async function seedPhase4CoordinationDemo(): Promise<void> {
   await prisma.dependency.deleteMany({ where: { projectId: { in: projectIds } } });
   await prisma.sequencingRecommendation.deleteMany({ where: { segmentId: ids.roadSegments.btmCoordination } });
   await prisma.roadConflictLog.deleteMany({ where: { segmentId: ids.roadSegments.btmCoordination } });
+  await prisma.projectWorkNote.deleteMany({ where: { projectId: { in: projectIds } } });
+  await prisma.projectEvidence.deleteMany({ where: { projectId: { in: projectIds } } });
+  await prisma.projectStateTransition.deleteMany({ where: { projectId: { in: projectIds } } });
+  await prisma.projectAuditEvent.deleteMany({ where: { projectId: { in: projectIds } } });
+  for (const projectId of projectIds) {
+    await prisma.$executeRaw`DELETE FROM "Notification" WHERE "payload"->>'projectId' = ${projectId}`;
+  }
 
   await prisma.$executeRaw`
     INSERT INTO "RoadSegment" ("id", "roadName", "geometry", "wardId", "surfaceType", "lastRestorationDate")
@@ -611,7 +622,7 @@ async function seedPhase4CoordinationDemo(): Promise<void> {
     },
   ] as const;
 
-  for (const item of works) {
+  for (const [index, item] of works.entries()) {
     await prisma.project.upsert({
       where: { id: item.id },
       update: { categoryId: categories[0].id, agencyId: item.agencyId, ownerProjectHeadId: item.ownerId, createdById: item.ownerId, updatedById: item.ownerId, origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, description: "Phase 4 BTM coordination demonstration on the same road chainage.", locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru", wardId: ids.wards.btmLayout, state: ProjectState.TIMELINE_SET, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title, engineerId: item.engineerId },
@@ -623,6 +634,27 @@ async function seedPhase4CoordinationDemo(): Promise<void> {
       create: { id: item.interventionId, projectId: item.id, segmentId: ids.roadSegments.btmCoordination, requestingAgencyId: item.agencyId, purpose: item.purpose, plannedStart: item.start, plannedEnd: item.end, affectedLengthM: 380, startOffsetM: 20, dependencyRefs: [] },
     });
     await prisma.$executeRaw`UPDATE "Project" SET "geometry" = (SELECT "geometry" FROM "RoadSegment" WHERE "id" = ${ids.roadSegments.btmCoordination}::uuid) WHERE "id" = ${item.id}::uuid`;
+    const transitionId = index === 0 ? fixture.resurfacingTransition : fixture.pipelineTransition;
+    const auditId = index === 0 ? fixture.resurfacingAudit : fixture.pipelineAudit;
+    await prisma.projectStateTransition.create({
+      data: {
+        id: transitionId,
+        projectId: item.id,
+        fromState: ProjectState.CREATED,
+        toState: ProjectState.TIMELINE_SET,
+        reason: "PLANNED_TIMELINE_REGISTERED",
+        actedById: item.ownerId,
+      },
+    });
+    await prisma.projectAuditEvent.create({
+      data: {
+        id: auditId,
+        projectId: item.id,
+        action: "PLANNED_WORK_CREATED",
+        actorId: item.ownerId,
+        metadata: { seeded: true, fixture: "BTM_SIH_COORDINATION" },
+      },
+    });
   }
 
   const fingerprint = "4444444444444444444444444444444444444444444444444444444444444444";
@@ -815,9 +847,9 @@ async function main(): Promise<void> {
   console.log("Seeded Segment X flagship road-cutting scenario (PWD, BWSSB, BESCOM).");
   console.log("Seeded the Phase 4 BTM conflict-to-coordination scenario (PWD resurfacing and BWSSB pipeline work).");
   console.log("Seeded three standalone planned works in BTM Layout, including an intentional overlapping pair.");
-  console.log(process.env.NODE_ENV === "production"
+  console.log(process.env.DEMO_INTERNAL_PASSWORD
     ? "Internal demo-user password loaded from DEMO_INTERNAL_PASSWORD."
-    : "Local internal-user password: CivicOS@123");
+    : "Internal demo-user password uses the development-only repository fallback.");
 }
 
 main()

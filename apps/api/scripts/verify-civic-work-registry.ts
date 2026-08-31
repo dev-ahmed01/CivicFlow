@@ -4,6 +4,8 @@ import { prisma } from "db";
 import { civicWorkCalendarItemSchema, civicWorkLedgerItemSchema, civicWorkSchema } from "@civicos/shared";
 import { createApp } from "../src/app";
 
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
 process.env.JWT_ACCESS_SECRET ??= "test-access-secret-that-is-at-least-32-characters";
@@ -15,14 +17,14 @@ const bwssbAgencyId = "20000000-0000-4000-8000-000000000001";
 const createdIds: string[] = [];
 
 async function internalLogin(app: ReturnType<typeof createApp>, email: string, expectedRole: "PROJECT_HEAD" | "ENGINEER") {
-  const response = await request(app).post("/auth/internal/login").send({ email, password: "CivicOS@123", expectedRole }).expect(200);
+  const response = await request(app).post("/auth/internal/login").send({ email, password: demoInternalPassword, expectedRole }).expect(200);
   return response.body.accessToken as string;
 }
 
 async function citizenLogin(app: ReturnType<typeof createApp>) {
   const response = await request(app).post("/auth/citizen/login").send({
     userId: "citizen.jayanagar@cityconnect.local",
-    password: "CivicOS@123",
+    password: demoInternalPassword,
   }).expect(200);
   return response.body.accessToken as string;
 }

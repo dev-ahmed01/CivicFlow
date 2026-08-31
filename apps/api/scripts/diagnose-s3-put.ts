@@ -248,7 +248,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (env.DEPLOYMENT_PROFILE !== "free_demo") {
+  if (env.DEPLOYMENT_PROFILE !== "local" && env.DEPLOYMENT_PROFILE !== "free_demo") {
     const error = new Error();
     error.name = "DeploymentProfileError";
     reportFailure("DIAG_ENV", error);

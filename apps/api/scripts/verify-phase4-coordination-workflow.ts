@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { DependencyState, prisma } from "db";
-import type { CivicWorkCalendarItem, CoordinationConflict, SequencingRecommendation } from "@civicos/shared";
+import type { CivicWorkCalendarItem, CivicWorkLedgerItem, CoordinationConflict, SequencingRecommendation } from "@civicos/shared";
 import { createApp } from "../src/app";
 import { runDependencyEscalationJob } from "../src/dependencies/service";
+import type { ImageStorage } from "../src/images/storage";
+
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
 
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
@@ -17,8 +20,21 @@ const pwdAgencyId = "20000000-0000-4000-8000-000000000003";
 const bwssbAgencyId = "20000000-0000-4000-8000-000000000001";
 const bwssbEngineerId = "40000000-0000-4000-8000-000000000202";
 
+const storage: ImageStorage = {
+  createUpload(objectKey, contentType) {
+    return { uploadUrl: `https://uploads.example.test/${objectKey}`, publicUrl: `https://files.example.test/${objectKey}`, headers: { "Content-Type": contentType }, expiresInSeconds: 900 };
+  },
+  createDownload(objectKey) { return `https://downloads.example.test/${objectKey}?signed=test`; },
+  async verifyUpload() { return true; },
+};
+
 async function login(app: ReturnType<typeof createApp>, email: string): Promise<string> {
-  const response = await request(app).post("/auth/internal/login").send({ email, password: "CivicOS@123" }).expect(200);
+  const response = await request(app).post("/auth/internal/login").send({ email, password: demoInternalPassword }).expect(200);
+  return response.body.accessToken as string;
+}
+
+async function citizenLogin(app: ReturnType<typeof createApp>): Promise<string> {
+  const response = await request(app).post("/auth/citizen/login").send({ userId: "citizen.jayanagar@cityconnect.local", password: demoInternalPassword }).expect(200);
   return response.body.accessToken as string;
 }
 
@@ -27,7 +43,7 @@ function auth(token: string): { Authorization: string } {
 }
 
 async function main(): Promise<void> {
-  const app = createApp({ otpProvider: { async sendOtp() {} } });
+  const app = createApp({ otpProvider: { async sendOtp() {} }, imageStorage: storage });
   const segmentId = randomUUID();
   const projectIds: string[] = [];
   await prisma.$executeRaw`
@@ -38,10 +54,11 @@ async function main(): Promise<void> {
   `;
 
   try {
-    const [pwdToken, bwssbToken, engineerToken] = await Promise.all([
+    const [pwdToken, bwssbToken, engineerToken, citizenToken] = await Promise.all([
       login(app, "head.pwd@civicos.local"),
       login(app, "head.bwssb@civicos.local"),
       login(app, "engineer.bwssb@civicos.local"),
+      citizenLogin(app),
     ]);
     const pipelineStart = "2027-01-05T03:30:00.000Z";
     const pipelineEnd = "2027-01-12T12:30:00.000Z";
@@ -93,6 +110,14 @@ async function main(): Promise<void> {
       conflictSource: { kind: "ROAD", conflictId: conflict.id, conflictingProjectId: pipelineProjectId },
     }).expect(201);
     const coordinationId = draft.body.request.id as string;
+    const inspectionReport = await request(app).post(`/coordination-requests/${coordinationId}/attachments`).set(auth(pwdToken)).send({
+      action: "presign",
+      entryId: draft.body.initialEntryId,
+      fileName: "btm-overlap-inspection.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 4096,
+    }).expect(201);
+    await request(app).post(`/coordination-requests/${coordinationId}/attachments`).set(auth(pwdToken)).send({ action: "complete", attachmentId: inspectionReport.body.attachmentId }).expect(200);
     await request(app).post(`/coordination-requests/${coordinationId}/actions`).set(auth(pwdToken)).send({ action: "SEND" }).expect(200);
 
     const sent = await prisma.coordinationRequest.findUniqueOrThrow({ where: { id: coordinationId }, include: { dependency: true } });
@@ -115,7 +140,15 @@ async function main(): Promise<void> {
     assert.ok(recommendation.ruleTrace.length >= 1);
 
     await request(app).post(`/coordination-requests/${coordinationId}/actions`).set(auth(engineerToken)).send({ action: "START_PROGRESS", message: "Joint inspection started." }).expect(200);
-    await request(app).post(`/coordination-requests/${coordinationId}/actions`).set(auth(engineerToken)).send({ action: "INSPECTION_COMPLETE", notes: "Pipeline alignment and shared chainage confirmed on site." }).expect(200);
+    const inspection = await request(app).post(`/coordination-requests/${coordinationId}/actions`).set(auth(engineerToken)).send({ action: "INSPECTION_COMPLETE", notes: "Pipeline alignment and shared chainage confirmed on site." }).expect(200);
+    const siteEvidence = await request(app).post(`/coordination-requests/${coordinationId}/attachments`).set(auth(engineerToken)).send({
+      action: "presign",
+      entryId: inspection.body.entry.id,
+      fileName: "btm-chainage-evidence.jpg",
+      contentType: "image/jpeg",
+      sizeBytes: 8192,
+    }).expect(201);
+    await request(app).post(`/coordination-requests/${coordinationId}/attachments`).set(auth(engineerToken)).send({ action: "complete", attachmentId: siteEvidence.body.attachmentId }).expect(200);
 
     const calendarQuery = {
       roadSegmentId: segmentId,
@@ -147,6 +180,19 @@ async function main(): Promise<void> {
     assert.equal(new Date(updated!.originalPlannedEnd!).toISOString(), resurfacingEnd);
     assert.equal(updated!.dependencySummary.blocked, false);
 
+    const ledger = await request(app).get("/civic-works/ledger").query({ roadSegmentId: segmentId, limit: 25 }).set(auth(pwdToken)).expect(200);
+    const ledgerWork = (ledger.body.works as CivicWorkLedgerItem[]).find(({ id }) => id === resurfacingProjectId);
+    assert.ok(ledgerWork, "Civic Work Ledger must retain the resurfacing work");
+    assert.ok(ledgerWork.events.some(({ kind }) => kind === "COORDINATION"), "ledger must retain the advisory conflict");
+    assert.ok(ledgerWork.events.some(({ kind }) => kind === "DEPENDENCY"), "ledger must retain the accepted coordination dependency");
+    assert.ok(ledgerWork.events.some(({ kind }) => kind === "AUDIT"), "ledger must retain coordination and sequencing audit events");
+
+    const nearby = await request(app).get("/civic-works/nearby").query({ latitude: 12.9142, longitude: 77.6095, radiusMeters: 1000 }).set(auth(citizenToken)).expect(200);
+    const publicWork = nearby.body.works.find((item: { id: string }) => item.id === resurfacingProjectId) as Record<string, unknown> | undefined;
+    assert.ok(publicWork, "citizen nearby-work view must show the scheduled resurfacing");
+    assert.equal(publicWork.status, "SCHEDULED");
+    for (const privateKey of ["ticketId", "dependencyFlags", "roadConflictLogs", "coordinationRequests", "geometry"]) assert.equal(privateKey in publicWork, false, `${privateKey} must stay private`);
+
     const linkedConflict = (await request(app).get(`/projects/${resurfacingProjectId}/coordination-conflicts`).set(auth(pwdToken)).expect(200)).body.conflicts
       .find((item: CoordinationConflict) => item.id === conflict.id) as CoordinationConflict;
     assert.equal(linkedConflict.coordination?.requestId, coordinationId);
@@ -161,7 +207,9 @@ async function main(): Promise<void> {
     }
     assert.equal(await prisma.projectAuditEvent.count({ where: { projectId: resurfacingProjectId, action: "SEQUENCING_TIMELINE_REVISED" } }), 1);
     assert.equal(await prisma.sequencingRecommendationLog.count({ where: { recommendationId: recommendation.id, outcome: "MODIFIED" } }), 1);
-    console.log("Phase 4 workflow verified: BTM registry → conflict → prefilled request → reply → assignment/inspection → accepted dependency → rule-traced sequence → blocked/revised calendar with original-date audit.");
+    const completedRequest = await prisma.coordinationRequest.findUniqueOrThrow({ where: { id: coordinationId }, include: { entries: { include: { attachments: true } } } });
+    assert.equal(completedRequest.entries.flatMap(({ attachments }) => attachments).filter(({ uploadedAt }) => uploadedAt).length, 2);
+    console.log("Phase 4 workflow verified: BTM registry → conflict → structured request with inspection report → reply → Engineer assignment/inspection evidence → accepted dependency → rule-traced sequence → revised calendar → Civic Work Ledger → privacy-safe citizen status.");
   } finally {
     if (projectIds.length > 0) {
       for (const projectId of projectIds) await prisma.$executeRaw`DELETE FROM "Notification" WHERE "payload"->>'projectId' = ${projectId}`;

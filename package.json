@@ -17,7 +17,9 @@
     "db:generate": "pnpm --filter db db:generate",
     "db:migrate": "pnpm --filter db exec prisma migrate dev",
     "db:seed": "pnpm --filter db exec prisma db seed",
+    "demo:reset": "pnpm db:seed",
     "verify:auth": "pnpm --filter api verify:auth",
+    "verify:phase2": "pnpm --filter api verify:phase2",
     "verify:phase3": "pnpm --filter api verify:phase3",
     "verify:phase4": "pnpm --filter api verify:phase4",
     "verify:phase5": "pnpm --filter api verify:phase5",
@@ -31,7 +33,9 @@
     "verify:demo100": "pnpm --filter api verify:demo100",
     "verify:civic-work-registry": "pnpm --filter api verify:civic-work-registry",
     "verify:coordination": "pnpm --filter api verify:coordination",
-    "verify:phase4-workflow": "pnpm --filter api verify:phase4-workflow"
+    "verify:upload": "pnpm --filter api verify:upload",
+    "verify:phase4-workflow": "pnpm --filter api verify:phase4-workflow",
+    "verify:sih-demo": "pnpm demo:reset && pnpm verify:auth && pnpm verify:phase2 && pnpm verify:civic-work-registry && pnpm verify:phase7 && pnpm verify:coordination && pnpm verify:phase4-workflow && pnpm verify:phase6 && pnpm verify:phase9 && pnpm verify:phase15 && pnpm verify:upload && pnpm demo:reset"
   },
   "devDependencies": {
     "@civicos/config": "workspace:*",

@@ -2,7 +2,12 @@ import "dotenv/config";
 import { prisma } from "db";
 import { createApp } from "../src/app";
 
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+
 process.env.NODE_ENV = "test";
+process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
+process.env.JWT_ACCESS_SECRET ??= "test-access-secret-that-is-at-least-32-characters";
+process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret-that-is-at-least-32-characters";
 process.env.OTP_PROVIDER = "console";
 process.env.OTP_MOCK_CODE ??= "123456";
 
@@ -60,7 +65,7 @@ async function main(): Promise<void> {
     method: "POST",
     body: JSON.stringify({
       email: "head.pwd@civicos.local",
-      password: "CivicOS@123",
+      password: demoInternalPassword,
     }),
   });
   if (

@@ -1,5 +1,7 @@
 # Phase 12 deployment and rehearsal runbook
 
+> Legacy reference: use [`Phase_08_SIH_Demo_Runbook.md`](Phase_08_SIH_Demo_Runbook.md) for the current BTM Layout SIH rehearsal and deterministic reset.
+
 This document is the operator handoff for the two CivicOS demo stories. It never substitutes a local result for deployed acceptance evidence.
 
 ## Fixture reset and verification

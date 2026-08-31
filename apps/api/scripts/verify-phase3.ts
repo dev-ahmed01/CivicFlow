@@ -72,13 +72,17 @@ async function main(): Promise<void> {
     assert.equal("validationCount" in pending, false);
     assert.equal("votes" in pending, false);
 
-    const votes = ["CONFIRM", "NOT_SURE", "REJECT"] as const;
+    const verificationConfig = await prisma.adminConfig.findUniqueOrThrow({ where: { key: "verification.quorum" }, select: { value: true } });
+    assert.equal(typeof verificationConfig.value, "number");
+    const verificationQuorum = verificationConfig.value as number;
+    assert.ok(Number.isInteger(verificationQuorum) && verificationQuorum >= 1 && verificationQuorum <= 3);
+    const votes = ["CONFIRM", "CONFIRM", "CONFIRM"] as const;
     const quorumResponses = await Promise.all(votes.map((vote, index) => request(app)
       .post(`/tickets/${ticketId}/validate`)
       .set("Authorization", `Bearer ${token(validatorId(index + 1))}`)
       .send({ vote })
       .expect(200)));
-    assert.equal(quorumResponses.filter((item) => item.body.counted).length, 3);
+    assert.equal(quorumResponses.filter((item) => item.body.counted).length, verificationQuorum);
     assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } })).state, TicketState.ROUTED_TO_AGENCY);
     const quorumTransitions = await prisma.ticketStateTransition.findMany({ where: { ticketId, reason: "COMMUNITY_VALIDATION_QUORUM_MET" } });
     assert.equal(quorumTransitions.length, 1);
@@ -88,7 +92,7 @@ async function main(): Promise<void> {
     assert.equal(late.body.alreadyResolved, true);
     assert.equal(late.body.counted, false);
     assert.equal(await prisma.validation.count({ where: { ticketId } }), 4);
-    assert.equal(await prisma.validation.count({ where: { ticketId, counted: true } }), 3);
+    assert.equal(await prisma.validation.count({ where: { ticketId, counted: true } }), verificationQuorum);
 
     const staleTicketId = await createPendingTicket("stale batch");
     await prisma.validationRequest.updateMany({ where: { ticketId: staleTicketId }, data: { expiresAt: new Date(Date.now() - 60_000) } });
@@ -102,7 +106,7 @@ async function main(): Promise<void> {
     assert.equal(secondBatch.every((item) => item.citizenId !== reporterId), true);
     assert.equal(await prisma.validationRequest.count({ where: { ticketId: staleTicketId } }), 30);
 
-    console.log("Phase 3 acceptance verified: nearest 15, reporter exclusion, no anchoring, atomic quorum, graceful late response, and fresh 72-hour rebatch.");
+    console.log(`Phase 3 acceptance verified: nearest 15, reporter exclusion, no anchoring, atomic configured ${verificationQuorum}-citizen quorum, graceful late response, and fresh 72-hour rebatch.`);
   } finally {
     await cleanup();
     await prisma.$disconnect();

@@ -12,7 +12,7 @@ process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret-that-is-at-least-32-char
 process.env.DEMO_NOTIFY_ALL_CITIZENS = "true";
 
 const titlePrefix = "[Phase 15 multi-user]";
-const password = "CivicOS@123";
+const password = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
 const reporterId = "40000000-0000-4000-8000-000000000001";
 const bescomAgencyId = "20000000-0000-4000-8000-000000000002";
 const streetlightCategoryId = "30000000-0000-4000-8000-000000000002";
@@ -174,6 +174,10 @@ async function main(): Promise<void> {
     const eligibleCitizenCount = await prisma.user.count({
       where: { role: UserRole.CITIZEN, phoneVerifiedAt: { not: null }, id: { not: reporter.userId } },
     });
+    const verificationConfig = await prisma.adminConfig.findUniqueOrThrow({ where: { key: "verification.quorum" }, select: { value: true } });
+    assert.equal(typeof verificationConfig.value, "number");
+    const verificationQuorum = verificationConfig.value as number;
+    assert.ok(Number.isInteger(verificationQuorum) && verificationQuorum >= 1 && verificationQuorum <= 3);
     const [demoInvitationCount, demoNotificationCount, reporterInvitationCount] = await Promise.all([
       prisma.validationRequest.count({ where: { ticketId } }),
       prisma.notification.count({ where: { type: "VALIDATION_REQUEST", payload: { path: ["ticketId"], equals: ticketId } } }),
@@ -215,7 +219,8 @@ async function main(): Promise<void> {
         .set("Authorization", bearer(validator))
         .send({ vote: "CONFIRM" })
         .expect(200)));
-    assert.equal(concurrentVotes.every((vote) => vote.body.counted === true), true);
+    const countedValidators = validators.filter((_, index) => concurrentVotes[index]?.body.counted === true);
+    assert.equal(countedValidators.length, verificationQuorum, "Concurrent validation must count exactly the configured quorum");
 
     const routedTicket = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } });
     assert.equal(routedTicket.state, TicketState.ROUTED_TO_AGENCY);
@@ -316,9 +321,9 @@ async function main(): Promise<void> {
       .set("Authorization", bearer(engineer))
       .send({ action: "complete", evidenceId: evidence.body.evidenceId })
       .expect(200);
-    assert.equal(handoff.body.validatorsNotified, validators.length);
+    assert.equal(handoff.body.validatorsNotified, countedValidators.length);
 
-    for (const validator of validators) {
+    for (const validator of countedValidators) {
       const completionNotifications = await notificationsFor(app, validator);
       assert.equal(hasNotification(completionNotifications, "COMPLETION_VERIFICATION_REQUEST", "projectId", projectId), true);
       const pending = await request(app)
@@ -360,7 +365,7 @@ async function main(): Promise<void> {
     assert.equal(validators.some(({ userId }) => ticketActors.has(userId)), true);
 
     console.log(
-      `Phase 15 acceptance verified: ${demoInvitationCount} demo-wide citizen invitations, six real authenticated users, relevance-gated submission, concurrent validator quorum, agency routing, Project Head inspection/assignment, engineer execution, citizen completion verification, persistent notifications, authoritative My Tickets updates, and actor-attributed state history.`,
+      `Phase 15 acceptance verified: ${demoInvitationCount} demo-wide citizen invitations, six real authenticated users, relevance-gated submission, concurrent configured ${verificationQuorum}-citizen quorum, agency routing, Project Head inspection/assignment, engineer execution, citizen completion verification, persistent notifications, authoritative My Tickets updates, and actor-attributed state history.`,
     );
   } finally {
     for (const userId of sessionUserIds) {

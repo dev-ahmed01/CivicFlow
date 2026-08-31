@@ -28,6 +28,7 @@ export interface PushGateway {
 
 let wakePushDelivery: (() => void) | undefined;
 let cancelPushDeliveryWake: (() => void) | undefined;
+let waitForPushDeliveryIdle: (() => Promise<void>) | undefined;
 
 // Notifications are persisted transactionally first. The server scheduler
 // installs this wake-up hook so committed rows do not wait for the safety poll.
@@ -35,11 +36,13 @@ export function requestPushDelivery(): void {
   wakePushDelivery?.();
 }
 
-export function stopPushDeliveryScheduler(timer: NodeJS.Timeout): void {
+export async function stopPushDeliveryScheduler(timer: NodeJS.Timeout): Promise<void> {
   clearInterval(timer);
   cancelPushDeliveryWake?.();
+  await waitForPushDeliveryIdle?.();
   cancelPushDeliveryWake = undefined;
   wakePushDelivery = undefined;
+  waitForPushDeliveryIdle = undefined;
 }
 
 export class ExpoPushGateway implements PushGateway {
@@ -183,6 +186,11 @@ export function startPushDeliveryScheduler(gateway: PushGateway, intervalSeconds
   let wakeTimer: NodeJS.Timeout | undefined;
   let rerunRequested = false;
   let stopped = false;
+  let resolveIdle: (() => void) | undefined;
+  const idle = new Promise<void>((resolve) => { resolveIdle = resolve; });
+  const settleIfIdle = () => {
+    if (stopped && !running && !wakeTimer) resolveIdle?.();
+  };
   const run = () => {
     if (stopped) return;
     if (running) {
@@ -198,6 +206,7 @@ export function startPushDeliveryScheduler(gateway: PushGateway, intervalSeconds
           rerunRequested = false;
           wakePushDelivery?.();
         }
+        settleIfIdle();
       });
   };
   wakePushDelivery = () => {
@@ -215,7 +224,9 @@ export function startPushDeliveryScheduler(gateway: PushGateway, intervalSeconds
     rerunRequested = false;
     if (wakeTimer) clearTimeout(wakeTimer);
     wakeTimer = undefined;
+    settleIfIdle();
   };
+  waitForPushDeliveryIdle = () => idle;
   run();
   const timer = setInterval(run, intervalSeconds * 1000);
   timer.unref();

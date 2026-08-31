@@ -2,10 +2,18 @@ import assert from "node:assert/strict";
 import { ProjectState, RoadConflictType, TicketState, prisma } from "db";
 import { checkRoadConflicts, recommendationsForSegment } from "../src/road-intelligence/service";
 
+process.env.NODE_ENV = "test";
+process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
+
 const generalTicketId = "90000000-0000-4000-8000-000000000001";
 const generalProjectId = "90000000-0000-4000-8000-000000000005";
 const flagshipSegmentId = "80000000-0000-4000-8000-000000000001";
 const resurfacingProjectId = "82000000-0000-4000-8000-000000000001";
+const flagshipProjectIds = [
+  resurfacingProjectId,
+  "82000000-0000-4000-8000-000000000002",
+  "82000000-0000-4000-8000-000000000003",
+];
 
 async function main(): Promise<void> {
   const ticket = await prisma.ticket.findUniqueOrThrow({
@@ -52,7 +60,7 @@ async function main(): Promise<void> {
     include: { interventions: { include: { requestingAgency: true }, orderBy: { plannedStart: "asc" } } },
   });
   assert.equal(segment.roadName, "Segment X · 11th Main Road");
-  assert.deepEqual(segment.interventions.map(({ requestingAgency, purpose, plannedStart, plannedEnd }) => ({
+  assert.deepEqual(segment.interventions.filter(({ projectId }) => flagshipProjectIds.includes(projectId)).map(({ requestingAgency, purpose, plannedStart, plannedEnd }) => ({
     agency: requestingAgency.name,
     purpose,
     start: plannedStart.toISOString().slice(0, 10),
@@ -67,7 +75,8 @@ async function main(): Promise<void> {
   assert(warnings.some(({ type }) => type === RoadConflictType.RESTORATION_TOO_EARLY));
   const recommendation = (await recommendationsForSegment(prisma, flagshipSegmentId))[0];
   assert(recommendation);
-  assert.deepEqual(recommendation.proposedOrder.map(({ purpose }) => purpose), [
+  const fixtureOrder = recommendation.proposedOrder.filter((item) => item.synthetic || item.projectId && flagshipProjectIds.includes(item.projectId));
+  assert.deepEqual(fixtureOrder.map(({ purpose }) => purpose), [
     "pipeline",
     "cable",
     "consolidated restoration",

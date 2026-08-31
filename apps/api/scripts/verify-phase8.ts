@@ -4,6 +4,8 @@ import { prisma } from "db";
 import { roadConflictSchema, sequencingRecommendationSchema } from "@civicos/shared";
 import { createApp } from "../src/app";
 
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
 process.env.JWT_ACCESS_SECRET ??= "test-access-secret-that-is-at-least-32-characters";
@@ -16,7 +18,7 @@ const projects = {
 } as const;
 
 async function login(app: ReturnType<typeof createApp>, email: string): Promise<string> {
-  const response = await request(app).post("/auth/internal/login").send({ email, password: "CivicOS@123" }).expect(200);
+  const response = await request(app).post("/auth/internal/login").send({ email, password: demoInternalPassword }).expect(200);
   return response.body.accessToken as string;
 }
 
@@ -45,10 +47,17 @@ async function main(): Promise<void> {
   assert.equal(pwd.conflicts.some((item) => item.type === "RESTORATION_TOO_EARLY"), true);
   assert.equal(bwssb.conflicts.some((item) => item.type === "RESTORATION_TOO_EARLY"), true);
   assert.equal(bescom.conflicts.some((item) => item.type === "SEQUENCING_VIOLATION"), true);
-  assert.equal(pwd.history.length, 3, "Segment X history must be derived from its three Intervention rows");
+  const seededHistory = pwd.history.filter((item): item is { projectId: string } => {
+    if (!item || typeof item !== "object" || !("projectId" in item)) return false;
+    return Object.values(projects).includes((item as { projectId: string }).projectId as typeof projects[keyof typeof projects]);
+  });
+  assert.equal(seededHistory.length, 3, "Segment X history must include all three deterministic seed Intervention rows");
 
-  const recommendation = pwd.recommendations.find((item) => item.proposedOrder.map((step) => step.purpose).join("|") === "pipeline|cable|consolidated restoration|resurfacing");
-  assert.ok(recommendation, "flagship recommendation must include all three agencies in deterministic order");
+  const projectIds = Object.values(projects);
+  const recommendation = pwd.recommendations.find((item) => projectIds.every((projectId) => item.projectIds.includes(projectId)));
+  assert.ok(recommendation, "flagship recommendation must include all three deterministic seed projects");
+  const fixtureOrder = recommendation.proposedOrder.filter((step) => step.synthetic || step.projectId && projectIds.includes(step.projectId as typeof projectIds[number]));
+  assert.deepEqual(fixtureOrder.map((step) => step.purpose), ["pipeline", "cable", "consolidated restoration", "resurfacing"]);
   assert.deepEqual(recommendation.ruleTrace.map((trace) => trace.rule), [1, 2, 3, 4, 5, 6]);
   assert.equal(bwssb.recommendations.some((item) => item.id === recommendation.id), true, "BWSSB Project Head must see the shared recommendation");
   assert.equal(bescom.recommendations.some((item) => item.id === recommendation.id), true, "BESCOM Project Head must see the shared recommendation");

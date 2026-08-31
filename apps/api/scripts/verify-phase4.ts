@@ -8,6 +8,8 @@ import type { ImageRelevanceService } from "../src/images/relevance";
 import type { ImageStorage } from "../src/images/storage";
 import { enterPendingValidation } from "../src/validations/service";
 
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
 process.env.JWT_ACCESS_SECRET ??= "test-access-secret-that-is-at-least-32-characters";
@@ -47,7 +49,7 @@ function citizenToken(userId: string): string {
 }
 
 async function login(app: ReturnType<typeof createApp>, email: string): Promise<string> {
-  const response = await request(app).post("/auth/internal/login").send({ email, password: "CivicOS@123" }).expect(200);
+  const response = await request(app).post("/auth/internal/login").send({ email, password: demoInternalPassword }).expect(200);
   return response.body.accessToken as string;
 }
 
@@ -102,7 +104,8 @@ async function main(): Promise<void> {
     await validate(app, initiallyRouted);
     assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: initiallyRouted } })).assignedAgencyId, pwdAgencyId);
 
-    await request(app).patch(`/admin/categories/${roadCategoryId}/routing`).set("Authorization", `Bearer ${adminToken}`).send({ primaryAgencyId: bwssbAgencyId }).expect(200);
+    const routingUpdate = await request(app).patch(`/admin/categories/${roadCategoryId}/routing`).set("Authorization", `Bearer ${adminToken}`).send({ primaryAgencyId: bwssbAgencyId });
+    assert.equal(routingUpdate.status, 200, `Admin routing update failed: ${JSON.stringify(routingUpdate.body)}`);
     const rerouted = await createPendingTicket("changed route");
     await validate(app, rerouted);
     assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: rerouted } })).assignedAgencyId, bwssbAgencyId);
@@ -114,7 +117,8 @@ async function main(): Promise<void> {
     assert.equal(bwssbQueue.body.tickets.some((ticket: { id: string }) => ticket.id === initiallyRouted), false);
     await request(app).get(`/tickets/${rerouted}`).set("Authorization", `Bearer ${pwdToken}`).expect(404);
     await request(app).get(`/tickets/${rerouted}`).set("Authorization", `Bearer ${bwssbToken}`).expect(200);
-    await request(app).patch(`/admin/categories/${roadCategoryId}/routing`).set("Authorization", `Bearer ${adminToken}`).send({ primaryAgencyId: pwdAgencyId }).expect(200);
+    const routingRestore = await request(app).patch(`/admin/categories/${roadCategoryId}/routing`).set("Authorization", `Bearer ${adminToken}`).send({ primaryAgencyId: pwdAgencyId });
+    assert.equal(routingRestore.status, 200, `Admin routing restore failed: ${JSON.stringify(routingRestore.body)}`);
 
     const agencyTicket = await request(app).post("/tickets/agency-originated").set("Authorization", `Bearer ${pwdToken}`).send({
       action: "create",

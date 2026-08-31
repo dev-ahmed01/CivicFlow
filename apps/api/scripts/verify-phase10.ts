@@ -8,6 +8,12 @@ import { createAnalyticsRouter } from "../src/analytics/router";
 import { createAuthRouter } from "../src/auth/routes";
 import { routeValidatedTicket } from "../src/routing/service";
 
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+process.env.NODE_ENV = "test";
+process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
+process.env.JWT_ACCESS_SECRET ??= "test-access-secret-that-is-at-least-32-characters";
+process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret-that-is-at-least-32-characters";
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
@@ -30,7 +36,7 @@ async function main(): Promise<void> {
   assert(!containsPiiKey(publicResponse.body), "Public dashboard exposed a PII or individual-ticket key");
   assert(!JSON.stringify(publicResponse.body).toLowerCase().includes("cost saved"), "Public analytics must not claim unmeasured savings");
 
-  const login = await request(app).post("/auth/internal/login").send({ email: "admin@civicos.local", password: "CivicOS@123" }).expect(200);
+  const login = await request(app).post("/auth/internal/login").send({ email: "admin@civicos.local", password: demoInternalPassword }).expect(200);
   const authorization = `Bearer ${login.body.accessToken as string}`;
   await request(app).put("/admin/config/verification.daily_cap").set("Authorization", authorization).send({ value: 0, description: "Invalid cap must not persist" }).expect(422);
   await request(app).delete("/admin/config/verification.daily_cap").set("Authorization", authorization).expect(409);
@@ -54,14 +60,14 @@ async function main(): Promise<void> {
     const report = await request(app).get(`/analytics/admin${query}`).set("Authorization", authorization).expect(200);
     const csv = await request(app).get(`/analytics/admin/export.csv${query}`).set("Authorization", authorization).expect(200);
     assert(csv.text.includes(`"totals","Tickets created","","${report.body.totals.ticketsCreated as number}"`), "CSV totals do not match the filtered on-screen report");
-    assert(csv.text.includes("Simulated/Illustrative"), "CSV omitted the simulated label");
+    assert(!/cost saved|crore|amountinr/i.test(csv.text), "CSV introduced an unmeasured financial-savings claim");
     await request(app).get(`/analytics/admin/export.pdf${query}`).set("Authorization", authorization).expect("Content-Type", /application\/pdf/).expect(200);
   } finally {
     await prisma.$executeRaw`DELETE FROM "Notification" WHERE "payload"->>'ticketId' = ${ticketId}`;
     await prisma.ticket.deleteMany({ where: { id: ticketId } });
     await prisma.category.update({ where: { id: category.id }, data: { primaryAgencyId: category.primaryAgencyId } });
   }
-  console.log("Phase 10 acceptance passed: public privacy, live routing, protected config/user integrity, simulated labels, and filtered CSV/PDF exports.");
+  console.log("Phase 10 acceptance passed: public privacy, live routing, protected config/user integrity, no fabricated savings claims, and filtered CSV/PDF exports.");
 }
 
 main().catch((error: unknown) => { console.error(error); process.exitCode = 1; }).finally(async () => prisma.$disconnect());

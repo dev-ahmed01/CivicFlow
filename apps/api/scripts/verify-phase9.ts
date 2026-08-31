@@ -3,6 +3,9 @@ import { notificationPresentation } from "@civicos/shared";
 import { prisma, UserRole } from "db";
 import { createNotifications, startPushDeliveryScheduler, stopPushDeliveryScheduler, type ExpoPushMessage, type PushGateway } from "../src/notifications/service";
 
+process.env.NODE_ENV = "test";
+process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
+
 const marker = { phase9Acceptance: true };
 const citizenTokens = ["ExpoPushToken[phase9-citizen-device-1]", "ExpoPushToken[phase9-citizen-device-2]"];
 const engineerTokens = ["ExpoPushToken[phase9-engineer-device-1]", "ExpoPushToken[phase9-engineer-device-2]"];
@@ -73,8 +76,7 @@ async function main() {
     assert.equal(unreadAfter, 0);
     console.log(`Phase 9 acceptance verified: 5 event types, 8 Expo deliveries to two devices per mobile user dispatched in ${dispatchLatencyMs}ms, Project Head in-app delivery, amber conflicts, and authoritative unread clearing.`);
   } finally {
-    if (scheduler) stopPushDeliveryScheduler(scheduler);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (scheduler) await stopPushDeliveryScheduler(scheduler);
     await prisma.notification.deleteMany({ where: { payload: { path: ["phase9Acceptance"], equals: true } } });
     await prisma.pushToken.deleteMany({ where: { token: { in: allTokens } } });
     await prisma.$disconnect();

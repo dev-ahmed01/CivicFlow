@@ -6,6 +6,8 @@ import { ProjectState, TicketState, prisma } from "db";
 import { createApp } from "../src/app";
 import type { ImageStorage } from "../src/images/storage";
 
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL ??= "postgresql://civicos:civicos@localhost:5433/civicos?schema=public";
 process.env.JWT_ACCESS_SECRET ??= "test-access-secret-that-is-at-least-32-characters";
@@ -28,7 +30,7 @@ const storage: ImageStorage = {
 };
 
 async function login(app: ReturnType<typeof createApp>, email: string): Promise<string> {
-  const response = await request(app).post("/auth/internal/login").send({ email, password: "CivicOS@123" }).expect(200);
+  const response = await request(app).post("/auth/internal/login").send({ email, password: demoInternalPassword }).expect(200);
   return response.body.accessToken as string;
 }
 
@@ -119,15 +121,23 @@ async function main(): Promise<void> {
     assert.equal(await prisma.completionVerificationRequest.count({ where: { completionEvidenceId: evidence.body.evidenceId } }), 3);
     assert.equal(await prisma.notification.count({ where: { type: "COMPLETION_VERIFICATION_REQUEST", payload: { path: ["projectId"], equals: projectId } } }), 3);
 
-    for (let number = 1; number <= 3; number += 1) {
+    const verificationConfig = await prisma.adminConfig.findUniqueOrThrow({ where: { key: "verification.quorum" }, select: { value: true } });
+    assert.equal(typeof verificationConfig.value, "number");
+    const verificationQuorum = verificationConfig.value as number;
+    assert.ok(Number.isInteger(verificationQuorum) && verificationQuorum >= 1 && verificationQuorum <= 3);
+    for (let number = 1; number <= verificationQuorum; number += 1) {
       const token = citizenToken(validatorId(number));
       const pending = await request(app).get("/citizens/me/pending-completion-verifications").set("Authorization", `Bearer ${token}`).expect(200);
-      assert.equal(pending.body.completions.some((item: { evidenceId: string }) => item.evidenceId === evidence.body.evidenceId), true);
+      assert.equal(
+        pending.body.completions.some((item: { evidenceId: string }) => item.evidenceId === evidence.body.evidenceId),
+        true,
+        `Validator ${number} could not see completion ${evidence.body.evidenceId}: ${JSON.stringify(pending.body)}`,
+      );
       await request(app).post(`/completion-evidence/${evidence.body.evidenceId}/verify`).set("Authorization", `Bearer ${token}`).send({ decision: "VERIFIED" }).expect(200);
     }
     assert.equal((await prisma.project.findUniqueOrThrow({ where: { id: projectId } })).state, ProjectState.CLOSED);
     assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } })).state, TicketState.CLOSED);
-    console.log("Phase 6 acceptance verified: uptake, timeline/conflict seam, active modification, completion handoff, original-validator notifications, citizen closure, and cross-agency read-only access.");
+    console.log(`Phase 6 acceptance verified: uptake, timeline/conflict seam, active modification, completion handoff, three original-validator notifications, configured ${verificationQuorum}-citizen closure quorum, and cross-agency read-only access.`);
   } finally {
     await cleanup();
     await prisma.$disconnect();

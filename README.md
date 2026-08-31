@@ -83,7 +83,7 @@ pnpm dev
 
 `pnpm infra:up` starts PostgreSQL plus the MinIO photo service and creates the `civicos-images` bucket. Both are required for citizen ticket submission. `pnpm dev` then starts the web app at `http://localhost:3000` and the API at `http://localhost:4000`; `GET http://localhost:4000/health` should return `{ "status": "ok" }`. The API loads the repository-root `.env` created above even though Turbo runs it from `apps/api`. The web defaults to `http://localhost:4000`; set `NEXT_PUBLIC_API_URL` in the root `.env` when using a different API origin. Use `pnpm dev:all` only when the Expo mobile dev server is also needed.
 
-The compose service maps PostgreSQL to host port `5433` to avoid common conflicts with an existing local PostgreSQL installation. Local seeded citizen and internal accounts use `CivicOS@123`; the citizen demo User ID is `citizen.jayanagar@cityconnect.local`, the Project Head login is `head.pwd@civicos.local`, and the Engineer login is `engineer.pwd@civicos.local`. Accounts marked for first-login reset can only reach the password-reset flow until they change it.
+The compose service maps PostgreSQL to host port `5433` to avoid common conflicts with an existing local PostgreSQL installation. Seeded account identifiers and roles are documented in the SIH runbook; credentials come from operator-controlled environment variables and are never published. Accounts marked for first-login reset can only reach the password-reset flow until they change it.
 
 ## Notifications
 
@@ -103,7 +103,7 @@ Two rehearsed end-to-end walkthroughs (built out fully in Phase 12):
 - **General flow** — a full citizen-report → validation → routing → inspection → project → dependency → execution → completion cycle on a non-road category
 - **Flagship road-cutting flow** — three agencies logging conflicting interventions on the same road segment, the system catching a restoration-too-early conflict, and the sequencing engine recommending a coordinated order
 
-Phase 12’s deployment order, stable fixture IDs, reset command, two click-by-click rehearsal scripts, and acceptance evidence ledger live in [`docs/Phase_12_runbook.md`](docs/Phase_12_runbook.md). Run `pnpm verify:phase12` against a seeded database to validate the complete non-road audit trail and exact Segment X intervention dates/order.
+The current BTM Layout SIH walkthrough, stable fixture IDs, role roster, reset instructions, deployment checklist, and limitations live in [`docs/Phase_08_SIH_Demo_Runbook.md`](docs/Phase_08_SIH_Demo_Runbook.md). Run `pnpm verify:sih-demo` against the local demo stack to reset, exercise, and reset the complete demonstration path. The older Phase 12 reference remains in [`docs/Phase_12_runbook.md`](docs/Phase_12_runbook.md).
 
 Deployment profiles are intentionally separate: `render.yaml` is the fail-closed production architecture, while `render.demo.yaml` is the $0 SIH profile using Render Free with a Supabase PostgreSQL/PostGIS URL, Cloudflare R2, explicit fixed-code demo authentication, and an explicitly simulated relevance adapter or compatible free/local CLIP endpoint. The runbook records the free-tier limits and never treats free-demo evidence as production evidence.
 

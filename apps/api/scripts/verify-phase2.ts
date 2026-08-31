@@ -20,7 +20,7 @@ class AcceptanceRelevance implements ImageRelevanceService {
   private checks = 0;
   async checkImageRelevance() {
     this.checks += 1;
-    return this.checks <= 3 ? { score: 0.12, pass: false } : { score: 0.93, pass: true };
+    return this.checks <= 2 ? { score: 0.12, pass: false } : { score: 0.93, pass: true };
   }
   async getImageEmbedding() { return [1, 0, 0, 1]; }
 }
@@ -44,14 +44,33 @@ function token(userId: string): string {
   });
 }
 
-async function createDraft(app: ReturnType<typeof createApp>, auth: string, suffix: string, latitude: number, longitude: number) {
+async function validateImage(app: ReturnType<typeof createApp>, auth: string, attempt: number) {
+  const fileName = `streetlight-${attempt}.jpg`;
+  const presigned = await request(app).post("/tickets/image-relevance").set("Authorization", `Bearer ${auth}`).send({
+    action: "presign",
+    categoryId: streetlightId,
+    fileName,
+    contentType: "image/jpeg",
+  }).expect(201);
+  return request(app).post("/tickets/image-relevance").set("Authorization", `Bearer ${auth}`).send({
+    action: "complete",
+    categoryId: streetlightId,
+    objectKey: presigned.body.objectKey,
+    fileName,
+    contentType: "image/jpeg",
+    attempt,
+  }).expect(200);
+}
+
+async function createDraft(app: ReturnType<typeof createApp>, auth: string, suffix: string, latitude: number, longitude: number, validationToken: string) {
   return request(app).post("/tickets").set("Authorization", `Bearer ${auth}`).send({
     categoryId: streetlightId,
+    channel: "MOBILE",
     title: `${titlePrefix} ${suffix}`,
     address: "11th Main Road, Jayanagar, Bengaluru",
     latitude,
     longitude,
-    primaryImage: { fileName: "pothole.jpg", contentType: "image/jpeg" },
+    primaryImage: { validationToken },
   }).expect(201);
 }
 
@@ -79,30 +98,35 @@ async function main(): Promise<void> {
     assert.equal(resolved.body.area.id, jayanagar.id);
     await request(app).post("/reporting-areas/resolve").set("Authorization", `Bearer ${token(citizenOne)}`).send({ latitude: 0, longitude: 0 }).expect(422);
 
-    const first = await createDraft(app, token(citizenOne), "first", 12.9299, 77.5844);
-    let imageId = first.body.imageId as string;
-    const ticketId = first.body.ticketId as string;
-
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      if (attempt > 1) {
-        const presigned = await request(app).post(`/tickets/${ticketId}/images`).set("Authorization", `Bearer ${token(citizenOne)}`).send({ action: "presign", fileName: `pothole-${attempt}.jpg`, contentType: "image/jpeg", isPrimary: true }).expect(201);
-        imageId = presigned.body.imageId as string;
-      }
-      const completed = await request(app).post(`/tickets/${ticketId}/images`).set("Authorization", `Bearer ${token(citizenOne)}`).send({ action: "complete", imageId }).expect(200);
-      if (attempt < 3) assert.equal(completed.body.needsRetake, true);
-      else {
-        assert.equal(completed.body.needsRetake, false);
-        assert.equal(completed.body.ticket.id, ticketId);
-        assert.match(completed.body.ticket.referenceNumber, /^\d{9,}$/);
-        assert.equal(completed.body.ticket.manualReviewRecommended, true);
-      }
+    const firstToken = token(citizenOne);
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const rejected = await validateImage(app, firstToken, attempt);
+      assert.equal(rejected.body.relevant, false);
+      assert.equal(rejected.body.validationToken, undefined);
+      assert.equal(rejected.body.attemptsRemaining, 3 - attempt);
     }
+    const accepted = await validateImage(app, firstToken, 3);
+    assert.equal(accepted.body.relevant, true);
+    assert.equal(typeof accepted.body.validationToken, "string");
+    assert.equal(accepted.body.attemptsRemaining, 0);
+
+    const first = await createDraft(app, firstToken, "first", 12.9299, 77.5844, accepted.body.validationToken);
+    const imageId = first.body.imageId as string;
+    const ticketId = first.body.ticketId as string;
+    const completed = await request(app).post(`/tickets/${ticketId}/images`).set("Authorization", `Bearer ${firstToken}`).send({ action: "complete", imageId }).expect(200);
+    assert.equal(completed.body.needsRetake, false);
+    assert.equal(completed.body.ticket.id, ticketId);
+    assert.match(completed.body.ticket.referenceNumber, /^\d{9,}$/);
+    assert.equal(completed.body.ticket.manualReviewRecommended, false);
 
     // Regression: an accepted nearby observation must recover a shared ticket that
     // was left in the AI stage instead of returning a false submission success.
     await prisma.ticket.update({ where: { id: ticketId }, data: { state: "AI_CHECK_PENDING" } });
-    const second = await createDraft(app, token(citizenTwo), "second", 12.9300, 77.5845);
-    const shared = await request(app).post(`/tickets/${second.body.ticketId}/images`).set("Authorization", `Bearer ${token(citizenTwo)}`).send({ action: "complete", imageId: second.body.imageId }).expect(200);
+    const secondToken = token(citizenTwo);
+    const secondImage = await validateImage(app, secondToken, 1);
+    assert.equal(secondImage.body.relevant, true);
+    const second = await createDraft(app, secondToken, "second", 12.9300, 77.5845, secondImage.body.validationToken);
+    const shared = await request(app).post(`/tickets/${second.body.ticketId}/images`).set("Authorization", `Bearer ${secondToken}`).send({ action: "complete", imageId: second.body.imageId }).expect(200);
     assert.equal(shared.body.ticket.id, ticketId);
     assert.equal(shared.body.ticket.status, "COMMUNITY_REVIEW");
     assert.equal(shared.body.ticket.observationCount, 2);
@@ -116,7 +140,7 @@ async function main(): Promise<void> {
     const recovered = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { state: true, validationRequests: { select: { id: true } } } });
     assert.equal(recovered.state, "PENDING_VALIDATION");
     assert.ok(recovered.validationRequests.length > 0);
-    console.log("Phase 2 acceptance verified: ticket numbering, configured reporting areas, retake cap, stalled shared-ticket recovery, community verification handoff, observation count, and simplified citizen states.");
+    console.log("Phase 2 acceptance verified: mobile photo preflight, retry cap, GPS/reporting-area resolution, ticket numbering, stalled shared-ticket recovery, community verification handoff, observation count, tracking, and simplified citizen states.");
   } finally {
     await cleanup();
     await prisma.$disconnect();
