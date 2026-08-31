@@ -3,6 +3,7 @@ import { UserRole, prisma } from "db";
 import { analyticsFilterSchema, type AnalyticsReport, type MetricRow } from "@civicos/shared";
 import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/middleware";
 import { buildAnalyticsReport, buildPublicDashboard } from "./service";
+import { buildOperationalAnalytics } from "./operational-service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -52,7 +53,6 @@ export function reportCsv(report: AnalyticsReport): string {
   append("road_conflicts_by_ward_type", report.roadConflictsByWardType);
   append("repeated_excavations_avoided_by_segment_agency", report.repeatedExcavationsAvoidedBySegmentAgency);
   append("sequencing_outcomes_by_agency", report.sequencingOutcomesByAgency);
-  rows.push(["simulated_restoration_cost_saved", report.simulatedRestorationCostSaved.label, report.simulatedRestorationCostSaved.formula, String(report.simulatedRestorationCostSaved.amountInr), "", "", "", "", "", ""]);
   return `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
 }
 
@@ -67,8 +67,6 @@ export function simplePdf(report: AnalyticsReport): Buffer {
     `Tickets created: ${report.totals.ticketsCreated}`,
     `Tickets resolved: ${report.totals.ticketsResolved} (${report.totals.resolutionRatePercent}%)`,
     `Road conflicts: ${report.totals.roadConflicts}`,
-    `Restoration cost saved: INR ${report.simulatedRestorationCostSaved.amountInr} - SIMULATED/ILLUSTRATIVE`,
-    "Formula: accepted repeated-excavation-risk recommendations x affected length x unit cost x avoided-rework factor.",
     "",
     "Category breakdown (resolved / created):",
     ...report.ticketsByCategory.slice(0, 24).map((row) => `${row.dimension}: ${row.count ?? 0} / ${row.total ?? 0} (${row.ratePercent ?? 0}%)`),
@@ -126,6 +124,14 @@ export function createAnalyticsRouter(): Router {
       prisma.agency.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     ]);
     response.json({ wards, categories, agencies });
+  }));
+  router.get("/analytics/admin/operations", asyncRoute(async (request, response) => {
+    const parsed = parseFilter(request);
+    if (!parsed.success) {
+      response.status(400).json({ error: "Invalid analytics filter", details: parsed.error.flatten() });
+      return;
+    }
+    response.json(await buildOperationalAnalytics(parsed.data));
   }));
   router.get(["/analytics/admin", "/analytics/admin/export.csv", "/analytics/admin/export.pdf"], asyncRoute(async (request, response) => {
     const parsed = parseFilter(request);

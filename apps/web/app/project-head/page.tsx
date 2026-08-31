@@ -10,7 +10,7 @@ import { apiFetch } from "./_lib/api";
 type DashboardResponse = {
   agency: { id: string; name: string };
   counts: ProjectHeadDashboardCounts;
-  performance: { roadConflicts: number; simulatedRestorationCostSaved: { amountInr: number; label: "Simulated/Illustrative" } };
+  performance: { roadConflicts: number };
 };
 
 type AttentionRow = { label: string; count: number; context: string; href: string; priority: number };

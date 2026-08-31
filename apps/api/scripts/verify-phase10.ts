@@ -28,7 +28,7 @@ async function main(): Promise<void> {
 
   const publicResponse = await request(app).get("/analytics/public-dashboard").expect(200);
   assert(!containsPiiKey(publicResponse.body), "Public dashboard exposed a PII or individual-ticket key");
-  assert(publicResponse.body.roadMetrics.simulatedRestorationCostSaved.label === "Simulated/Illustrative", "Public simulated metric is missing its label");
+  assert(!JSON.stringify(publicResponse.body).toLowerCase().includes("cost saved"), "Public analytics must not claim unmeasured savings");
 
   const login = await request(app).post("/auth/internal/login").send({ email: "admin@civicos.local", password: "CivicOS@123" }).expect(200);
   const authorization = `Bearer ${login.body.accessToken as string}`;

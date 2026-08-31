@@ -60,15 +60,6 @@ export type AnalyticsReport = {
   roadConflictsByWardType: MetricRow[];
   repeatedExcavationsAvoidedBySegmentAgency: MetricRow[];
   sequencingOutcomesByAgency: MetricRow[];
-  simulatedRestorationCostSaved: {
-    amountInr: number;
-    label: "Simulated/Illustrative";
-    formula: string;
-    unitCostPerMeterInr: number;
-    avoidedReworkFactor: number;
-    qualifyingAcceptedRecommendations: number;
-    affectedLengthMeters: number;
-  };
 };
 
 export type PublicDashboard = {
@@ -85,7 +76,73 @@ export type PublicDashboard = {
   }>;
   roadMetrics: {
     conflictsByType: MetricRow[];
-    simulatedRestorationCostSaved: AnalyticsReport["simulatedRestorationCostSaved"];
   };
   privacyNotice: string;
+};
+
+export const operationalMetricKeys = [
+  "conflicts-before-execution",
+  "conflicts-resolved",
+  "dependency-response-time",
+  "works-blocked",
+  "coordination-turnaround",
+  "repeated-excavation",
+  "first-time-completion",
+  "verified-closure",
+  "overdue-coordination",
+] as const;
+
+export type OperationalMetricKey = (typeof operationalMetricKeys)[number];
+
+export type OperationalMetric = {
+  key: OperationalMetricKey;
+  label: string;
+  value: number | null;
+  unit: "count" | "hours" | "percent";
+  numerator?: number;
+  denominator?: number;
+  sampleSize?: number;
+  description: string;
+};
+
+export type OperationalRecord = {
+  id: string;
+  recordType: "conflict" | "dependency" | "work" | "coordination" | "road-conflict" | "completion";
+  reference: string;
+  title: string;
+  status: string;
+  agency: string;
+  counterpartAgency?: string;
+  ward?: string;
+  category?: string;
+  occurredAt?: string;
+  deadline?: string;
+  durationHours?: number;
+  relatedReference?: string;
+  detail?: string;
+};
+
+export type OperationalBreakdownRow = {
+  dimension: string;
+  dimensionId?: string;
+  count: number;
+  records: OperationalRecord[];
+};
+
+export type OperationalAnalyticsReport = {
+  generatedAt: string;
+  filters: AnalyticsReport["filters"];
+  metrics: OperationalMetric[];
+  details: Record<OperationalMetricKey, OperationalRecord[]>;
+  workBreakdown: {
+    byAgency: OperationalBreakdownRow[];
+    byWard: OperationalBreakdownRow[];
+    byType: OperationalBreakdownRow[];
+  };
+  conservationInputs: {
+    repeatedRiskSegments: number;
+    affectedLengthMeters: number;
+    acceptedSequencingRecommendations: number;
+    note: string;
+  };
 };

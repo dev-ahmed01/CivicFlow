@@ -57,10 +57,6 @@ function jsonProjectIds(value: Prisma.JsonValue): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function numberConfig(value: Prisma.JsonValue | undefined, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
-}
-
 export type ProjectHeadPerformance = {
   ticketsResolved: number;
   resolutionRatePercent: number;
@@ -68,7 +64,6 @@ export type ProjectHeadPerformance = {
   dependencyEscalationRatePercent: number;
   reworkRatePercent: number;
   roadConflicts: number;
-  simulatedRestorationCostSaved: { amountInr: number; label: "Simulated/Illustrative" };
 };
 
 const projectHeadCache = new Map<string, { expiresAt: number; value: ProjectHeadPerformance }>();
@@ -79,7 +74,7 @@ export async function buildProjectHeadPerformance(agencyId: string): Promise<Pro
   const cached = projectHeadCache.get(agencyId);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
-  const [tickets, inspectionTransitions, dependencyTotal, dependencyEscalated, verificationTotal, verificationRework, roadConflicts, repeatedRisks, configs] = await Promise.all([
+  const [tickets, inspectionTransitions, dependencyTotal, dependencyEscalated, verificationTotal, verificationRework, roadConflicts] = await Promise.all([
     prisma.ticket.findMany({ where: { assignedAgencyId: agencyId }, select: { state: true, project: { select: { id: true } } } }),
     prisma.ticketStateTransition.findMany({
       where: { toState: TicketState.INSPECTION_COMPLETE, ticket: { assignedAgencyId: agencyId } },
@@ -91,8 +86,6 @@ export async function buildProjectHeadPerformance(agencyId: string): Promise<Pro
     prisma.completionVerification.count({ where: { completionEvidence: { project: { agencyId } } } }),
     prisma.completionVerification.count({ where: { decision: "REWORK_REQUESTED", completionEvidence: { project: { agencyId } } } }),
     prisma.roadConflictLog.count({ where: { projectAgencyId: agencyId } }),
-    prisma.roadConflictLog.findMany({ where: { projectAgencyId: agencyId, type: "REPEATED_EXCAVATION_RISK" }, distinct: ["segmentId"], select: { segmentId: true } }),
-    prisma.adminConfig.findMany({ where: { key: { in: ["road.simulated_restoration_cost_per_meter", "road.simulated_avoided_rework_factor"] } }, select: { key: true, value: true } }),
   ]);
 
   const firstInspectionByTicket = new Map<string, number>();
@@ -102,23 +95,6 @@ export async function buildProjectHeadPerformance(agencyId: string): Promise<Pro
     }
   }
 
-  const segmentIds = repeatedRisks.map(({ segmentId }) => segmentId);
-  const acceptedLogs = segmentIds.length === 0 ? [] : await prisma.sequencingRecommendationLog.findMany({
-    where: { outcome: "ACCEPTED", segmentId: { in: segmentIds }, actedBy: { agencyId } },
-    select: { recommendation: { select: { projectIds: true } } },
-  });
-  const agencyProjectIds = new Set(tickets.flatMap(({ project }) => project ? [project.id] : []));
-  const qualifyingProjectIds = [...new Set(acceptedLogs
-    .map(({ recommendation }) => jsonProjectIds(recommendation.projectIds))
-    .filter((ids) => ids.some((id) => agencyProjectIds.has(id)))
-    .flat())];
-  const interventions = qualifyingProjectIds.length === 0 ? [] : await prisma.intervention.findMany({ where: { projectId: { in: qualifyingProjectIds } }, select: { affectedLengthM: true } });
-  const configMap = new Map(configs.map((item) => [item.key, item.value]));
-  const simulatedAmount = Math.round(
-    interventions.reduce((sum, item) => sum + item.affectedLengthM, 0)
-      * numberConfig(configMap.get("road.simulated_restoration_cost_per_meter"), 1800)
-      * numberConfig(configMap.get("road.simulated_avoided_rework_factor"), 0.65),
-  );
   const resolved = tickets.filter(({ state }) => RESOLVED_STATES.includes(state)).length;
   const value: ProjectHeadPerformance = {
     ticketsResolved: resolved,
@@ -127,7 +103,6 @@ export async function buildProjectHeadPerformance(agencyId: string): Promise<Pro
     dependencyEscalationRatePercent: percent(dependencyEscalated, dependencyTotal),
     reworkRatePercent: percent(verificationRework, verificationTotal),
     roadConflicts,
-    simulatedRestorationCostSaved: { amountInr: simulatedAmount, label: "Simulated/Illustrative" },
   };
   projectHeadCache.set(agencyId, { expiresAt: Date.now() + 30_000, value });
   return value;
@@ -159,7 +134,7 @@ export async function buildAnalyticsReport(filter: AnalyticsFilter): Promise<Ana
   const segmentFilter = filter.wardId ? { wardId: filter.wardId } : {};
   const eventRange = dateRange(filter);
 
-  const [dependencies, validationRequests, conflicts, verifications, roadConflicts, sequencingLogs, configs] = await Promise.all([
+  const [dependencies, validationRequests, conflicts, verifications, roadConflicts, sequencingLogs] = await Promise.all([
     prisma.dependency.findMany({
       where: { projectId: { in: projectIds }, ...(eventRange ? { createdAt: eventRange } : {}) },
       select: { createdAt: true, respondedAt: true, escalatedAt: true, respondingAgency: { select: { id: true, name: true } } },
@@ -206,10 +181,6 @@ export async function buildAnalyticsReport(filter: AnalyticsFilter): Promise<Ana
         segment: { select: { roadName: true, wardId: true } },
         actedBy: { select: { agency: { select: { id: true, name: true } } } },
       },
-    }),
-    prisma.adminConfig.findMany({
-      where: { key: { in: ["road.simulated_restoration_cost_per_meter", "road.simulated_avoided_rework_factor"] } },
-      select: { key: true, value: true },
     }),
   ]);
 
@@ -285,7 +256,6 @@ export async function buildAnalyticsReport(filter: AnalyticsFilter): Promise<Ana
   const filteredSequencingLogs = sequencingLogs.filter((log) => !filter.categoryId || jsonProjectIds(log.recommendation.projectIds).some((projectId) => projectIds.includes(projectId)));
   const sequencing = new Map<string, MetricRow>();
   const avoided = new Map<string, MetricRow>();
-  const qualifyingAccepted = filteredSequencingLogs.filter((log) => log.outcome === "ACCEPTED" && repeatedRiskSegments.has(log.segmentId) && log.actedBy.agency);
   for (const log of filteredSequencingLogs) {
     const agency = log.actedBy.agency;
     if (!agency) continue;
@@ -302,16 +272,6 @@ export async function buildAnalyticsReport(filter: AnalyticsFilter): Promise<Ana
     }
   }
 
-  const qualifyingProjectIds = [...new Set(qualifyingAccepted.flatMap((log) => jsonProjectIds(log.recommendation.projectIds)))];
-  const interventions = qualifyingProjectIds.length === 0 ? [] : await prisma.intervention.findMany({
-    where: { projectId: { in: qualifyingProjectIds } },
-    select: { projectId: true, affectedLengthM: true },
-  });
-  const affectedLengthMeters = round(interventions.reduce((sum, item) => sum + item.affectedLengthM, 0));
-  const configMap = new Map(configs.map((item) => [item.key, item.value]));
-  const unitCostPerMeterInr = numberConfig(configMap.get("road.simulated_restoration_cost_per_meter"), 1800);
-  const avoidedReworkFactor = numberConfig(configMap.get("road.simulated_avoided_rework_factor"), 0.65);
-  const simulatedAmount = Math.round(affectedLengthMeters * unitCostPerMeterInr * avoidedReworkFactor);
   const resolvedTotal = tickets.filter((ticket) => RESOLVED_STATES.includes(ticket.state)).length;
 
   return {
@@ -339,15 +299,6 @@ export async function buildAnalyticsReport(filter: AnalyticsFilter): Promise<Ana
     roadConflictsByWardType: [...roadByWardType.values()],
     repeatedExcavationsAvoidedBySegmentAgency: [...avoided.values()],
     sequencingOutcomesByAgency: [...sequencing.values()],
-    simulatedRestorationCostSaved: {
-      amountInr: simulatedAmount,
-      label: "Simulated/Illustrative",
-      formula: "Accepted recommendations on segments with a recorded repeated-excavation risk × total affected intervention length (m) × configured restoration cost per metre × configured avoided-rework factor.",
-      unitCostPerMeterInr,
-      avoidedReworkFactor,
-      qualifyingAcceptedRecommendations: qualifyingAccepted.length,
-      affectedLengthMeters,
-    },
   };
 }
 
@@ -383,7 +334,6 @@ export async function buildPublicDashboard(): Promise<PublicDashboard> {
         else rows.push({ dimension: item.secondaryDimension ?? "Unknown", count: item.count ?? 0 });
         return rows;
       }, []),
-      simulatedRestorationCostSaved: report.simulatedRestorationCostSaved,
     },
     privacyNotice: "Only city-wide aggregated statistics are published. No citizen identity, contact information, coordinates, observations, or individual ticket records are included.",
   };
