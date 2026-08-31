@@ -142,7 +142,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
               <ActionButton expanded={expanded} onClick={() => setExpandedRunId(expanded ? undefined : run.id)}>{expanded ? "Collapse" : "Expand"}</ActionButton>
               {expanded ? <div className="notification-cluster-details">{run.items.map((item) => {
                 const href = contextDestination(notificationDestination(item, role), variant);
-                return <article key={item.id}><div><strong>{payloadContext(item.payload)}</strong><small>{new Date(item.createdAt).toLocaleString("en-IN")}</small></div>{href ? <ActionButton href={href}>View</ActionButton> : null}</article>;
+                return <article key={item.id}><div><strong>{payloadContext(item.payload)}</strong><small>{new Date(item.createdAt).toLocaleString("en-IN")}</small></div>{href ? <ActionButton href={href}>Open update</ActionButton> : null}</article>;
               })}</div> : null}
             </div>;
           }
@@ -155,8 +155,8 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
           return <div className="cf-notification-row" key={item.id}>
             <span aria-hidden="true" className={`cv-notification-icon ${display.tone}`}>{display.icon}</span>
             <span className="cv-notification-copy"><strong>{display.message}</strong><small>{relativeNotificationTime(item.createdAt)}</small></span>
-            <ActionButton expanded={expanded} onClick={() => setExpandedId(expanded ? undefined : item.id)}>{expanded ? "Close" : "View"}</ActionButton>
-            {expanded ? <div className="cf-notification-detail"><p>{payloadContext(item.payload)}</p><small>This update was recorded {new Date(item.createdAt).toLocaleString("en-IN")}.</small>{contextHref ? <ActionButton href={contextHref}>Open context</ActionButton> : null}</div> : null}
+            <ActionButton expanded={expanded} onClick={() => setExpandedId(expanded ? undefined : item.id)}>{expanded ? "Close" : "Inspect"}</ActionButton>
+            {expanded ? <div className="cf-notification-detail"><p>{payloadContext(item.payload)}</p><small>This update was recorded {new Date(item.createdAt).toLocaleString("en-IN")}.</small>{contextHref ? <ActionButton href={contextHref}>Open related item</ActionButton> : null}</div> : null}
           </div>;
         })}
       </div></section>)}
