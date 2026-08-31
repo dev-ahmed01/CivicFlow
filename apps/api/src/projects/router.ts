@@ -330,8 +330,10 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         skip: pagination.data.skip,
         take: pagination.data.limit,
         select: {
-          id: true, title: true, ticketId: true, agencyId: true, state: true, plannedStart: true, plannedEnd: true,
-          workDescription: true, dependencyFlags: true, engineerId: true, createdAt: true, updatedAt: true,
+          id: true, referenceNumber: true, title: true, ticketId: true, agencyId: true, origin: true,
+          description: true, locationLabel: true, state: true, priority: true, plannedStart: true, plannedEnd: true,
+          actualStart: true, actualCompletion: true, workDescription: true, dependencyFlags: true,
+          engineerId: true, createdAt: true, updatedAt: true,
           agency: { select: { id: true, name: true } },
           engineer: { select: { id: true, email: true } },
           ticket: { select: { id: true, title: true, ward: { select: { id: true, name: true } } } },

@@ -2,17 +2,9 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  Agency,
-  CivicWorkCalendarItem,
-  CivicWorkLedgerItem,
-  CivicWorkLedgerLocation,
-  CivicWorkPeriod,
-  PaginationMeta,
-  RoadSegmentSummary,
-  WardSummary,
-} from "@civicos/shared";
-import { getSession, apiFetch } from "../_lib/api";
+import type { Agency, CivicWorkCalendarItem, CivicWorkLedgerItem, CivicWorkLedgerLocation, CivicWorkPeriod, PaginationMeta, RoadSegmentSummary, WardSummary } from "@civicos/shared";
+import { PageHeader } from "../../_components/ui";
+import { apiFetch, getSession } from "../_lib/api";
 import { WorkLedger } from "./work-ledger";
 import { WorkTimeline } from "./work-timeline";
 
@@ -21,17 +13,12 @@ const WorkMap = dynamic(() => import("./work-map").then((module) => module.WorkM
   loading: () => <div className="work-map-loading">Preparing the spatial view…</div>,
 });
 
-type WorkspaceView = "MAP" | "TIMELINE" | "LEDGER";
+type WorkspaceView = "MAP" | "TIMELINE";
 type MapBounds = { minLongitude: number; minLatitude: number; maxLongitude: number; maxLatitude: number };
 type CalendarResponse = { works: CivicWorkCalendarItem[]; asOf: string; pagination: PaginationMeta };
 type LedgerResponse = { location: CivicWorkLedgerLocation; works: CivicWorkLedgerItem[]; pagination: PaginationMeta };
 
-const bengaluruDemoBounds: MapBounds = {
-  minLongitude: 77.56,
-  minLatitude: 12.82,
-  maxLongitude: 77.72,
-  maxLatitude: 12.995,
-};
+const bengaluruDemoBounds: MapBounds = { minLongitude: 77.56, minLatitude: 12.82, maxLongitude: 77.72, maxLatitude: 12.995 };
 
 function dateInput(date: Date): string {
   const year = date.getFullYear();
@@ -60,6 +47,8 @@ function periodLabel(period: CivicWorkPeriod): string {
 export function WorkCalendarClient() {
   const [initialRange] = useState(initialDateRange);
   const [view, setView] = useState<WorkspaceView>("MAP");
+  const [search, setSearch] = useState("");
+  const [moreFilters, setMoreFilters] = useState(false);
   const [dateFrom, setDateFrom] = useState(initialRange.from);
   const [dateTo, setDateTo] = useState(initialRange.to);
   const [wardId, setWardId] = useState("");
@@ -75,6 +64,7 @@ export function WorkCalendarClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [resultTotal, setResultTotal] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [ledger, setLedger] = useState<LedgerResponse>();
   const [ledgerPage, setLedgerPage] = useState(1);
   const [ledgerLoading, setLedgerLoading] = useState(false);
@@ -82,13 +72,9 @@ export function WorkCalendarClient() {
   const ledgerRequestId = useRef(0);
 
   useEffect(() => {
-    void Promise.all([
-      apiFetch<{ wards: WardSummary[] }>("/wards"),
-      apiFetch<{ agencies: Agency[] }>("/agencies"),
-    ]).then(([wardResult, agencyResult]) => {
-      setWards(wardResult.wards);
-      setAgencies(agencyResult.agencies);
-    }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load calendar filters"));
+    void Promise.all([apiFetch<{ wards: WardSummary[] }>("/wards"), apiFetch<{ agencies: Agency[] }>("/agencies")])
+      .then(([wardResult, agencyResult]) => { setWards(wardResult.wards); setAgencies(agencyResult.agencies); })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load schedule filters"));
   }, []);
 
   useEffect(() => {
@@ -107,11 +93,7 @@ export function WorkCalendarClient() {
     const requestId = ++calendarRequestId.current;
     setLoading(true);
     try {
-      const query = new URLSearchParams({
-        dateFrom: asIsoDate(dateFrom),
-        dateTo: asIsoDate(dateTo, true),
-        limit: "200",
-      });
+      const query = new URLSearchParams({ dateFrom: asIsoDate(dateFrom), dateTo: asIsoDate(dateTo, true), limit: "200" });
       if (wardId) query.set("wardId", wardId);
       if (roadSegmentId) query.set("roadSegmentId", roadSegmentId);
       if (agencyId) query.set("agencyId", agencyId);
@@ -135,10 +117,7 @@ export function WorkCalendarClient() {
   useEffect(() => { void loadCalendar(); }, [loadCalendar]);
 
   const loadLedger = useCallback(async (page = 1) => {
-    if (!roadSegmentId && !wardId) {
-      setLedger(undefined);
-      return;
-    }
+    if (!roadSegmentId && !wardId) { setLedger(undefined); return; }
     const requestId = ++ledgerRequestId.current;
     setLedgerLoading(true);
     try {
@@ -152,82 +131,53 @@ export function WorkCalendarClient() {
       setError(undefined);
     } catch (reason) {
       if (requestId !== ledgerRequestId.current) return;
-      setError(reason instanceof Error ? reason.message : "Could not load the work ledger");
+      setError(reason instanceof Error ? reason.message : "Could not load road history");
       setLedger(undefined);
     } finally {
       if (requestId === ledgerRequestId.current) setLedgerLoading(false);
     }
   }, [roadSegmentId, wardId]);
 
-  useEffect(() => {
-    if (view === "LEDGER") void loadLedger(1);
-  }, [loadLedger, view]);
+  useEffect(() => { if (historyOpen) void loadLedger(1); }, [historyOpen, loadLedger]);
 
-  const visibleWorks = period === "ALL" ? works : works.filter((work) => work.period === period);
   const selected = works.find(({ id }) => id === selectedId);
-  const counts = useMemo(() => works.reduce((summary, work) => {
-    summary[work.period] += 1;
-    return summary;
-  }, { PAST: 0, CURRENT: 0, FUTURE: 0 }), [works]);
+  const counts = useMemo(() => works.reduce((summary, work) => { summary[work.period] += 1; return summary; }, { PAST: 0, CURRENT: 0, FUTURE: 0 }), [works]);
+  const visibleWorks = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return works.filter((work) => (period === "ALL" || work.period === period) && (!query || [work.title, work.locationLabel, work.roadSegment?.roadName, work.ward?.name, work.agency.name].some((value) => value?.toLowerCase().includes(query))));
+  }, [period, search, works]);
   const ownAgencyId = getSession()?.user.agencyId;
 
-  return <div className="work-calendar-page">
-    <header className="work-calendar-heading">
-      <div><p className="eyebrow">Spatial coordination</p><h1>Map & calendar</h1><p>See who is doing what, where and when across past work, active delivery, and upcoming plans.</p></div>
-      <div className="work-calendar-result"><strong>{resultTotal}</strong><span>works in view</span></div>
-    </header>
+  const openHistory = () => {
+    if (selected?.roadSegment) { setWardId(selected.roadSegment.ward.id); setRoadSegmentId(selected.roadSegment.id); }
+    else if (selected?.ward) setWardId(selected.ward.id);
+    setHistoryOpen(true);
+  };
 
-    <section aria-label="Calendar filters" className="work-calendar-filters">
-      <label>Ward<select value={wardId} onChange={(event) => { setWardId(event.target.value); setRoadSegmentId(""); }}><option value="">Map region</option>{wards.map((ward) => <option key={ward.id} value={ward.id}>{ward.name}</option>)}</select></label>
-      <label>Road / area<select value={roadSegmentId} onChange={(event) => setRoadSegmentId(event.target.value)}><option value="">{wardId ? "Entire ward" : "All mapped roads"}</option>{roads.map((road) => <option key={road.id} value={road.id}>{road.roadName}</option>)}</select></label>
-      <label>Agency<select value={agencyId} onChange={(event) => setAgencyId(event.target.value)}><option value="">All agencies</option>{agencies.map((agency) => <option key={agency.id} value={agency.id}>{agency.name}</option>)}</select></label>
-      <label>From<input max={dateTo} type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
-      <label>To<input min={dateFrom} type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
+  return <div className="work-calendar-page ph-schedule-page">
+    <PageHeader title="Schedule" description="See who is doing what, where and when across municipal agencies." action={<span className="ph-result-count">{resultTotal} works in view</span>} />
+
+    <section aria-label="Schedule filters" className="ph-schedule-filter-bar">
+      <label className="ph-location-search"><span>Search location or work</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Road, ward, work or agency" /></label>
+      <label><span>Ward</span><select value={wardId} onChange={(event) => { setWardId(event.target.value); setRoadSegmentId(""); setHistoryOpen(false); }}><option value="">All wards</option>{wards.map((ward) => <option key={ward.id} value={ward.id}>{ward.name}</option>)}</select></label>
+      <label><span>Agency</span><select value={agencyId} onChange={(event) => setAgencyId(event.target.value)}><option value="">All agencies</option>{agencies.map((agency) => <option key={agency.id} value={agency.id}>{agency.name}</option>)}</select></label>
+      <button aria-expanded={moreFilters} className="ph-secondary-button" onClick={() => setMoreFilters((open) => !open)} type="button">{moreFilters ? "Fewer filters" : "Date & more filters"}</button>
     </section>
+    {moreFilters ? <section className="ph-schedule-more-filters"><label><span>Road / area</span><select value={roadSegmentId} onChange={(event) => { setRoadSegmentId(event.target.value); setHistoryOpen(false); }}><option value="">{wardId ? "Entire ward" : "All mapped roads"}</option>{roads.map((road) => <option key={road.id} value={road.id}>{road.roadName}</option>)}</select></label><label><span>From</span><input max={dateTo} type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label><span>To</span><input min={dateFrom} type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></section> : null}
 
     <div className="work-calendar-toolbar">
-      <div aria-label="Calendar view" className="work-calendar-tabs" role="tablist">
-        {(["MAP", "TIMELINE", "LEDGER"] as const).map((item) => <button aria-selected={view === item} className={view === item ? "active" : ""} key={item} onClick={() => setView(item)} role="tab" type="button">{item === "LEDGER" ? "Work ledger" : item[0] + item.slice(1).toLowerCase()}</button>)}
-      </div>
-      <div aria-label="Time classification" className="work-period-filters">
-        <button aria-pressed={period === "ALL"} onClick={() => setPeriod("ALL")} type="button"><strong>{works.length}</strong> All</button>
-        {(["PAST", "CURRENT", "FUTURE"] as const).map((item) => <button aria-pressed={period === item} data-period={item.toLowerCase()} key={item} onClick={() => setPeriod(item)} type="button"><strong>{counts[item]}</strong> {periodLabel(item)}</button>)}
-      </div>
+      <div aria-label="Schedule view" className="work-calendar-tabs" role="tablist">{(["MAP", "TIMELINE"] as const).map((item) => <button aria-selected={view === item} className={view === item ? "active" : ""} key={item} onClick={() => setView(item)} role="tab" type="button">{item === "MAP" ? "Map" : "Timeline"}</button>)}</div>
+      <div aria-label="Time classification" className="work-period-filters"><button aria-pressed={period === "ALL"} onClick={() => setPeriod("ALL")} type="button"><strong>{works.length}</strong> All</button>{(["PAST", "CURRENT", "FUTURE"] as const).map((item) => <button aria-pressed={period === item} data-period={item.toLowerCase()} key={item} onClick={() => setPeriod(item)} type="button"><strong>{counts[item]}</strong> {periodLabel(item)}</button>)}</div>
     </div>
 
     {error ? <p className="work-calendar-error" role="alert">{error}</p> : null}
-    {loading ? <p className="work-calendar-progress" role="status">Updating the bounded work view…</p> : null}
+    {loading ? <p className="work-calendar-progress" role="status">Updating the spatial work view…</p> : null}
 
-    {view === "LEDGER" ? <WorkLedger
-      ledger={ledger}
-      loading={ledgerLoading}
-      onPageChange={(page) => void loadLedger(page)}
-      page={ledgerPage}
-      roadSelected={Boolean(roadSegmentId)}
-      wardSelected={Boolean(wardId)}
-    /> : <div className="work-calendar-workspace">
-      <section className="work-calendar-main">
-        {view === "MAP" ? <WorkMap bounds={mapBounds} onBoundsChange={setMapBounds} onSelect={setSelectedId} selectedId={selectedId} works={visibleWorks} /> : <WorkTimeline onSelect={setSelectedId} selectedId={selectedId} works={visibleWorks} />}
-        {!loading && visibleWorks.length === 0 ? <div className="work-calendar-empty"><strong>No civic works match this view.</strong><span>Try a wider date range, another ward, or clear the agency filter.</span></div> : null}
-      </section>
-      <aside aria-label="Selected work details" className="work-detail-panel">
-        {selected ? <>
-          <div className="work-detail-kicker"><span data-period={selected.period.toLowerCase()}>{periodLabel(selected.period)}</span><code>{selected.referenceNumber}</code></div>
-          <h2>{selected.title}</h2>
-          <p className="work-detail-agency">{selected.agency.name}<small>{selected.agency.type}</small></p>
-          <dl>
-            <div><dt>Location</dt><dd>{selected.locationLabel ?? selected.roadSegment?.roadName ?? selected.ward?.name ?? "Mapped location"}</dd></div>
-            <div><dt>Timing</dt><dd>{selected.plannedStart && selected.plannedEnd ? `${new Date(selected.plannedStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} – ${new Date(selected.plannedEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}` : "Timeline pending"}</dd></div>
-            <div><dt>Status</dt><dd>{selected.state.replaceAll("_", " ").toLowerCase()}</dd></div>
-            <div><dt>Evidence</dt><dd>{selected.evidenceCount > 0 ? `${selected.evidenceCount} available` : "None available"}</dd></div>
-            <div><dt>Dependencies</dt><dd>{selected.dependencySummary.total === 0 ? "None" : selected.dependencySummary.blocked ? `Blocked by ${selected.dependencySummary.blockedBy.map(({ name }) => name).join(", ")}` : `${selected.dependencySummary.fulfilled} fulfilled`}</dd></div>
-            {selected.originalPlannedStart && selected.originalPlannedEnd ? <div><dt>Original dates</dt><dd>{new Date(selected.originalPlannedStart).toLocaleDateString("en-IN")} – {new Date(selected.originalPlannedEnd).toLocaleDateString("en-IN")}</dd></div> : null}
-            <div><dt>Coordination</dt><dd>{selected.conflictCount + selected.roadConflictCount > 0 ? `${selected.conflictCount + selected.roadConflictCount} advisory warning${selected.conflictCount + selected.roadConflictCount === 1 ? "" : "s"}` : "No warnings"}</dd></div>
-          </dl>
-          {selected.description ? <div className="work-detail-scope"><h3>Work scope</h3><p>{selected.description}</p></div> : null}
-          {selected.agency.id === ownAgencyId ? <a className="work-detail-link" href={`/project-head/projects/${selected.id}`}>Open project record →</a> : <p className="work-detail-readonly">Cross-agency record · read only</p>}
-        </> : <div className="work-detail-placeholder"><h2>Select a civic work</h2><p>Choose a mapped work or timeline row to inspect agency, timing, status, evidence, and coordination state.</p></div>}
-      </aside>
-    </div>}
+    <div className="work-calendar-workspace">
+      <section className="work-calendar-main">{view === "MAP" ? <WorkMap bounds={mapBounds} onBoundsChange={setMapBounds} onSelect={setSelectedId} selectedId={selectedId} works={visibleWorks} /> : <WorkTimeline onSelect={setSelectedId} selectedId={selectedId} works={visibleWorks} />}{!loading && visibleWorks.length === 0 ? <div className="work-calendar-empty"><strong>No civic works match this view.</strong><span>Try a wider date range, another ward, or clear the agency filter.</span></div> : null}</section>
+      <aside aria-label="Selected work details" className="work-detail-panel">{selected ? <><div className="work-detail-kicker"><span data-period={selected.period.toLowerCase()}>{periodLabel(selected.period)}</span><code>{selected.referenceNumber}</code></div><h2>{selected.title}</h2><p className="work-detail-agency">{selected.agency.name}<small>{selected.agency.type}</small></p><dl><div><dt>Location</dt><dd>{selected.locationLabel ?? selected.roadSegment?.roadName ?? selected.ward?.name ?? "Mapped location"}</dd></div><div><dt>Schedule</dt><dd>{selected.plannedStart && selected.plannedEnd ? `${new Date(selected.plannedStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} - ${new Date(selected.plannedEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}` : "Timeline pending"}</dd></div><div><dt>Status</dt><dd>{selected.state.replaceAll("_", " ").toLowerCase()}</dd></div><div><dt>Responsible</dt><dd>{selected.engineer?.email ?? "Unassigned"}</dd></div><div><dt>Dependencies</dt><dd>{selected.dependencySummary.total === 0 ? "None" : selected.dependencySummary.blocked ? `Waiting on ${selected.dependencySummary.blockedBy.map(({ name }) => name).join(", ")}` : `${selected.dependencySummary.fulfilled} fulfilled`}</dd></div><div><dt>Coordination</dt><dd>{selected.conflictCount + selected.roadConflictCount > 0 ? `${selected.conflictCount + selected.roadConflictCount} advisory warning${selected.conflictCount + selected.roadConflictCount === 1 ? "" : "s"}` : "No warnings"}</dd></div></dl>{selected.agency.id === ownAgencyId ? <a className="work-detail-link" href={`/project-head/projects/${selected.id}`}>Open work record →</a> : <p className="work-detail-readonly">Cross-agency record · read only</p>}{selected.roadSegment || selected.ward ? <button className="ph-tertiary-button" onClick={openHistory} type="button">View road history →</button> : null}</> : <div className="work-detail-placeholder"><h2>Select a civic work</h2><p>Choose a mapped work or timeline row to see responsibility, timing, dependencies, and coordination state.</p></div>}</aside>
+    </div>
+
+    {historyOpen ? <section className="ph-schedule-history"><header><div><h2>Road and location history</h2><p>Permanent civic work history for the selected road or ward.</p></div><button className="ph-secondary-button" onClick={() => setHistoryOpen(false)} type="button">Close history</button></header><WorkLedger ledger={ledger} loading={ledgerLoading} onPageChange={(nextPage) => void loadLedger(nextPage)} page={ledgerPage} roadSelected={Boolean(roadSegmentId)} wardSelected={Boolean(wardId)} /></section> : null}
   </div>;
 }

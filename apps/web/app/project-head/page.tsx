@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import type { PaginationMeta, ProjectHeadDashboardCounts, ProjectListItem } from "@civicos/shared";
-import { EmptyState, PageHeader, PortalStatePill, relativeDate } from "../_components/ui";
+import { EmptyState, PageHeader } from "../_components/ui";
 import { usePortalPolling } from "../_lib/portal-refresh";
+import { WorkStatus } from "./_components/work-ui";
 import { apiFetch } from "./_lib/api";
 
 type DashboardResponse = {
@@ -13,11 +14,25 @@ type DashboardResponse = {
   performance: { roadConflicts: number };
 };
 
-type AttentionRow = { label: string; count: number; context: string; href: string; priority: number };
+type AttentionRow = { label: string; count: number; context: string; href: string; action: string; priority: number };
 
-export default function ProjectHeadDashboardPage() {
+function dueText(project: ProjectListItem): string {
+  if (!project.plannedEnd) return "Schedule pending";
+  const date = new Date(project.plannedEnd);
+  const overdue = date.getTime() < Date.now() && !["CLOSED", "CANCELLED"].includes(project.state);
+  return `${overdue ? "Overdue" : "Due"} ${date.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
+}
+
+function projectAction(project: ProjectListItem): { label: string; href: string } {
+  if (project.grievance) return { label: "Review issue", href: `/project-head/grievances?grievance=${project.grievance.id}` };
+  if (project.state === "CREATED" && project.ticketId) return { label: "Assign engineer", href: `/project-head/projects?ticketId=${project.ticketId}` };
+  if (["COMPLETED", "AWAITING_VERIFICATION"].includes(project.state)) return { label: "Review completion", href: `/project-head/projects/${project.id}` };
+  return { label: "Open work", href: `/project-head/projects/${project.id}` };
+}
+
+export default function ProjectHeadTodayPage() {
   const [data, setData] = useState<DashboardResponse>();
-  const [recent, setRecent] = useState<ProjectListItem[]>([]);
+  const [activeWork, setActiveWork] = useState<ProjectListItem[]>([]);
   const [workflowCounts, setWorkflowCounts] = useState({ readyToCreate: 0, readyToAssign: 0, awaitingVerification: 0 });
   const [error, setError] = useState<string>();
   const load = useCallback(async () => {
@@ -27,38 +42,55 @@ export default function ProjectHeadDashboardPage() {
         apiFetch<{ pagination: PaginationMeta }>("/tickets?status=INSPECTION_COMPLETE&limit=1"),
         apiFetch<{ pagination: PaginationMeta }>("/projects?status=CREATED&limit=1"),
         apiFetch<{ pagination: PaginationMeta }>("/projects?status=AWAITING_VERIFICATION&limit=1"),
-        apiFetch<{ projects: ProjectListItem[] }>("/projects?limit=6"),
+        apiFetch<{ projects: ProjectListItem[] }>("/projects?limit=30"),
       ]);
+      const operational = projects.projects
+        .filter((project) => !["CLOSED", "CANCELLED"].includes(project.state))
+        .sort((left, right) => {
+          const leftUrgent = left.grievance || left.action && new Date(left.action.deadline).getTime() < Date.now() ? 1 : 0;
+          const rightUrgent = right.grievance || right.action && new Date(right.action.deadline).getTime() < Date.now() ? 1 : 0;
+          return rightUrgent - leftUrgent || new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+        })
+        .slice(0, 6);
       setData(dashboard);
-      setRecent([...projects.projects].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()).slice(0, 5));
+      setActiveWork(operational);
       setWorkflowCounts({ readyToCreate: readyToCreate.pagination.total, readyToAssign: readyToAssign.pagination.total, awaitingVerification: awaitingVerification.pagination.total });
       setError(undefined);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load the operations overview");
+      setError(reason instanceof Error ? reason.message : "Could not load today’s operations");
     }
   }, []);
   usePortalPolling(load);
 
   const attention = useMemo<AttentionRow[]>(() => data ? [
-    { label: "Inspection queue", count: data.counts.newValidatedTickets + data.counts.inspectionsDue, context: "Validated tickets awaiting site review", href: "/project-head/tickets", priority: 1 },
-    { label: "Project setup", count: workflowCounts.readyToCreate + workflowCounts.readyToAssign, context: "Inspected work to create or assign", href: "/project-head/projects", priority: 2 },
-    { label: "Coordination", count: data.counts.dependencyRequestsPending, context: "Requests awaiting an agency response", href: "/project-head/dependencies", priority: 3 },
-    { label: "Conflicts", count: data.performance.roadConflicts, context: "Advisory overlaps requiring review", href: "/project-head/conflicts", priority: 4 },
-    { label: "Approaching deadlines", count: data.counts.attentionActions, context: "Workflow responses due or overdue", href: "/project-head/notifications", priority: 5 },
-    { label: "Closure checks", count: workflowCounts.awaitingVerification, context: "Completed work awaiting citizen verification", href: "/project-head/projects?status=AWAITING_VERIFICATION", priority: 6 },
+    { label: "Inspections due", count: data.counts.newValidatedTickets + data.counts.inspectionsDue, context: "Validated issues waiting for a site decision", href: "/project-head/projects?view=INTAKE", action: "Review inspections", priority: 1 },
+    { label: "Works ready for assignment", count: workflowCounts.readyToCreate + workflowCounts.readyToAssign, context: "Inspected work ready to set up or assign", href: "/project-head/projects?view=READY", action: "Assign engineers", priority: 2 },
+    { label: "Agency responses waiting", count: data.counts.dependencyRequestsPending, context: "Formal coordination requests requiring action", href: "/project-head/dependencies", action: "Open coordination", priority: 3 },
+    { label: "Road conflict rules triggered", count: data.performance.roadConflicts, context: "Advisory rule alerts grouped into coordination issues", href: "/project-head/dependencies?view=CONFLICTS", action: "Review conflicts", priority: 4 },
+    { label: "Deadlines approaching or overdue", count: data.counts.attentionActions, context: "Open workflow actions with a response deadline", href: "/project-head/notifications", action: "Review deadlines", priority: 5 },
+    { label: "Citizen issues requiring review", count: data.counts.openGrievances, context: "Grievances linked to existing work records", href: "/project-head/grievances", action: "Review issues", priority: 6 },
+    { label: "Work awaiting closure", count: workflowCounts.awaitingVerification, context: "Completed work waiting for verification or closure", href: "/project-head/projects?view=CLOSURE", action: "Review completion", priority: 7 },
   ].filter((item) => item.count > 0).sort((left, right) => left.priority - right.priority) : [], [data, workflowCounts]);
 
-  return <>
-    <PageHeader eyebrow="Operations overview" title={data?.agency.name ?? "Agency operations"} description="Work needing a decision, coordination, or deadline response." action={<Link className="primary-link" href="/project-head/tickets/new">Create agency ticket</Link>} />
+  return <div className="ph-today-page">
+    <PageHeader title="Today" description={data ? `${data.agency.name} · ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}` : "Your agency operations desk"} action={<Link className="portal-primary-button" href="/project-head/tickets/new">+ New ticket</Link>} />
     {error ? <p className="error" role="alert">{error}</p> : null}
-    {!data && !error ? <p className="portal-muted" role="status">Loading live operations…</p> : null}
-    {data ? <div className="overview-layout">
-      <section className="operations-list" aria-labelledby="attention-title">
-        <header><div><p className="eyebrow">Today</p><h2 id="attention-title">Requires attention</h2></div><span>{attention.reduce((total, item) => total + item.count, 0)} open items</span></header>
-        {attention.length ? <ol>{attention.map((item) => <li key={item.label}><div><strong>{item.label}</strong><span>{item.context}</span></div><b>{item.count}</b><Link href={item.href}>Review</Link></li>)}</ol> : <EmptyState title="No immediate actions" description="New assigned work and coordination requests will appear here." />}
+    {!data && !error ? <p className="portal-muted" role="status">Loading today’s operations…</p> : null}
+    {data ? <>
+      <section className="ph-attention-list" aria-labelledby="attention-title">
+        <header><div><h2 id="attention-title">Needs your attention</h2><p>Decisions and responses ordered by operational priority.</p></div><span>{attention.reduce((total, item) => total + item.count, 0)} open</span></header>
+        {attention.length ? <ol>{attention.map((item) => <li key={item.label}><div><strong>{item.label}</strong><span>{item.context}</span></div><b>{item.count}</b><Link href={item.href}>{item.action} →</Link></li>)}</ol> : <EmptyState title="No immediate actions" description="New inspections, coordination requests, and closure checks will appear here." />}
       </section>
-      <aside className="deadline-summary" aria-labelledby="deadline-title"><p className="eyebrow">Deadlines</p><h2 id="deadline-title">Response watch</h2><strong>{data.counts.attentionActions}</strong><p>workflow actions currently approaching or past their response deadline</p><Link href="/project-head/notifications">Open deadline updates</Link></aside>
-      <section className="recent-activity" aria-labelledby="activity-title"><header><div><p className="eyebrow">Execution</p><h2 id="activity-title">Recent work activity</h2></div><Link href="/project-head/projects">View all works</Link></header>{recent.length ? <div className="table-scroll"><table><thead><tr><th>Work</th><th>Status</th><th>Responsible</th><th>Last updated</th></tr></thead><tbody>{recent.map((project) => <tr key={project.id}><td><Link href={`/project-head/projects/${project.id}`}><strong>{project.ticket?.title ?? project.title}</strong><small>{project.ticket?.ward.name ?? "Location pending"}</small></Link></td><td><PortalStatePill state={project.state} /></td><td>{project.engineer?.email ?? "Unassigned"}</td><td>{relativeDate(project.updatedAt)}</td></tr>)}</tbody></table></div> : <EmptyState title="No recent execution activity" description="Created and assigned works will be recorded here." />}</section>
-    </div> : null}
-  </>;
+
+      <section className="ph-active-work" aria-labelledby="active-work-title">
+        <header><div><h2 id="active-work-title">Active work</h2><p>Recent civic work with the clearest next operational action.</p></div><Link href="/project-head/projects">View all work →</Link></header>
+        {activeWork.length ? <ol>{activeWork.map((project) => {
+          const action = projectAction(project);
+          return <li key={project.id}><div className="ph-work-identity"><strong>{project.ticket?.title ?? project.title}</strong><span>{project.locationLabel ?? project.ticket?.ward.name ?? "Location pending"} · {project.agency.name}</span></div><WorkStatus state={project.state} /><span className="ph-work-owner">{project.engineer?.email ?? "Unassigned"}<small>{dueText(project)}</small></span><Link className="ph-row-action" href={action.href}>{action.label} →</Link></li>;
+        })}</ol> : <EmptyState title="No active work" description="Created and assigned civic work will appear here." />}
+      </section>
+
+      <p className="ph-summary-strip">{data.counts.attentionActions} deadlines · {data.performance.roadConflicts} road rule alerts · {data.counts.activeProjects} active works</p>
+    </> : null}
+  </div>;
 }
