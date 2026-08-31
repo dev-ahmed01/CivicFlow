@@ -15,11 +15,12 @@ COPY packages/config/package.json packages/config/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/shared/package.json packages/shared/package.json
 RUN pnpm install --frozen-lockfile
-
 COPY apps/api apps/api
 COPY packages/config packages/config
 COPY packages/db packages/db
 COPY packages/shared packages/shared
+
+ARG DATABASE_URL
 RUN pnpm --filter api... build
 
 EXPOSE 10000
