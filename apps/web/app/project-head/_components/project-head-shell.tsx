@@ -8,8 +8,8 @@ import { NotificationBell } from "../../_components/notification-center";
 import { CitizenIcon, type CitizenIconName } from "../../_components/ui";
 
 const workLinks: Array<{ href: string; label: string; icon: CitizenIconName; active: (path: string) => boolean }> = [
-  { href: "/project-head", label: "Today", icon: "clock", active: (path) => path === "/project-head" },
-  { href: "/project-head/projects", label: "Work", icon: "clipboard", active: (path) => path.startsWith("/project-head/projects") || path.startsWith("/project-head/tickets") || path.startsWith("/project-head/grievances") },
+  { href: "/project-head", label: "Command Centre", icon: "clock", active: (path) => path === "/project-head" },
+  { href: "/project-head/projects", label: "Work Pipeline", icon: "clipboard", active: (path) => path.startsWith("/project-head/projects") || path.startsWith("/project-head/tickets") || path.startsWith("/project-head/grievances") },
   { href: "/project-head/work-calendar", label: "Schedule", icon: "location", active: (path) => path.startsWith("/project-head/work-calendar") },
   { href: "/project-head/dependencies", label: "Coordination", icon: "send", active: (path) => path.startsWith("/project-head/dependencies") || path.startsWith("/project-head/coordination") || path.startsWith("/project-head/conflicts") },
   { href: "/project-head/teams", label: "Team", icon: "person", active: (path) => path.startsWith("/project-head/teams") },

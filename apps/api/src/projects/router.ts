@@ -344,11 +344,21 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           engineer: { select: { id: true, email: true } },
           ticket: { select: { id: true, title: true, ward: { select: { id: true, name: true } } } },
           dependencies: { select: { id: true } },
+          _count: { select: { conflictLogs: true, conflictingLogs: true, roadConflictLogs: true, conflictingRoadLogs: true, coordinationRequests: true, conflictingCoordinationRequests: true } },
           workflowActions: { where: { respondedAt: null }, orderBy: { deadline: "asc" }, take: 1, select: { id: true, type: true, deadline: true, responsibleUser: { select: { id: true, email: true } } } },
           grievances: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, status: true, reason: true, createdAt: true } },
         },
       }), prisma.project.count({ where })]);
-      response.json({ projects: projects.map(({ workflowActions, grievances, dependencies, ...project }) => ({ ...project, dependencyCount: dependencies.length, action: workflowActions[0] ?? null, grievance: grievances[0] ?? null, editable: canEngineerEdit(request, project) })), pagination: paginationMeta(pagination.data.page, pagination.data.limit, total) });
+      response.json({ projects: projects.map(({ workflowActions, grievances, dependencies, _count, ...project }) => ({
+        ...project,
+        dependencyCount: dependencies.length,
+        conflictCount: _count.conflictLogs + _count.conflictingLogs,
+        roadConflictCount: _count.roadConflictLogs + _count.conflictingRoadLogs,
+        coordinationCount: _count.coordinationRequests + _count.conflictingCoordinationRequests,
+        action: workflowActions[0] ?? null,
+        grievance: grievances[0] ?? null,
+        editable: canEngineerEdit(request, project),
+      })), pagination: paginationMeta(pagination.data.page, pagination.data.limit, total) });
     }),
   );
 

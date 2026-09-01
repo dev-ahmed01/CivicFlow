@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { CivicWorkOrigin, DependencyState, GrievanceStatus, ProjectState, TicketState, UserRole, WorkflowActionType, prisma } from "db";
+import { CivicWorkOrigin, CoordinationStatus, DependencyState, GrievanceStatus, ProjectState, TicketState, UserRole, WorkflowActionType, prisma } from "db";
 import {
   agencyOriginatedTicketRequestSchema,
   inspectionReportRequestSchema,
@@ -52,7 +52,40 @@ export function createAgencyRouter(storage: ImageStorage): Router {
     requirePasswordResetComplete,
     asyncRoute(async (request, response) => {
       const agencyId = projectHeadAgency(request);
-      const [agency, newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects, analytics, attentionActions, openGrievances] = await Promise.all([
+      const now = new Date();
+      const soon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const openCoordination = [
+        CoordinationStatus.SENT,
+        CoordinationStatus.ACKNOWLEDGED,
+        CoordinationStatus.CLARIFICATION_REQUESTED,
+        CoordinationStatus.INSPECTION_REQUIRED,
+        CoordinationStatus.ENGINEER_ASSIGNED,
+        CoordinationStatus.ACCEPTED,
+        CoordinationStatus.IN_PROGRESS,
+      ];
+      const [
+        agency,
+        newValidatedTickets,
+        inspectionsDue,
+        dependencyRequestsPending,
+        activeProjects,
+        analytics,
+        attentionActions,
+        openGrievances,
+        inspectionsAwaitingReview,
+        worksReadyForAssignment,
+        coordinationRequestsPending,
+        genericConflictsWithoutCoordination,
+        roadConflictsWithoutCoordination,
+        completionReviews,
+        escalatedDependencies,
+        escalatedGrievances,
+        startingSoon,
+        overdueWorks,
+        activeEngineers,
+        currentGenericConflicts,
+        currentRoadConflicts,
+      ] = await Promise.all([
         prisma.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { id: true, name: true } }),
         prisma.ticket.count({ where: { assignedAgencyId: agencyId, state: TicketState.ROUTED_TO_AGENCY } }),
         prisma.ticket.count({ where: { assignedAgencyId: agencyId, state: TicketState.INSPECTION_DUE } }),
@@ -63,15 +96,46 @@ export function createAgencyRouter(storage: ImageStorage): Router {
           },
         }),
         prisma.project.count({
-          where: { agencyId, state: { notIn: [ProjectState.CLOSED, ProjectState.CANCELLED] } },
+          where: { agencyId, state: ProjectState.ACTIVE },
         }),
         buildProjectHeadPerformance(agencyId),
-        prisma.workflowAction.count({ where: { responsibleAgencyId: agencyId, respondedAt: null, deadline: { lte: new Date(Date.now() + 24 * 60 * 60 * 1000) } } }),
+        prisma.workflowAction.count({ where: { responsibleAgencyId: agencyId, respondedAt: null, deadline: { lte: new Date(now.getTime() + 24 * 60 * 60 * 1000) } } }),
         prisma.grievance.count({ where: { responsibleAgencyId: agencyId, status: { in: [GrievanceStatus.OPEN, GrievanceStatus.UNDER_REVIEW, GrievanceStatus.ESCALATED, GrievanceStatus.REOPENED] } } }),
+        prisma.ticket.count({ where: { assignedAgencyId: agencyId, state: TicketState.INSPECTION_COMPLETE } }),
+        prisma.project.count({ where: { agencyId, engineerId: null, state: ProjectState.CREATED } }),
+        prisma.coordinationRequest.count({ where: { respondingAgencyId: agencyId, status: { in: openCoordination } } }),
+        prisma.conflictLog.count({ where: { OR: [{ projectAgencyId: agencyId }, { conflictingAgencyId: agencyId }], coordinationRequests: { none: {} } } }),
+        prisma.roadConflictLog.count({ where: { OR: [{ projectAgencyId: agencyId }, { conflictingAgencyId: agencyId }], coordinationRequests: { none: {} } } }),
+        prisma.project.count({ where: { agencyId, state: { in: [ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION] } } }),
+        prisma.dependency.count({ where: { OR: [{ requestingAgencyId: agencyId }, { respondingAgencyId: agencyId }], state: DependencyState.ESCALATED } }),
+        prisma.grievance.count({ where: { responsibleAgencyId: agencyId, status: { in: [GrievanceStatus.ESCALATED, GrievanceStatus.REOPENED] } } }),
+        prisma.project.count({ where: { agencyId, plannedStart: { gte: now, lte: soon }, state: { notIn: [ProjectState.ACTIVE, ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION, ProjectState.CLOSED, ProjectState.CANCELLED] } } }),
+        prisma.project.count({ where: { agencyId, plannedEnd: { lt: now }, state: { notIn: [ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION, ProjectState.CLOSED, ProjectState.CANCELLED] } } }),
+        prisma.user.count({ where: { agencyId, role: UserRole.ENGINEER, engineeringProjects: { some: { state: ProjectState.ACTIVE } } } }),
+        prisma.conflictLog.count({ where: { OR: [{ projectAgencyId: agencyId }, { conflictingAgencyId: agencyId }] } }),
+        prisma.roadConflictLog.count({ where: { OR: [{ projectAgencyId: agencyId }, { conflictingAgencyId: agencyId }] } }),
       ]);
       response.json({
         agency,
-        counts: { newValidatedTickets, inspectionsDue, dependencyRequestsPending, activeProjects, attentionActions, openGrievances },
+        counts: {
+          newValidatedTickets,
+          inspectionsDue,
+          dependencyRequestsPending,
+          activeProjects,
+          attentionActions,
+          openGrievances,
+          inspectionsAwaitingAssignment: newValidatedTickets + inspectionsDue,
+          inspectionsAwaitingReview,
+          worksReadyForAssignment,
+          incomingCoordination: dependencyRequestsPending + coordinationRequestsPending,
+          conflictsWithoutCoordination: genericConflictsWithoutCoordination + roadConflictsWithoutCoordination,
+          completionReviews,
+          escalations: escalatedDependencies + escalatedGrievances,
+          startingSoon,
+          overdueWorks,
+          activeEngineers,
+          currentConflicts: currentGenericConflicts + currentRoadConflicts,
+        },
         performance: {
           ...analytics,
         },

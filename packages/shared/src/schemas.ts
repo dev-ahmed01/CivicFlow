@@ -735,6 +735,17 @@ export const projectHeadDashboardCountsSchema = z.object({
   activeProjects: z.number().int().nonnegative(),
   attentionActions: z.number().int().nonnegative(),
   openGrievances: z.number().int().nonnegative(),
+  inspectionsAwaitingAssignment: z.number().int().nonnegative(),
+  inspectionsAwaitingReview: z.number().int().nonnegative(),
+  worksReadyForAssignment: z.number().int().nonnegative(),
+  incomingCoordination: z.number().int().nonnegative(),
+  conflictsWithoutCoordination: z.number().int().nonnegative(),
+  completionReviews: z.number().int().nonnegative(),
+  escalations: z.number().int().nonnegative(),
+  startingSoon: z.number().int().nonnegative(),
+  overdueWorks: z.number().int().nonnegative(),
+  activeEngineers: z.number().int().nonnegative(),
+  currentConflicts: z.number().int().nonnegative(),
 });
 export const projectListItemSchema = z.object({
   id: idSchema,
@@ -760,6 +771,9 @@ export const projectListItemSchema = z.object({
   engineer: engineerSummarySchema.nullable(),
   ticket: z.object({ id: idSchema, title: z.string(), ward: wardSummarySchema }).nullable(),
   dependencyCount: z.number().int().nonnegative(),
+  conflictCount: z.number().int().nonnegative(),
+  roadConflictCount: z.number().int().nonnegative(),
+  coordinationCount: z.number().int().nonnegative(),
   action: workflowActionSummarySchema.nullable(),
   grievance: grievanceSummarySchema.pick({ id: true, status: true, reason: true, createdAt: true }).nullable(),
 });
