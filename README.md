@@ -2,6 +2,8 @@
 
 Civic infrastructure accountability platform — built for Smart India Hackathon. Citizens report and verify civic issues (potholes, streetlight outages, water/sewage problems, etc.); Project Heads and Executive Engineers across municipal agencies (BWSSB, BESCOM, PWD, and others) route, coordinate, and resolve them. The flagship differentiator is the **Road-Cutting Intelligence Layer**: a conflict-detection and sequencing-recommendation engine that catches agencies about to dig up the same stretch of road for unrelated reasons — before it happens, not after.
 
+The Project Head web portal opens on an agency-scoped **Command Centre**: priority decisions, live operations, a compact city-work map, and a feed backed by recorded workflow notifications. Its **Work Pipeline** unifies citizen-originated and agency-planned work across Intake, Inspection, Ready, Scheduled, Active, Closure, and Closed stages.
+
 ## Repo layout
 
 ```
