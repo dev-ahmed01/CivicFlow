@@ -121,7 +121,7 @@ async function main(): Promise<void> {
     assert.equal(await prisma.completionVerificationRequest.count({ where: { completionEvidenceId: evidence.body.evidenceId } }), 3);
     assert.equal(await prisma.notification.count({ where: { type: "COMPLETION_VERIFICATION_REQUEST", payload: { path: ["projectId"], equals: projectId } } }), 3);
 
-    const verificationConfig = await prisma.adminConfig.findUniqueOrThrow({ where: { key: "verification.quorum" }, select: { value: true } });
+    const verificationConfig = await prisma.systemConfig.findUniqueOrThrow({ where: { key: "verification.quorum" }, select: { value: true } });
     assert.equal(typeof verificationConfig.value, "number");
     const verificationQuorum = verificationConfig.value as number;
     assert.ok(Number.isInteger(verificationQuorum) && verificationQuorum >= 1 && verificationQuorum <= 3);

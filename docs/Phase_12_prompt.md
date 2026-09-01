@@ -11,7 +11,7 @@ Build Phase 12: Demo Data, Rehearsal, Deployment. Follow AGENTS.md.
 
 **2. Deployment:**
 - API + Postgres/PostGIS → Railway or Render (per Build Guide's stack choice)
-- Web (Project Head + Admin) → Vercel
+- Web (Project Head + Engineer, plus citizen web) → Vercel
 - Mobile (Citizen + Engineer) → Expo EAS Build, produce a shareable preview/install link
 - Environment variables for OTP provider, image storage, CLIP inference endpoint all configured for the deployed environment, not just local dev — confirm none of these silently fall back to a mock/console-log provider in production
 - Confirm the public transparency dashboard (`/analytics/public-dashboard`, Phase 10) is reachable with no auth from the deployed URL, since judges may check it independently

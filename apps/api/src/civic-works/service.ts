@@ -68,7 +68,6 @@ export function civicWorkManageAgency(actor: CivicWorkActor): string {
 }
 
 export function civicWorkReadScope(actor: CivicWorkActor): Prisma.ProjectWhereInput {
-  if (actor.role === UserRole.ADMIN) return {};
   const agencyId = requiredAgency(actor);
   if (actor.role === UserRole.PROJECT_HEAD) return { agencyId };
   if (actor.role === UserRole.ENGINEER) return { agencyId, engineerId: actor.userId };
@@ -76,8 +75,8 @@ export function civicWorkReadScope(actor: CivicWorkActor): Prisma.ProjectWhereIn
 }
 
 export function assertCoordinationRead(actor: CivicWorkActor): void {
-  if (actor.role !== UserRole.PROJECT_HEAD && actor.role !== UserRole.ADMIN) {
-    throw new CivicWorkError(403, "The work calendar is limited to Project Heads and Administrators", "WORK_CALENDAR_FORBIDDEN");
+  if (actor.role !== UserRole.PROJECT_HEAD) {
+    throw new CivicWorkError(403, "The work calendar is limited to Project Heads", "WORK_CALENDAR_FORBIDDEN");
   }
 }
 
@@ -450,7 +449,7 @@ export async function getCivicWork(actor: CivicWorkActor, id: string) {
 
 export async function listCivicWorks(actor: CivicWorkActor, query: ListCivicWorksQuery) {
   const scope = civicWorkReadScope(actor);
-  if (actor.role !== UserRole.ADMIN && query.agencyId && query.agencyId !== actor.agencyId) {
+  if (query.agencyId && query.agencyId !== actor.agencyId) {
     throw new CivicWorkError(403, "You cannot list another agency's civic works", "AGENCY_SCOPE_FORBIDDEN");
   }
   const { records, total } = await listCivicWorkRecords(prisma, query, scope);

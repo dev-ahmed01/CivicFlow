@@ -116,4 +116,4 @@ Engineer tabs: Home · Work · Area · Updates · Profile. Dependencies remain a
 - [x] Citizen and internal notification centers use the same platform `NotificationRow` contract.
 - [x] Internal geographic list-only decision and dark-mode deferral are documented.
 
-Verification evidence: the production build generated all 38 web routes, and a live development-server crawl returned HTTP 200 with non-empty HTML for all 27 top-level citizen, Project Head, Engineer, and Admin navigation targets. A visual browser walkthrough could not be captured in this session because neither the prescribed agent-browser CLI nor an in-app browser backend was available; interactive state transitions remain covered by the route/state mapping above and the existing automated suites.
+Current verification evidence: the production build generates 34 web routes after retiring the global management route tree. Citizen, Project Head, and Engineer navigation targets remain covered by the route/state mapping and automated suites.

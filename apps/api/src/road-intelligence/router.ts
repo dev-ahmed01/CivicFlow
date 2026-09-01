@@ -36,7 +36,7 @@ export function createRoadIntelligenceRouter(): Router {
 
   router.get(
     "/road-segments",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     asyncRoute(async (request, response) => {
       const parsed = segmentQuerySchema.safeParse(request.query);
       if (!parsed.success) {
@@ -58,7 +58,7 @@ export function createRoadIntelligenceRouter(): Router {
 
   router.get(
     "/road-segments/:id",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     asyncRoute(async (request, response) => {
       const id = idSchema.safeParse(routeId(request));
       if (!id.success) {
@@ -129,12 +129,13 @@ export function createRoadIntelligenceRouter(): Router {
 
   router.get(
     "/projects/:id/road-intelligence",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     asyncRoute(async (request, response) => {
       const project = await prisma.project.findFirst({
         where: {
           id: routeId(request),
-          ...(request.auth!.role === UserRole.PROJECT_HEAD ? { agencyId: actorAgency(request) } : {}),
+          agencyId: actorAgency(request),
+          ...(request.auth!.role === UserRole.ENGINEER ? { engineerId: request.auth!.userId } : {}),
         },
         select: { id: true, intervention: { select: { segmentId: true } } },
       });

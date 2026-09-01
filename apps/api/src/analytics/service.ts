@@ -69,7 +69,7 @@ export type ProjectHeadPerformance = {
 const projectHeadCache = new Map<string, { expiresAt: number; value: ProjectHeadPerformance }>();
 
 // The operations dashboard displays only these six agency metrics. A dedicated,
-// short-lived query avoids building the full admin analytics report on every visit.
+// short-lived query avoids building the full analytics report on every visit.
 export async function buildProjectHeadPerformance(agencyId: string): Promise<ProjectHeadPerformance> {
   const cached = projectHeadCache.get(agencyId);
   if (cached && cached.expiresAt > Date.now()) return cached.value;

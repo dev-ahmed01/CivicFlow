@@ -6,7 +6,7 @@
 
 ### Phase 1 — Foundation: Monorepo, Data Model, Auth
 **Spec refs:** Part III §15 (entities), §17 (auth/RBAC), delta doc §4.1–4.2 (RoadSegment/Intervention schema, built now even though not wired until Phase 8)
-**Builds:** Turborepo skeleton (`apps/api`, `apps/web`, `apps/mobile`, `packages/db`, `packages/shared`) · Prisma schema for all core entities (User, Role, Ticket, Project, Dependency, Ward, Category, RoutingRule, RoadSegment, Intervention, Observation, Notification, AdminConfig) · Postgres+PostGIS provisioned · Phone-OTP auth (citizen) + email/password+JWT (internal roles) · RBAC middleware · seed script with Bengaluru wards + BWSSB/BESCOM/PWD agencies.
+**Builds:** Turborepo skeleton (`apps/api`, `apps/web`, `apps/mobile`, `packages/db`, `packages/shared`) · Prisma schema for all core entities (User, Role, Ticket, Project, Dependency, Ward, Category, RoutingRule, RoadSegment, Intervention, Observation, Notification, SystemConfig) · Postgres+PostGIS provisioned · Phone-OTP auth (citizen) + email/password+JWT (internal roles) · RBAC middleware · seed script with Bengaluru wards + BWSSB/BESCOM/PWD agencies.
 **Acceptance:** Can register/login as each of the 4 roles; JWT-protected route returns 403 for wrong role; `pnpm prisma studio` shows all entities correctly related.
 
 ---
@@ -27,7 +27,7 @@
 
 ### Phase 4 — Agency Routing + Project Head Core Workflows
 **Spec refs:** Part III §7 (category/routing matrix), Part I §13–15, §19 (inspection, project creation, direct ticket creation/W-P9), Part II §2.3/§4.2 (Project Head web IA/screens)
-**Builds:** Table-driven category→agency routing (admin-editable, not hardcoded) · Project Head web dashboard · inspection workflow UI+API · project creation from validated ticket · W-P9 agency-originated ticket creation form (this is reused unmodified in Phase 8).
+**Builds:** Table-driven category→agency routing (system-configurable, not hardcoded) · Project Head web dashboard · inspection workflow UI+API · project creation from validated ticket · W-P9 agency-originated ticket creation form (this is reused unmodified in Phase 8).
 **Acceptance:** A validated ticket auto-routes to the correct primary agency; a Project Head only sees tickets/projects scoped to their own agency; W-P9 form creates a ticket with no citizen reporter.
 
 ---
@@ -73,10 +73,10 @@
 
 ---
 
-### Phase 10 — Analytics, Admin Config, Transparency Dashboard
-**Spec refs:** Part III §19 (metrics/reporting), §20 (admin config), delta doc §6 (road-specific metrics table)
-**Builds:** Project Head dashboard widgets · Admin analytics module (filterable, CSV/PDF export) · public transparency dashboard (`/analytics/public-dashboard`, no auth, anonymized) · road-specific metrics (conflicts detected, repeated-excavation avoided, sequencing recommendations accepted/dismissed, simulated cost saved — labeled per AGENTS.md rule 5) · admin panels for categories/routing/wards/config thresholds.
-**Acceptance:** Public dashboard loads with no auth and shows only aggregated data; Admin can edit a routing rule and see it take effect on the next ticket without a deploy.
+### Phase 10 — Analytics, System Configuration, Transparency Dashboard
+**Spec refs:** Part III §19 (metrics/reporting), §20 (system configuration), delta doc §6 (road-specific metrics table)
+**Builds:** Agency-scoped Project Head analytics · public transparency dashboard (`/analytics/public-dashboard`, no auth, anonymized) · road-specific metrics (conflicts detected, repeated-excavation avoided, sequencing recommendations accepted/dismissed, simulated cost saved — labeled per AGENTS.md rule 5) · database-driven system configuration provisioned outside the operational personas.
+**Acceptance:** Public dashboard loads with no auth and shows only aggregated data; Project Head analytics remain agency-scoped; routing changes take effect from database configuration without a deploy.
 
 ---
 

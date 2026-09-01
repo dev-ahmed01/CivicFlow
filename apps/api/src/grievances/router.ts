@@ -94,13 +94,9 @@ export function createGrievancesRouter(storage: ImageStorage): Router {
         dedupeKey: `grievance:${created.id}:review`, type: WorkflowActionType.REVIEW_GRIEVANCE,
         ticketId: ticket.id, projectId: ticket.project?.id, responsibleUserId, responsibleAgencyId: ticket.assignedAgencyId!,
       });
-      const reviewers = await transaction.user.findMany({
-        where: { OR: [{ id: responsibleUserId }, { role: UserRole.ADMIN }] },
-        select: { id: true },
-      });
-      await createNotifications(transaction, reviewers.map(({ id: userId }) => ({
-        userId, type: "GRIEVANCE_CREATED", payload: { grievanceId: created.id, ticketId: ticket.id, projectId: ticket.project?.id },
-      })));
+      await createNotifications(transaction, [{
+        userId: responsibleUserId, type: "GRIEVANCE_CREATED", payload: { grievanceId: created.id, ticketId: ticket.id, projectId: ticket.project?.id },
+      }]);
       return created;
     });
     response.status(201).json({ grievance: serializeGrievance(storage, grievance), upload });
@@ -128,17 +124,15 @@ export function createGrievancesRouter(storage: ImageStorage): Router {
     response.json({ grievances: grievances.map((item) => serializeGrievance(storage, item)) });
   }));
 
-  router.get("/grievances", requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN), requirePasswordResetComplete, asyncRoute(async (request, response) => {
+  router.get("/grievances", requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
     const status = request.query.status ? grievanceStatusSchema.safeParse(request.query.status) : null;
     if (status && !status.success) {
       response.status(400).json({ error: "Invalid grievance status" });
       return;
     }
-    const where = request.auth!.role === UserRole.ADMIN
-      ? {}
-      : request.auth!.role === UserRole.PROJECT_HEAD
-        ? { responsibleAgencyId: request.auth!.agencyId! }
-        : { OR: [{ responsibleUserId: request.auth!.userId }, { responsibleAgencyId: request.auth!.agencyId! }] };
+    const where = request.auth!.role === UserRole.PROJECT_HEAD
+      ? { responsibleAgencyId: request.auth!.agencyId! }
+      : { OR: [{ responsibleUserId: request.auth!.userId }, { responsibleAgencyId: request.auth!.agencyId! }] };
     const grievances = await prisma.grievance.findMany({
       where: { ...where, ...(status?.success ? { status: status.data } : {}) },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -147,14 +141,14 @@ export function createGrievancesRouter(storage: ImageStorage): Router {
     response.json({ grievances: grievances.map((item) => serializeGrievance(storage, item)) });
   }));
 
-  router.patch("/grievances/:id", requireRole(UserRole.PROJECT_HEAD, UserRole.ADMIN), requirePasswordResetComplete, asyncRoute(async (request, response) => {
+  router.patch("/grievances/:id", requireRole(UserRole.PROJECT_HEAD), requirePasswordResetComplete, asyncRoute(async (request, response) => {
     const parsed = updateGrievanceSchema.safeParse(request.body);
     if (!parsed.success) {
       response.status(400).json({ error: "Invalid grievance update", details: parsed.error.flatten() });
       return;
     }
     const grievance = await prisma.grievance.findFirst({
-      where: { id: routeId(request), ...(request.auth!.role === UserRole.PROJECT_HEAD ? { responsibleAgencyId: request.auth!.agencyId! } : {}) },
+      where: { id: routeId(request), responsibleAgencyId: request.auth!.agencyId! },
     });
     if (!grievance) {
       response.status(404).json({ error: "Grievance not found" });

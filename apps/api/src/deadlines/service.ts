@@ -151,7 +151,7 @@ export async function runDeadlineEscalationJob(now = new Date()): Promise<{ atte
             },
         });
         const reviewers = await transaction.user.findMany({
-            where: { OR: [{ role: UserRole.ADMIN }, { agencyId: action.responsibleAgencyId, role: UserRole.PROJECT_HEAD }, { id: action.responsibleUserId }] },
+            where: { OR: [{ agencyId: action.responsibleAgencyId, role: UserRole.PROJECT_HEAD }, { id: action.responsibleUserId }] },
             select: { id: true },
         });
         await createNotifications(transaction, [...new Set(reviewers.map(({ id }) => id))].map((userId) => ({

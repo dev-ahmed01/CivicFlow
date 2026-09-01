@@ -30,7 +30,7 @@ Real native mobile + web + full spec, one build cycle → this needs a monorepo 
 | Backend API | **Node.js + Express (TypeScript)** | Fast to scaffold, huge Codex training coverage, easy to reason about REST contracts already specified in Part III §16 |
 | Database | **PostgreSQL + PostGIS extension** | `RoadSegment.geometry` (§4.1 of the delta doc) needs real polyline geometry, not lat/lng hacks. PostGIS also makes the 200m/75m radius checks (§8.1, §13.2, §9.1) native SQL instead of app-layer haversine math |
 | ORM | **Prisma** | Type-safe schema shared across API, generates TS types the frontend/mobile can import directly |
-| Web app (Project Head + Admin, web-only role) | **Next.js 14 (App Router)** | Matches Part II §2.3/§4.2 web-only IA; server components for dashboards |
+| Web app (Project Head + Engineer operational portals, supported citizen web experience) | **Next.js 14 (App Router)** | App Router and server components support operations dashboards and field workflows |
 | Mobile app (Citizen + Engineer, native) | **React Native + Expo** | Real native app per your answer, still shares TypeScript types/validation with the backend; Expo EAS gets you a real installable build without native Xcode/Android Studio setup pain mid-hackathon |
 | Auth | **Phone OTP (citizens) via MSG91/Twilio test mode** + **email/password + JWT (internal roles)** — exactly Part III §17.1 | Matches spec's SIH-pattern default; use a sandbox/test OTP provider for demo reliability |
 | Image storage | **Cloudflare R2 / Supabase Storage (S3-compatible)** | Cheap, simple presigned-upload flow from mobile |
@@ -43,7 +43,7 @@ Real native mobile + web + full spec, one build cycle → this needs a monorepo 
 civicos/
   apps/
     api/          # Express + Prisma backend
-    web/          # Next.js — Project Head + Admin
+    web/          # Next.js — Project Head + Engineer portals and citizen web
     mobile/       # Expo — Citizen + Engineer
   packages/
     db/           # Prisma schema, migrations, seed

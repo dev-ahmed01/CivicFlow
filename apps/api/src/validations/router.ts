@@ -40,7 +40,7 @@ export function createValidationsRouter(storage: ImageStorage): Router {
     }
     const { latitude, longitude } = parsed.data;
     // Part III §9.2 — proximity eligibility uses the citizen's explicit device
-    // location; the server derives ward scope from admin-managed boundaries.
+    // location; the server derives ward scope from system-managed boundaries.
     await prisma.$executeRaw`
       UPDATE "User"
       SET "lastKnownCoordinates" = ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326),
@@ -86,11 +86,11 @@ export function createValidationsRouter(storage: ImageStorage): Router {
     // Part III §9.2 — eligibility can change after notification, so cap and phone
     // verification are rechecked without exposing any other citizens' responses.
     const [dailyCapConfig, quorumConfig] = await Promise.all([
-      prisma.adminConfig.findUnique({ where: { key: "verification.daily_cap" } }),
-      prisma.adminConfig.findUnique({ where: { key: "verification.quorum" } }),
+      prisma.systemConfig.findUnique({ where: { key: "verification.daily_cap" } }),
+      prisma.systemConfig.findUnique({ where: { key: "verification.quorum" } }),
     ]);
-    if (!dailyCapConfig || typeof dailyCapConfig.value !== "number") throw new Error("Missing required AdminConfig verification.daily_cap");
-    if (!quorumConfig || typeof quorumConfig.value !== "number") throw new Error("Missing required AdminConfig verification.quorum");
+    if (!dailyCapConfig || typeof dailyCapConfig.value !== "number") throw new Error("Missing required SystemConfig verification.daily_cap");
+    if (!quorumConfig || typeof quorumConfig.value !== "number") throw new Error("Missing required SystemConfig verification.quorum");
     const quorum = effectiveValidationQuorum(
       quorumConfig.value,
       process.env.DEMO_NOTIFY_ALL_CITIZENS === "true",
@@ -234,8 +234,8 @@ export function createValidationsRouter(storage: ImageStorage): Router {
         },
       });
       await transaction.completionVerificationRequest.update({ where: { id: invitation.id }, data: { respondedAt: new Date() } });
-      const config = await transaction.adminConfig.findUnique({ where: { key: "verification.quorum" } });
-      if (!config || typeof config.value !== "number") throw new Error("Missing required AdminConfig verification.quorum");
+      const config = await transaction.systemConfig.findUnique({ where: { key: "verification.quorum" } });
+      if (!config || typeof config.value !== "number") throw new Error("Missing required SystemConfig verification.quorum");
       const [verified, rework] = await Promise.all([
         transaction.completionVerification.count({ where: { completionEvidenceId: evidenceId, decision: CompletionVerificationDecision.VERIFIED } }),
         transaction.completionVerification.count({ where: { completionEvidenceId: evidenceId, decision: CompletionVerificationDecision.REWORK_REQUESTED } }),

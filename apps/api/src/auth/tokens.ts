@@ -123,6 +123,7 @@ export async function rotateRefreshToken(refreshToken: string) {
   if (
     !session ||
     session.userId !== refreshClaims.sub ||
+    session.user.deactivatedAt ||
     session.revokedAt ||
     session.expiresAt <= new Date()
   ) {

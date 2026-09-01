@@ -117,19 +117,19 @@ type NearbyTicket = { id: string; createdAt: Date; distanceMeters: number };
 
 function configNumber(value: Prisma.JsonValue, key: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    throw new Error(`AdminConfig ${key} must contain a positive number`);
+    throw new Error(`SystemConfig ${key} must contain a positive number`);
   }
   return value;
 }
 
 async function getConfigNumber(key: string): Promise<number> {
-  const config = await prisma.adminConfig.findUnique({ where: { key } });
-  if (!config) throw new Error(`Missing required AdminConfig ${key}`);
+  const config = await prisma.systemConfig.findUnique({ where: { key } });
+  if (!config) throw new Error(`Missing required SystemConfig ${key}`);
   return configNumber(config.value, key);
 }
 
 async function getConfigBoolean(key: string): Promise<boolean> {
-  const config = await prisma.adminConfig.findUnique({ where: { key } });
+  const config = await prisma.systemConfig.findUnique({ where: { key } });
   return config?.value === true;
 }
 
@@ -199,7 +199,6 @@ function lifecycleTransitionRank(state: TicketState): number {
 async function canAccessTicket(request: Request, ticketId: string): Promise<boolean> {
   const auth = request.auth;
   if (!auth) return false;
-  if (auth.role === UserRole.ADMIN) return true;
   if (auth.role === UserRole.CITIZEN) {
     const observation = await prisma.observation.findFirst({
       where: { ticketId, submitterId: auth.userId },
@@ -371,11 +370,11 @@ export function createTicketsRouter(
     response.json({ area: areas[0] });
   }));
 
-  router.get("/categories", requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN), asyncRoute(async (_request, response) => {
+  router.get("/categories", requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER), asyncRoute(async (_request, response) => {
     const [categories, roadConfig] = await Promise.all([prisma.category.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true, primaryAgency: { select: { id: true, name: true } } },
-    }), prisma.adminConfig.findUnique({ where: { key: "road.category_id" }, select: { value: true } })]);
+    }), prisma.systemConfig.findUnique({ where: { key: "road.category_id" }, select: { value: true } })]);
     const roadCategoryId = typeof roadConfig?.value === "string" ? roadConfig.value : null;
     response.json({ categories: categories.map((category) => ({ ...category, roadIntelligenceEnabled: category.id === roadCategoryId })) });
   }));
@@ -717,7 +716,7 @@ export function createTicketsRouter(
     response.json({ ticket: serializeTicket(row), needsRetake: false });
   }));
 
-  router.get("/tickets/:id", requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN), asyncRoute(async (request, response) => {
+  router.get("/tickets/:id", requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER), asyncRoute(async (request, response) => {
     const ticketId = routeId(request);
     if (!(await canAccessTicket(request, ticketId))) {
       response.status(404).json({ error: "Ticket not found" });
@@ -858,7 +857,7 @@ export function createTicketsRouter(
     });
   }));
 
-  router.get("/tickets/:id/timeline", requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN), asyncRoute(async (request, response) => {
+  router.get("/tickets/:id/timeline", requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER), asyncRoute(async (request, response) => {
     const ticketId = routeId(request);
     if (!(await canAccessTicket(request, ticketId))) {
       response.status(404).json({ error: "Ticket not found" });

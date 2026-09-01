@@ -63,7 +63,7 @@ export function createCivicWorksRouter(): Router {
 
   router.get(
     "/civic-works",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     asyncRoute(async (request, response) => {
       const parsed = listCivicWorksQuerySchema.safeParse(request.query);
       if (!parsed.success) {
@@ -76,7 +76,7 @@ export function createCivicWorksRouter(): Router {
 
   router.get(
     "/civic-works/calendar",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD),
     asyncRoute(async (request, response) => {
       const parsed = civicWorkCalendarQuerySchema.safeParse(request.query);
       if (!parsed.success) {
@@ -89,7 +89,7 @@ export function createCivicWorksRouter(): Router {
 
   router.get(
     "/civic-works/ledger",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD),
     asyncRoute(async (request, response) => {
       const parsed = civicWorkLedgerQuerySchema.safeParse(request.query);
       if (!parsed.success) {
@@ -115,7 +115,7 @@ export function createCivicWorksRouter(): Router {
 
   router.get(
     "/civic-works/:id",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     asyncRoute(async (request, response) => {
       const id = routeId(request);
       if (!id) {

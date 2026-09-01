@@ -9,7 +9,6 @@ import { ApiRequestError, fetchApiJson } from "../_lib/api";
 import { saveCitizenSession } from "../_lib/citizen-auth";
 import { saveSession as saveProjectHeadSession } from "../project-head/_lib/api";
 import { saveSession as saveEngineerSession } from "../engineer/_lib/api";
-import { saveAdminSession } from "../admin/_lib/api";
 
 const stats = [
   { icon: "clipboard" as const, value: "Trackable", label: "Issue Lifecycle" },
@@ -25,7 +24,7 @@ type LoginBody = {
   requiresPasswordReset?: boolean;
   user?: {
     id: string;
-    role: "CITIZEN" | "PROJECT_HEAD" | "ENGINEER" | "ADMIN";
+    role: "CITIZEN" | "PROJECT_HEAD" | "ENGINEER";
     email?: string | null;
     phone?: string | null;
     agencyId?: string | null;
@@ -73,7 +72,6 @@ export default function CitizenLoginPage() {
       const internal = await postLogin("/auth/internal/login", { email: userId.trim(), password });
       const { body } = internal;
       if (!internal.response.ok || !body.accessToken || !body.refreshToken || !body.user) {
-        if (body.code === "TOTP_REQUIRED") throw new Error("Use Administrator sign in to enter your authenticator code.");
         throw new Error(body.error ?? citizen.body.error ?? "Invalid User ID or password");
       }
       if (body.requiresPasswordReset) {
@@ -88,9 +86,6 @@ export default function CitizenLoginPage() {
       } else if (body.user.role === "ENGINEER" && body.user.agencyId) {
         saveEngineerSession({ accessToken: body.accessToken, refreshToken: body.refreshToken, user: { id: body.user.id, email, agencyId: body.user.agencyId } });
         router.replace("/engineer");
-      } else if (body.user.role === "ADMIN") {
-        saveAdminSession({ accessToken: body.accessToken, refreshToken: body.refreshToken, user: { id: body.user.id, email } });
-        router.replace("/admin");
       } else {
         throw new Error("This account is not configured for a web workspace.");
       }
@@ -107,7 +102,7 @@ export default function CitizenLoginPage() {
       <CitizenHeroBackdrop />
       <div className="cf-login-hero-copy">
         <h1>One City.<br />One Workflow.<br /><strong>Complete Accountability.</strong></h1>
-        <p>CityConnect unifies citizens, engineers, project heads, and administrators into one accountable civic workflow.</p>
+        <p>CityConnect unifies citizens, engineers, and project heads in one accountable civic workflow.</p>
         <div className="cf-login-stats">{stats.map((stat) => <article key={stat.label}><span><CitizenIcon name={stat.icon} /></span><div><strong>{stat.value}</strong><small>{stat.label}</small></div></article>)}</div>
       </div>
       <div className="cf-hero-curve" aria-hidden="true" />
@@ -134,7 +129,7 @@ export default function CitizenLoginPage() {
         </form>}
       </div>
       <p className="cf-secure-line"><CitizenIcon name="shield" />Secure <span>•</span> Reliable <span>•</span> Accountable</p>
-      <nav className="cf-role-login-links" aria-label="Role-specific sign in"><a href="/project-head/login">Project Head</a><a href="/engineer/login">Engineer</a><a href="/admin/login">Administrator</a></nav>
+      <nav className="cf-role-login-links" aria-label="Role-specific sign in"><a href="/project-head/login">Project Head</a><a href="/engineer/login">Engineer</a></nav>
     </section>
   </main>;
 }

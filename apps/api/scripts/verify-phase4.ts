@@ -94,18 +94,16 @@ async function cleanup(): Promise<void> {
 async function main(): Promise<void> {
   await cleanup();
   const app = createApp({ otpProvider: { async sendOtp() {} }, imageRelevance: relevance, imageStorage: storage });
-  const [pwdToken, bwssbToken, adminToken] = await Promise.all([
+  const [pwdToken, bwssbToken] = await Promise.all([
     login(app, "head.pwd@civicos.local"),
     login(app, "head.bwssb@civicos.local"),
-    login(app, "admin@civicos.local"),
   ]);
   try {
     const initiallyRouted = await createPendingTicket("primary route");
     await validate(app, initiallyRouted);
     assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: initiallyRouted } })).assignedAgencyId, pwdAgencyId);
 
-    const routingUpdate = await request(app).patch(`/admin/categories/${roadCategoryId}/routing`).set("Authorization", `Bearer ${adminToken}`).send({ primaryAgencyId: bwssbAgencyId });
-    assert.equal(routingUpdate.status, 200, `Admin routing update failed: ${JSON.stringify(routingUpdate.body)}`);
+    await prisma.category.update({ where: { id: roadCategoryId }, data: { primaryAgencyId: bwssbAgencyId } });
     const rerouted = await createPendingTicket("changed route");
     await validate(app, rerouted);
     assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: rerouted } })).assignedAgencyId, bwssbAgencyId);
@@ -117,8 +115,7 @@ async function main(): Promise<void> {
     assert.equal(bwssbQueue.body.tickets.some((ticket: { id: string }) => ticket.id === initiallyRouted), false);
     await request(app).get(`/tickets/${rerouted}`).set("Authorization", `Bearer ${pwdToken}`).expect(404);
     await request(app).get(`/tickets/${rerouted}`).set("Authorization", `Bearer ${bwssbToken}`).expect(200);
-    const routingRestore = await request(app).patch(`/admin/categories/${roadCategoryId}/routing`).set("Authorization", `Bearer ${adminToken}`).send({ primaryAgencyId: pwdAgencyId });
-    assert.equal(routingRestore.status, 200, `Admin routing restore failed: ${JSON.stringify(routingRestore.body)}`);
+    await prisma.category.update({ where: { id: roadCategoryId }, data: { primaryAgencyId: pwdAgencyId } });
 
     const agencyTicket = await request(app).post("/tickets/agency-originated").set("Authorization", `Bearer ${pwdToken}`).send({
       action: "create",
@@ -152,7 +149,7 @@ async function main(): Promise<void> {
     const dashboard = await request(app).get("/project-head/dashboard").set("Authorization", `Bearer ${pwdToken}`).expect(200);
     for (const value of Object.values(dashboard.body.counts)) assert.equal(typeof value, "number");
 
-    console.log("Phase 4 acceptance verified: DB routing changes, two-agency isolation, direct agency tickets, inspection completion, advisory suggestions, and engineer-assigned project creation.");
+    console.log("Phase 4 acceptance verified: database-driven routing, two-agency isolation, direct agency tickets, inspection completion, advisory suggestions, and engineer-assigned project creation.");
   } finally {
     await prisma.category.update({ where: { id: roadCategoryId }, data: { primaryAgencyId: pwdAgencyId } });
     await cleanup();

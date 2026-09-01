@@ -174,7 +174,7 @@ async function main(): Promise<void> {
     const eligibleCitizenCount = await prisma.user.count({
       where: { role: UserRole.CITIZEN, phoneVerifiedAt: { not: null }, id: { not: reporter.userId } },
     });
-    const verificationConfig = await prisma.adminConfig.findUniqueOrThrow({ where: { key: "verification.quorum" }, select: { value: true } });
+    const verificationConfig = await prisma.systemConfig.findUniqueOrThrow({ where: { key: "verification.quorum" }, select: { value: true } });
     assert.equal(typeof verificationConfig.value, "number");
     const verificationQuorum = verificationConfig.value as number;
     assert.ok(Number.isInteger(verificationQuorum) && verificationQuorum >= 1 && verificationQuorum <= 3);

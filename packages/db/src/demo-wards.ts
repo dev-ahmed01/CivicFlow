@@ -24,7 +24,7 @@ export const demoWardIds = {
 } as const;
 
 // Part III §7.1/§20 — demo defaults only. Runtime ward boundaries remain
-// database-backed and admin-editable. Small gaps keep ST_Covers deterministic at
+// database-backed and system-configurable. Small gaps keep ST_Covers deterministic at
 // the edges instead of turning the demo into one city-wide reporting polygon.
 export const demoWards = [
   {

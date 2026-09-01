@@ -27,9 +27,8 @@ describe("civic work RBAC scope", () => {
     expect(() => civicWorkReadScope({ userId, role: "CITIZEN", agencyId: null })).toThrow(CivicWorkError);
   });
 
-  it("allows cross-agency coordination reads only for Project Heads and Admins", () => {
+  it("allows cross-agency coordination reads only for Project Heads", () => {
     expect(() => assertCoordinationRead({ userId, role: "PROJECT_HEAD", agencyId })).not.toThrow();
-    expect(() => assertCoordinationRead({ userId, role: "ADMIN", agencyId: null })).not.toThrow();
     expect(() => assertCoordinationRead({ userId, role: "ENGINEER", agencyId })).toThrow(CivicWorkError);
     expect(() => assertCoordinationRead({ userId, role: "CITIZEN", agencyId: null })).toThrow(CivicWorkError);
   });

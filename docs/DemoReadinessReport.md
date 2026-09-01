@@ -2,6 +2,8 @@
 
 Date: 24 August 2026
 
+Role-model update: 1 September 2026
+
 ## Outcome
 
 CivicFlow now meets the defined demo target of approximately 100 civic events and 10–50 concurrent demo users without changing its monorepo, authentication model, PostgreSQL/PostGIS data layer, background-job architecture, or product workflow.
@@ -10,11 +12,11 @@ The repeatable local acceptance run used 100 tickets, 100 observations, 100 vali
 
 ## Pre-change inventory
 
-- Web entry points: Citizen reporting at `/`; Citizen login, tickets, verification, notifications, profile and transparency routes; separate Project Head, Engineer and Admin route trees with existing login pages.
-- Authentication: Citizen OTP; internal email/password login; access/refresh JWTs; refresh-session revocation; password reset; TOTP setup/verification; logout. Server-side role and ownership checks already existed and remain authoritative.
-- Roles: `CITIZEN`, `PROJECT_HEAD`, `ENGINEER`, and `ADMIN`.
-- Main APIs: tickets, projects, dependencies, validations, conflicts, road intelligence, notifications, analytics, agency operations, image relevance and admin configuration.
-- Dashboard APIs: Project Head dashboard plus city/admin analytics endpoints.
+- Web entry points: Citizen reporting at `/`; Citizen login, tickets, verification, notifications, profile and transparency routes; separate Project Head and Engineer operational route trees.
+- Authentication: Citizen OTP; internal email/password login; access/refresh JWTs; refresh-session revocation; password reset; logout. Server-side role and ownership checks remain authoritative.
+- Roles: `CITIZEN`, `PROJECT_HEAD`, and `ENGINEER`.
+- Main APIs: tickets, projects, dependencies, validations, conflicts, road intelligence, notifications, analytics, agency operations and image relevance. System configuration remains database-driven and outside the operational personas.
+- Dashboard APIs: Project Head agency dashboard, agency-scoped analytics and the aggregate public dashboard.
 - Background work: validation rebatching, dependency escalation and Expo push delivery schedulers, all hosted in the Express process.
 - Persistence: PostgreSQL/PostGIS through Prisma, with users, wards, agencies, categories/routing, tickets/observations/validations, projects, dependencies, conflict logs, road intelligence, notifications, configuration, OTP and refresh-session models.
 - Deployment: Docker Compose for local dependencies, Dockerfile, Render production and free-demo manifests, and Next.js/Vercel-compatible web configuration.
@@ -25,10 +27,10 @@ The repeatable local acceptance run used 100 tickets, 100 observations, 100 vali
 
 #### Routing and authentication
 
-- Replaced `/` with an official CivicFlow role gateway linking Citizen, Project Head, Engineer and Administrator to their existing login flows.
+- Replaced `/` with an official CivicFlow role gateway linking Citizen, Project Head and Engineer to their existing login flows.
 - Preserved Citizen reporting at `/report` and updated Citizen navigation accordingly.
 - Added an optional, validated `expectedRole` to the existing internal-login request. The API now rejects a credential/portal role mismatch before issuing tokens; it does not create a second auth mechanism or weaken RBAC.
-- Applied the role expectation in Project Head, Engineer, Admin and mobile Engineer login clients.
+- Applied the role expectation in Project Head, web Engineer and mobile Engineer login clients.
 - Fixed Citizen notification destinations and a Citizen ticket-detail response-unwrapping defect revealed by the route change.
 - Added focused tests for the gateway, internal role mismatch and Citizen rejection from internal login.
 
@@ -61,14 +63,14 @@ The repeatable local acceptance run used 100 tickets, 100 observations, 100 vali
 - Authentication remains the existing JWT/refresh-session design; it was not rewritten solely to replace local storage.
 - Workers remain in the API process because bounded, guarded jobs are sufficient for this target.
 - Notification polling, Prisma/PostGIS, object-storage flow and CLIP workflow remain in place.
-- Conflict and sequencing semantics, human approvals, audit history, server-side RBAC and all four role workflows remain authoritative.
+- Conflict and sequencing semantics, human approvals, audit history, server-side RBAC and all three role workflows remain authoritative.
 - No speculative index set or full DTO/SSR rewrite was introduced.
 
 ### 3. Current architecture
 
 - Turborepo with pnpm workspaces.
 - Express/TypeScript API with server-side RBAC and in-process bounded schedulers.
-- Next.js 14 App Router web app for Project Head and Admin, plus the existing demo-accessible Citizen and Engineer web experiences.
+- Next.js 14 App Router web app for Project Head and Engineer, plus the supported Citizen web experience.
 - React Native/Expo mobile app for Citizen and Engineer workflows.
 - PostgreSQL/PostGIS accessed through Prisma; shared Zod contracts live in `packages/shared`.
 - Existing object storage and timeout-protected CLIP inference integration.
@@ -94,10 +96,9 @@ Tested locally against PostgreSQL/PostGIS with 100 tickets, 100 validations, 30 
 | Citizen login | 70.3 ms |
 | Project Head login | 262.0 ms |
 | Engineer login | 239.5 ms |
-| Admin login | 246.5 ms |
 | Process resident memory | 101 MB |
 
-Acceptance: ordinary measured operations were below 500 ms, the cold dashboard was below 1.5 seconds, and all four measured login flows were below 1 second. Invalid credentials, role mismatch and protected-route denial were also exercised.
+Acceptance: ordinary measured operations were below 500 ms, the cold dashboard was below 1.5 seconds, and all three measured login flows were below 1 second. Invalid credentials, role mismatch and protected-route denial were also exercised.
 
 Regression verification completed successfully:
 

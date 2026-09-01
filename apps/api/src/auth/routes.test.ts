@@ -9,7 +9,7 @@ const revokeRefreshToken = vi.hoisted(() => vi.fn());
 
 vi.mock("db", () => ({
   prisma: { user: { findFirst, findUnique } },
-  UserRole: { CITIZEN: "CITIZEN", PROJECT_HEAD: "PROJECT_HEAD", ENGINEER: "ENGINEER", ADMIN: "ADMIN" },
+  UserRole: { CITIZEN: "CITIZEN", PROJECT_HEAD: "PROJECT_HEAD", ENGINEER: "ENGINEER" },
 }));
 
 vi.mock("bcrypt", () => ({
@@ -50,7 +50,7 @@ describe("internal role login", () => {
       password: "CityConnect@123",
     }).expect(200);
 
-    expect(findFirst).toHaveBeenCalledWith({ where: { role: "CITIZEN", OR: [{ email: "+919876500001" }, { phone: "+919876500001" }] } });
+    expect(findFirst).toHaveBeenCalledWith({ where: { role: "CITIZEN", deactivatedAt: null, OR: [{ email: "+919876500001" }, { phone: "+919876500001" }] } });
     expect(response.body.user.role).toBe("CITIZEN");
     expect(response.body.accessToken).toBe("access");
   });
@@ -89,6 +89,32 @@ describe("internal role login", () => {
       password: "password",
       expectedRole: "PROJECT_HEAD",
     }).expect(401);
+  });
+
+  it("does not authenticate a deactivated internal identity", async () => {
+    findUnique.mockResolvedValue({
+      id: "retired-identity",
+      role: "PROJECT_HEAD",
+      email: "retired@example.com",
+      agencyId: null,
+      passwordHash: "hash",
+      deactivatedAt: new Date(),
+    });
+
+    await request(app).post("/auth/internal/login").send({
+      email: "retired@example.com",
+      password: "password",
+      expectedRole: "PROJECT_HEAD",
+    }).expect(401);
+  });
+
+  it("rejects removed roles before looking up an account", async () => {
+    await request(app).post("/auth/internal/login").send({
+      email: "legacy@example.com",
+      password: "password",
+      expectedRole: "ADMIN",
+    }).expect(400);
+    expect(findUnique).not.toHaveBeenCalled();
   });
 
   it("rotates a persisted refresh session into a new token pair", async () => {

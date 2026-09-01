@@ -24,7 +24,6 @@
 
 .portal-shell,
 .login-shell,
-.admin-shell,
 .engineer-shell {
   --cv-bg: #ffffff;
   --cv-surface: #ffffff;
@@ -72,8 +71,8 @@
   --cv-radius-card: var(--cf-radius-card);
 }
 
-/* CityConnect work-tool palette: scoped away from the Administrator portal. */
-.portal-shell:not(.admin-shell) {
+/* CityConnect work-tool palette for Project Head and Engineer portals. */
+.portal-shell {
   --cf-hero-bg-start: #0a2415;
   --cf-hero-bg-end: #123a22;
   --cf-accent-lime: #7ed321;

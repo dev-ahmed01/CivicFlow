@@ -7,7 +7,7 @@ Build Phase 4: Agency Routing + Project Head Core Workflows. Follow AGENTS.md.
 **1. Table-driven agency routing (Part III §7):**
 - Wire the routing hook left as a TODO at the end of Phase 3: on `VALIDATED → ROUTED_TO_AGENCY`, look up `Category.primary_agency_id` and assign the ticket to that agency's Project Head queue
 - Also surface `RoutingRule` (commonly-associated dependency agencies) as *pre-suggestions* only, never auto-created dependencies — this list is used later in Phase 5's dependency assessment screen
-- Both the category→agency mapping and the dependency-agency associations must be editable via admin endpoints (stub the endpoints now if Phase 10's full admin UI isn't built yet — the DB-driven lookup itself must work today, not be hardcoded in application code)
+- Both the category→agency mapping and dependency-agency associations must remain database-driven and provisioned through controlled system operations; do not expose unrestricted global configuration to Project Heads.
 
 **2. Project Head web app (`apps/web`) — Part II §4.2:**
 - W-P1 Login (agency-scoped)

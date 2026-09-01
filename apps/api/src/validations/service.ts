@@ -45,14 +45,14 @@ export type ValidationSubmission = {
 
 function positiveConfigNumber(value: Prisma.JsonValue, key: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    throw new Error(`AdminConfig ${key} must contain a positive number`);
+    throw new Error(`SystemConfig ${key} must contain a positive number`);
   }
   return value;
 }
 
 async function configNumber(client: DatabaseClient, key: string): Promise<number> {
-  const config = await client.adminConfig.findUnique({ where: { key } });
-  if (!config) throw new Error(`Missing required AdminConfig ${key}`);
+  const config = await client.systemConfig.findUnique({ where: { key } });
+  if (!config) throw new Error(`Missing required SystemConfig ${key}`);
   return positiveConfigNumber(config.value, key);
 }
 

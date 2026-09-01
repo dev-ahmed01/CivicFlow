@@ -26,7 +26,7 @@ describe("demo workload fixtures", () => {
 
   it("keeps grievances linked directly to their original ticket", () => {
     const schema = readFileSync(resolve(process.cwd(), "prisma/schema.prisma"), "utf8");
-    const grievanceModel = schema.slice(schema.indexOf("model Grievance {"), schema.indexOf("model AdminConfig {"));
+    const grievanceModel = schema.slice(schema.indexOf("model Grievance {"), schema.indexOf("model SystemConfig {"));
     expect(grievanceModel).toContain("ticketId            String");
     expect(grievanceModel).toContain("ticket            Ticket");
   });

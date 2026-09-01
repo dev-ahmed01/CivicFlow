@@ -171,7 +171,7 @@ export interface DevelopmentRelevanceOptions {
 }
 
 // Part III §8.1 — free-demo inference evaluates downloaded pixels with CLIP.
-// Category prompts remain admin-configurable in the database; filenames and
+// Category prompts remain system-configurable in the database; filenames and
 // object keys are never included in model input or decision logic.
 export class DevelopmentRelevanceService implements ImageRelevanceService {
   private readonly analyzer: ClipContentAnalyzer;

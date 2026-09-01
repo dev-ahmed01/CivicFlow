@@ -20,8 +20,8 @@ export class CoordinationActionError extends Error {
   }
 }
 
-export async function coordinationRequestTypes(client: Pick<DatabaseClient, "adminConfig"> | typeof prisma = prisma): Promise<string[]> {
-  const config = await client.adminConfig.findUnique({ where: { key: "coordination.request_types" }, select: { value: true } });
+export async function coordinationRequestTypes(client: Pick<DatabaseClient, "systemConfig"> | typeof prisma = prisma): Promise<string[]> {
+  const config = await client.systemConfig.findUnique({ where: { key: "coordination.request_types" }, select: { value: true } });
   if (!Array.isArray(config?.value)) throw new CoordinationActionError("Coordination request types are not configured", 422);
   return config.value.filter((item): item is string => typeof item === "string" && /^[a-z0-9-]{2,80}$/.test(item));
 }

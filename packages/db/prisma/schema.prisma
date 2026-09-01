@@ -13,7 +13,6 @@ enum UserRole {
   CITIZEN
   PROJECT_HEAD
   ENGINEER
-  ADMIN
 }
 
 enum TicketState {
@@ -173,6 +172,7 @@ model User {
   phoneVerifiedAt      DateTime?
   totpSecret           String?
   totpEnabled          Boolean                              @default(false)
+  deactivatedAt        DateTime?
   agencyId             String?                              @db.Uuid
   wardId               String?                              @db.Uuid
   lastKnownCoordinates Unsupported("geometry(Point,4326)")?
@@ -259,7 +259,7 @@ model Category {
   name            String  @unique
   relevancePrompt String
   primaryAgencyId String  @db.Uuid
-  adminEditable   Boolean @default(true)
+  isConfigurable  Boolean @default(true)
 
   primaryAgency Agency        @relation(fields: [primaryAgencyId], references: [id], onDelete: Restrict)
   routingRules  RoutingRule[]
@@ -1014,7 +1014,7 @@ model Grievance {
   @@index([raisedByUserId, createdAt])
 }
 
-model AdminConfig {
+model SystemConfig {
   key         String @id
   value       Json
   description String

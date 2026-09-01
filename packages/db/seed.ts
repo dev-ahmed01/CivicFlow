@@ -113,7 +113,7 @@ const routingRules = [
   [categories[10].id, ids.agencies.pwd],
 ] as const;
 
-const adminConfigs = [
+const systemConfigs = [
   { key: "auth.otp_max_attempts", value: 5, description: "Maximum failed verification attempts for one OTP challenge" },
   // Delta §6 — inputs for the explicitly simulated restoration-savings formula.
   { key: "road.simulated_restoration_cost_per_meter", value: 1800, description: "Illustrative road restoration cost per affected metre in INR; never presented as measured" },
@@ -130,7 +130,7 @@ const adminConfigs = [
   { key: "ai_relevance.pass_threshold", value: 0.6, description: "Minimum hosted image/category relevance confidence" },
   { key: "demo.web_auto_route_enabled", value: true, description: "Demo-only: route relevant web reports directly to the category's configured primary agency" },
   { key: "conflict.radius_meters", value: 200, description: "Default generic project conflict radius" },
-  { key: "road.category_id", value: categories[0].id, description: "Admin-configured category that enables Road-Cutting Intelligence" },
+  { key: "road.category_id", value: categories[0].id, description: "System-configured category that enables Road-Cutting Intelligence" },
   { key: "road.repeated_excavation_days", value: 90, description: "Days after restoration during which a new excavation receives an advisory warning" },
   { key: "coordination.request_types", value: ["utility-clearance", "dependency-request", "joint-inspection", "engineer-assistance", "document-information-request", "schedule-coordination", "road-cut-excavation-coordination", "other"], description: "Configurable structured request types for inter-agency coordination" },
 ] as const;
@@ -777,8 +777,8 @@ async function main(): Promise<void> {
   for (const category of categories) {
     await prisma.category.upsert({
       where: { id: category.id },
-      update: { name: category.name, primaryAgencyId: category.primaryAgencyId, adminEditable: true },
-      create: { ...category, adminEditable: true },
+      update: { name: category.name, primaryAgencyId: category.primaryAgencyId, isConfigurable: true },
+      create: { ...category, isConfigurable: true },
     });
   }
 
@@ -790,8 +790,8 @@ async function main(): Promise<void> {
     })),
   });
 
-  for (const config of adminConfigs) {
-    await prisma.adminConfig.upsert({
+  for (const config of systemConfigs) {
+    await prisma.systemConfig.upsert({
       where: { key: config.key },
       update: { value: config.value, description: config.description },
       create: { key: config.key, value: config.value, description: config.description },
@@ -815,8 +815,6 @@ async function main(): Promise<void> {
     { id: "40000000-0000-4000-8000-000000000201", role: UserRole.ENGINEER, email: "engineer.pwd@civicos.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000202", role: UserRole.ENGINEER, email: "engineer.bwssb@civicos.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000203", role: UserRole.ENGINEER, email: "engineer.bescom@civicos.local", agencyId: ids.agencies.bescom, passwordHash, mustResetPassword: false },
-    { id: "40000000-0000-4000-8000-000000000301", role: UserRole.ADMIN, email: "admin@civicos.local", passwordHash, mustResetPassword: false, totpEnabled: false },
-    { id: "40000000-0000-4000-8000-000000000302", role: UserRole.ADMIN, email: "admin.ops@civicos.local", passwordHash, mustResetPassword: true, totpEnabled: false },
   ];
 
   for (const user of users) {

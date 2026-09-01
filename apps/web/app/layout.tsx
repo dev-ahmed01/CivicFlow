@@ -7,7 +7,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: "CivicOS Project Head and Admin web application",
+  description: "City Connect civic coordination application",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

@@ -68,14 +68,14 @@ function jsonStringArray(value: Prisma.JsonValue): string[] {
 
 function configuredPositiveNumber(value: Prisma.JsonValue | undefined, key: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    throw new Error(`AdminConfig ${key} must contain a positive number`);
+    throw new Error(`SystemConfig ${key} must contain a positive number`);
   }
   return value;
 }
 
 function configuredString(value: Prisma.JsonValue | undefined, key: string): string {
   if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`AdminConfig ${key} must contain a string`);
+    throw new Error(`SystemConfig ${key} must contain a string`);
   }
   return value;
 }
@@ -273,8 +273,8 @@ export function buildSequencingRecommendation(interventions: RoadInterventionRec
 
 async function roadConfig(client: RoadIntelligenceClient): Promise<{ categoryId: string; repeatedDays: number }> {
   const [category, repeated] = await Promise.all([
-    client.adminConfig.findUnique({ where: { key: "road.category_id" }, select: { value: true } }),
-    client.adminConfig.findUnique({ where: { key: "road.repeated_excavation_days" }, select: { value: true } }),
+    client.systemConfig.findUnique({ where: { key: "road.category_id" }, select: { value: true } }),
+    client.systemConfig.findUnique({ where: { key: "road.repeated_excavation_days" }, select: { value: true } }),
   ]);
   return {
     categoryId: configuredString(category?.value, "road.category_id"),

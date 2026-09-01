@@ -46,9 +46,9 @@ export function requireAuth(
     const claims = verifyAccessToken(authorization.slice("Bearer ".length));
     void prisma.user.findUnique({
       where: { id: claims.sub },
-      select: { id: true, role: true, agencyId: true, wardId: true, mustResetPassword: true },
+      select: { id: true, role: true, agencyId: true, wardId: true, mustResetPassword: true, deactivatedAt: true },
     }).then((user) => {
-      if (!user) {
+      if (!user || user.deactivatedAt) {
         if (presignAuthFailure(request, response, "Account is no longer active", "PRESIGN_ACCOUNT_INACTIVE")) return;
         response.status(401).json({ error: "Account is no longer active" });
         return;

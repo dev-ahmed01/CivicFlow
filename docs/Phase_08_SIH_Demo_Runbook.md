@@ -40,7 +40,6 @@ These are identifiers, not credentials. Obtain the internal demo password and ci
 | `engineer.bwssb@civicos.local` | Engineer | Pipeline inspection and evidence |
 | `engineer.pwd@civicos.local` | Engineer | Optional road-side inspection/execution |
 | `citizen.jayanagar@cityconnect.local` | Citizen | Reporting, tracking, nearby works, closure verification when eligible |
-| `admin@civicos.local` | Admin | Read-only contingency check of configuration and users |
 
 The seed reads `DEMO_INTERNAL_PASSWORD`. Citizen OTP behavior is selected by the deployment profile: real SMS in production or an explicitly configured fixed code in the isolated demo profile.
 

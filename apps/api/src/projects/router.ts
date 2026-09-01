@@ -46,6 +46,13 @@ function canEngineerEdit(request: Request, project: { agencyId: string; engineer
     && project.agencyId === request.auth!.agencyId;
 }
 
+function projectReadScope(request: Request): Prisma.ProjectWhereInput {
+  const agencyId = actorAgency(request);
+  return request.auth!.role === UserRole.ENGINEER
+    ? { agencyId, engineerId: request.auth!.userId }
+    : { agencyId };
+}
+
 async function notifyProjectStakeholders(
   transaction: Prisma.TransactionClient,
   project: { id: string; agencyId: string; ticketId: string | null },
@@ -275,7 +282,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
 
   router.get(
     "/projects/:id",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     requirePasswordResetComplete,
     asyncRoute(async (request, response) => {
       const id = idSchema.safeParse(routeId(request));
@@ -284,7 +291,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         return;
       }
       const project = await prisma.project.findFirst({
-        where: { id: id.data, ...(request.auth!.role === UserRole.PROJECT_HEAD ? { agencyId: actorAgency(request) } : {}) },
+        where: { id: id.data, ...projectReadScope(request) },
         include: projectInclude,
       });
       if (!project) {
@@ -297,7 +304,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
 
   router.get(
     "/projects",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     requirePasswordResetComplete,
     asyncRoute(async (request, response) => {
       const status = request.query.status ? projectStateSchema.safeParse(request.query.status) : null;
@@ -309,15 +316,14 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         response.status(400).json({ error: "Invalid project filter" });
         return;
       }
-      if (request.auth!.role === UserRole.PROJECT_HEAD && agency?.success && agency.data !== actorAgency(request)) {
+      if (agency?.success && agency.data !== actorAgency(request)) {
         response.status(403).json({ error: "Cannot view another agency's projects" });
         return;
       }
 
       const engineerScope = request.auth!.role === UserRole.ENGINEER ? (scope?.success ? scope.data : "mine") : undefined;
       const where: Prisma.ProjectWhereInput = {
-        ...(request.auth!.role === UserRole.PROJECT_HEAD ? { agencyId: actorAgency(request) } : {}),
-        ...(request.auth!.role !== UserRole.PROJECT_HEAD && agency?.success ? { agencyId: agency.data } : {}),
+        agencyId: actorAgency(request),
         ...(engineerScope === "mine" ? { engineerId: request.auth!.userId, state: status?.success ? status.data : { notIn: [ProjectState.CLOSED, ProjectState.CANCELLED] } } : {}),
         ...(engineerScope === "assigned" ? { engineerId: request.auth!.userId, state: ProjectState.PENDING_UPTAKE } : {}),
         ...(engineerScope === "geographic" && status?.success ? { state: status.data } : {}),
@@ -454,10 +460,10 @@ export function createProjectsRouter(storage: ImageStorage): Router {
 
   router.get(
     "/projects/:id/conflicts",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     requirePasswordResetComplete,
     asyncRoute(async (request, response) => {
-      const project = await prisma.project.findFirst({ where: { id: routeId(request), ...(request.auth!.role === UserRole.PROJECT_HEAD ? { agencyId: actorAgency(request) } : {}) }, select: { id: true } });
+      const project = await prisma.project.findFirst({ where: { id: routeId(request), ...projectReadScope(request) }, select: { id: true } });
       if (!project) {
         response.status(404).json({ error: "Project not found" });
         return;

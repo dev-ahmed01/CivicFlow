@@ -46,6 +46,6 @@ export default function TeamsPage() {
       const pending = assigned.filter((project) => project.state === "PENDING_UPTAKE");
       const due = assigned.filter((project) => project.plannedEnd).sort((left, right) => new Date(left.plannedEnd!).getTime() - new Date(right.plannedEnd!).getTime())[0];
       return <tr key={engineer.id}><td><strong>{engineer.email ?? "Email unavailable"}</strong></td><td>{active.length}</td><td>{pending.length}</td><td>{due?.plannedEnd ? new Date(due.plannedEnd).toLocaleDateString("en-IN") : "No scheduled work"}</td><td><PortalStatePill state={active.length >= 5 ? "HIGH WORKLOAD" : pending.length ? "ASSIGNMENTS PENDING" : "AVAILABLE"} /></td></tr>;
-    })}</tbody></table></div>{visibleEngineers.length === 0 ? <EmptyState title={engineers.length ? "No engineers match this search" : "No engineers in this agency"} description={engineers.length ? "Try another name or email." : "Administrators manage staff accounts and agency membership."} /> : null}</section>
+    })}</tbody></table></div>{visibleEngineers.length === 0 ? <EmptyState title={engineers.length ? "No engineers match this search" : "No engineers in this agency"} description={engineers.length ? "Try another name or email." : "No field staff have been provisioned for this agency."} /> : null}</section>
   </>;
 }

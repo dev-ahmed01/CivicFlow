@@ -32,7 +32,7 @@ Build Phase 2: Citizen Reporting Flow + AI Relevance + Duplicate Detection. Foll
   - Visual similarity: cosine similarity of CLIP embeddings ≥ 0.75 (secondary signal only)
 - Implement the exact decision matrix from §8.2 (geo+time yes → auto-merge regardless of visual signal; geo yes/time no → flag for Project Head review; geo no → new ticket)
 - On merge: new submission becomes a `TicketObservation` on the existing ticket, citizen sees the **existing ticket's ID**, no "duplicate" or "merged" language anywhere in the UI (AGENTS.md rule 3). Merged submission enters the ticket's *current* state directly, does not restart from `DRAFT` (§10.2).
-- All three thresholds (75m, 60 days, 0.75 similarity) come from the `AdminConfig`/`SystemConfig` table from Phase 1, not hardcoded.
+- All three thresholds (75m, 60 days, 0.75 similarity) come from the `SystemConfig` table from Phase 1, not hardcoded.
 
 **6. API endpoints (§16.1):**
 `POST /tickets`, `GET /tickets/{id}`, `GET /citizens/me/tickets?filter=ongoing|past`, `POST /tickets/{id}/images`, `GET /tickets/{id}/timeline`

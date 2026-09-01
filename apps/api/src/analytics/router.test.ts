@@ -60,10 +60,10 @@ describe("Phase 10 analytics surfaces", () => {
     expect(serialized).not.toContain("ticketid");
   });
 
-  it("protects the city-wide admin report", async () => {
+  it("does not expose a city-wide private report", async () => {
     const app = express(); app.use(createAnalyticsRouter());
-    await request(app).get("/analytics/admin").expect(401);
-    await request(app).get("/analytics/admin/operations").expect(401);
+    await request(app).get("/analytics/city-wide").expect(404);
+    await request(app).get("/analytics/city-wide/operations").expect(404);
   });
 
   it("exports operational rows without a fabricated financial-savings claim", () => {

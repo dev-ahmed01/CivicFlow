@@ -1,9 +1,8 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { UserRole, prisma } from "db";
+import { UserRole } from "db";
 import { analyticsFilterSchema, type AnalyticsReport, type MetricRow } from "@civicos/shared";
 import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/middleware";
 import { buildAnalyticsReport, buildPublicDashboard } from "./service";
-import { buildOperationalAnalytics } from "./operational-service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -116,43 +115,5 @@ export function createAnalyticsRouter(): Router {
     response.json(await buildAnalyticsReport({ ...parsed.data, agencyId: request.auth.agencyId }));
   }));
 
-  router.use("/analytics/admin", requireAuth, requireRole(UserRole.ADMIN), requirePasswordResetComplete);
-  router.get("/analytics/admin/options", asyncRoute(async (_request, response) => {
-    const [wards, categories, agencies] = await Promise.all([
-      prisma.ward.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-      prisma.category.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-      prisma.agency.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    ]);
-    response.json({ wards, categories, agencies });
-  }));
-  router.get("/analytics/admin/operations", asyncRoute(async (request, response) => {
-    const parsed = parseFilter(request);
-    if (!parsed.success) {
-      response.status(400).json({ error: "Invalid analytics filter", details: parsed.error.flatten() });
-      return;
-    }
-    response.json(await buildOperationalAnalytics(parsed.data));
-  }));
-  router.get(["/analytics/admin", "/analytics/admin/export.csv", "/analytics/admin/export.pdf"], asyncRoute(async (request, response) => {
-    const parsed = parseFilter(request);
-    if (!parsed.success) {
-      response.status(400).json({ error: "Invalid analytics filter", details: parsed.error.flatten() });
-      return;
-    }
-    const report = await buildAnalyticsReport(parsed.data);
-    if (request.path.endsWith(".csv")) {
-      response.setHeader("Content-Type", "text/csv; charset=utf-8");
-      response.setHeader("Content-Disposition", "attachment; filename=city-analytics.csv");
-      response.send(reportCsv(report));
-      return;
-    }
-    if (request.path.endsWith(".pdf")) {
-      response.setHeader("Content-Type", "application/pdf");
-      response.setHeader("Content-Disposition", "attachment; filename=city-analytics.pdf");
-      response.send(simplePdf(report));
-      return;
-    }
-    response.json(report);
-  }));
   return router;
 }

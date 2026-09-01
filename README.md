@@ -20,8 +20,8 @@ civicos/
     CivicOS_Unified_SIH_Specification.md # source spec — road-cutting delta/flagship layer
   apps/
     api/      # Express + TypeScript backend (scaffolded in Phase 1)
-    web/      # Next.js 14 — Project Head + Admin (web-only roles)
-    mobile/   # Expo React Native — Citizen + Engineer (native apps)
+    web/      # Next.js 14 — Project Head + Engineer portals and citizen web experience
+    mobile/   # Expo React Native — Citizen + Engineer native apps
   packages/
     db/       # Prisma schema, migrations, seed data
     shared/   # Zod schemas + TS types shared across api/web/mobile
@@ -60,7 +60,7 @@ Full methodology and the reasoning behind this loop is in `docs/00_Build_Guide.m
 | 7 | Conflict detection engine (generic) | 6 |
 | 8 | **Road-Cutting Intelligence Layer** (flagship) | 1, 4, 7 |
 | 9 | Notifications | all trigger points from 2–8 |
-| 10 | Analytics, admin config, transparency dashboard | 1–9 |
+| 10 | Analytics, system configuration, transparency dashboard | 1–9 |
 | 11 | Design system / UI polish | all screens from 2–10 |
 | 12 | Seed data, demo rehearsal, deployment | all |
 

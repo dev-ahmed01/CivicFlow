@@ -6,7 +6,7 @@ Build Phase 9: Notifications. Follow AGENTS.md. Every earlier phase has been cre
 
 **1. Delivery mechanisms:**
 - Mobile (Citizen, Engineer apps): Expo push notifications
-- Web (Project Head, Engineer, Admin): in-app notification center, polling or websocket-based unread count (your choice, document which)
+- Web (Project Head, Engineer): in-app notification center, polling or websocket-based unread count (your choice, document which)
 - Every `Notification` row created since Phase 1 must now trigger real delivery on creation — audit all earlier phases' notification-creation call sites and confirm none were missed: ticket validation requests, dependency requests/responses/escalations, completion evidence submissions, conflict/sequencing flags, project assignment, verification outcomes
 
 **2. Notification Center UI (Part II §6):**

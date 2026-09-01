@@ -132,7 +132,6 @@ export async function revokeSession(session: RefreshableSession | null): Promise
 export function portalLoginPath(pathname: string): string {
   if (pathname.startsWith("/project-head")) return "/project-head/login";
   if (pathname.startsWith("/engineer")) return "/engineer/login";
-  if (pathname.startsWith("/admin")) return "/admin/login";
   return "/login";
 }
 

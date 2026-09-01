@@ -17,7 +17,6 @@ import { createTicketsRouter } from "./tickets/router";
 import { createValidationJobsRouter, createValidationsRouter } from "./validations/router";
 import { createAgencyRouter } from "./agency/router";
 import { createProjectsRouter } from "./projects/router";
-import { createAdminRouter } from "./admin/router";
 import { createDependenciesRouter, createDependencyJobsRouter } from "./dependencies/router";
 import { createRoadIntelligenceRouter } from "./road-intelligence/router";
 import { createNotificationsRouter } from "./notifications/router";
@@ -83,7 +82,6 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.use(createRoadIntelligenceRouter());
   app.use(createNotificationsRouter());
   app.use(createGrievancesRouter(imageStorage));
-  app.use("/admin", createAdminRouter());
 
   // Part III §17.2 — protected routes always authenticate, enforce role, then scope.
   app.get(
@@ -103,7 +101,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.get(
     "/protected/me",
     requireAuth,
-    requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     (request, response, next) => {
       void prisma.user.findUnique({
         where: { id: request.auth!.userId },

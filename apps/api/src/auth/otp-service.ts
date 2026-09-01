@@ -17,11 +17,11 @@ export function resolveOtpCode(env: OtpCodeEnvironment, generate = () => randomI
 }
 
 async function configuredMaxAttempts(): Promise<number> {
-  const config = await prisma.adminConfig.findUnique({
+  const config = await prisma.systemConfig.findUnique({
     where: { key: "auth.otp_max_attempts" },
   });
   if (typeof config?.value !== "number" || config.value < 1) {
-    throw new Error("AdminConfig auth.otp_max_attempts is missing or invalid");
+    throw new Error("SystemConfig auth.otp_max_attempts is missing or invalid");
   }
   return config.value;
 }

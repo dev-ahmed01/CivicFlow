@@ -17,7 +17,7 @@ function routeId(request: Request): string {
 
 export function createNotificationsRouter(): Router {
   const router = Router();
-  router.use(requireAuth, requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN));
+  router.use(requireAuth, requireRole(UserRole.CITIZEN, UserRole.PROJECT_HEAD, UserRole.ENGINEER));
 
   router.get("/notifications", asyncRoute(async (request, response) => {
     const unread = z.enum(["true", "false"]).optional().safeParse(request.query.unread);

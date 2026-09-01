@@ -71,7 +71,7 @@ export default function ProjectHeadLoginPage() {
         <p className="eyebrow">One civic workflow</p>
         <h2>From validated report to accountable delivery.</h2>
         <div><strong>Agency scoped</strong><span>Every queue, action, and project is checked on the server.</span></div>
-        <div><strong>DB routed</strong><span>Categories reach the agency configured by administrators.</span></div>
+        <div><strong>DB routed</strong><span>Categories reach the agency defined by the system routing matrix.</span></div>
       </section>
     </main>
   );

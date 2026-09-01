@@ -75,7 +75,6 @@ export function notificationDestination(notification: Pick<Notification, "type" 
   if (coordinationRequestId && role === "PROJECT_HEAD") return `/project-head/coordination/${coordinationRequestId}`;
   if (grievanceId) {
     if (role === "PROJECT_HEAD") return `/project-head/grievances?grievance=${grievanceId}`;
-    if (role === "ADMIN") return `/admin/grievances?grievance=${grievanceId}`;
   }
   if (dependencyId) {
     if (role === "PROJECT_HEAD") return "/project-head/dependencies/inbox";

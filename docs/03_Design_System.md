@@ -7,7 +7,7 @@ Light, airy, sustainable-feeling — white/cream surfaces with green as the only
 
 Two coordinated sub-palettes, same hue family, tuned for two different jobs:
 - **Citizen surfaces (mobile + citizen web)**: warmer, brighter, more whitespace — optimized for a one-off/occasional user who needs to feel welcomed and reassured.
-- **Internal surfaces (Project Head, Engineer, Admin web)**: higher contrast, tighter density — optimized for someone using this for hours a day who needs speed and legibility over charm.
+- **Internal surfaces (Project Head and Engineer web)**: higher contrast, tighter density — optimized for someone using this for hours a day who needs speed and legibility over charm.
 
 ## Color tokens
 
@@ -69,6 +69,6 @@ Not required for the SIH build — skip it. Ship light-only to keep Phase 11 sco
 
 ## Acceptance for Phase 11 (or wherever this gets applied)
 - Every hardcoded color in earlier phases' UI code is replaced with a token from this file — grep for raw hex values outside this token file and treat any hit as a bug
-- Citizen app (mobile + citizen web) uses the citizen palette exclusively; Project Head/Admin/Engineer web uses the internal palette exclusively — no screen mixes both
+- Citizen app (mobile + citizen web) uses the citizen palette exclusively; Project Head/Engineer web uses the internal palette exclusively — no screen mixes both
 - `ConflictBanner` and `SequencingRecommendationCard` are visually distinguishable at a glance (different token families), not just different copy
 - Status chip colors match the semantic mapping exactly — conflict/warning never renders in the danger/red token

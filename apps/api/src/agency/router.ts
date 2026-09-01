@@ -95,7 +95,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
 
   router.get(
     "/agencies",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     requirePasswordResetComplete,
     asyncRoute(async (_request, response) => {
       response.json({
@@ -106,7 +106,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
 
   router.get(
     "/wards",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     requirePasswordResetComplete,
     asyncRoute(async (_request, response) => {
       response.json({ wards: await prisma.ward.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }) });
@@ -115,7 +115,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
 
   router.get(
     "/tickets",
-    requireRole(UserRole.PROJECT_HEAD, UserRole.ADMIN),
+    requireRole(UserRole.PROJECT_HEAD),
     requirePasswordResetComplete,
     asyncRoute(async (request, response) => {
       const status = request.query.status ? ticketStateSchema.safeParse(request.query.status) : null;
@@ -126,7 +126,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         response.status(400).json({ error: "Invalid ticket filter" });
         return;
       }
-      const agencyId = request.auth!.role === UserRole.PROJECT_HEAD ? projectHeadAgency(request) : undefined;
+      const agencyId = projectHeadAgency(request);
       const where = {
           ...(agencyId ? { assignedAgencyId: agencyId } : {}),
           ...(status?.success ? { state: status.data } : {}),

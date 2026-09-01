@@ -89,7 +89,7 @@ CLIP_MODE=local_clip
 CLIP_LOCAL_MODEL=Xenova/clip-vit-base-patch32
 ```
 
-This runs a quantized CLIP model inside the API process. It downloads the public model from Hugging Face on first use, decodes the uploaded image, and compares its pixels against the admin-configured category prompts and unrelated-content prompts. It needs no API token or payment card. The first relevance request after a cold deployment is slower while model files are downloaded and cached.
+This runs a quantized CLIP model inside the API process. It downloads the public model from Hugging Face on first use, decodes the uploaded image, and compares its pixels against the system-configured category prompts and unrelated-content prompts. It needs no API token or payment card. The first relevance request after a cold deployment is slower while model files are downloaded and cached.
 
 `CLIP_MODE=demo_deterministic` is retained only as a fail-closed legacy setting: every result is `LOW_CONFIDENCE`; it never accepts an image without inspecting pixels.
 

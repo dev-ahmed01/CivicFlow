@@ -31,7 +31,7 @@ type ConflictCandidate = {
 
 function configuredRadius(value: Prisma.JsonValue | undefined): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    throw new Error("AdminConfig conflict.radius_meters must contain a positive number");
+    throw new Error("SystemConfig conflict.radius_meters must contain a positive number");
   }
   return value;
 }
@@ -89,7 +89,7 @@ export async function checkProjectConflicts(
   client: ConflictCheckClient,
   projectId: string,
 ): Promise<ProjectConflict[]> {
-  const config = await client.adminConfig.findUnique({ where: { key: "conflict.radius_meters" }, select: { value: true } });
+  const config = await client.systemConfig.findUnique({ where: { key: "conflict.radius_meters" }, select: { value: true } });
   const radiusMeters = configuredRadius(config?.value);
   const activeStates = [
     ProjectState.TIMELINE_SET,

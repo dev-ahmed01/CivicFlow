@@ -114,13 +114,11 @@ async function main() {
   try {
     const app = createApp({ otpProvider: { async sendOtp() {} }, imageStorage: storage, imageRelevance: relevance });
     const agent = request(app);
-  const login = async (email: string, expectedRole: "PROJECT_HEAD" | "ENGINEER" | "ADMIN") => timed(() => agent.post("/auth/internal/login").send({ email, password: demoInternalPassword, expectedRole }));
+  const login = async (email: string, expectedRole: "PROJECT_HEAD" | "ENGINEER") => timed(() => agent.post("/auth/internal/login").send({ email, password: demoInternalPassword, expectedRole }));
   const projectHeadLogin = await login("head.pwd@civicos.local", "PROJECT_HEAD");
   const engineerLogin = await login("engineer.pwd@civicos.local", "ENGINEER");
-  const adminLogin = await login("admin@civicos.local", "ADMIN");
   assert.equal(projectHeadLogin.value.status, 200);
   assert.equal(engineerLogin.value.status, 200);
-  assert.equal(adminLogin.value.status, 200);
   const headToken = projectHeadLogin.value.body.accessToken as string;
   const engineerToken = engineerLogin.value.body.accessToken as string;
 
@@ -191,14 +189,14 @@ async function main() {
   const normalLatencies = [ticketList.ms, projectList.ms, engineerList.ms, notifications.ms, imagePresign.ms, relevanceCheck.ms, citizenCreate.ms, citizenSubmit.ms, projectCreation.ms, dependencyResponse.ms];
   const report = {
     fixture: { tickets: 100, validations: 100, projects: 30, transitions: 130, notifications: 100 },
-    authenticationMs: { citizenOtpRequest: citizenOtpRequest.ms, citizenLogin: citizenLogin.ms, projectHead: projectHeadLogin.ms, engineer: engineerLogin.ms, admin: adminLogin.ms, invalid: invalidLogin.ms, roleMismatch: roleMismatch.ms },
+    authenticationMs: { citizenOtpRequest: citizenOtpRequest.ms, citizenLogin: citizenLogin.ms, projectHead: projectHeadLogin.ms, engineer: engineerLogin.ms, invalid: invalidLogin.ms, roleMismatch: roleMismatch.ms },
     listAndCrudMs: { ticketList: ticketList.ms, projectList: projectList.ms, engineerList: engineerList.ms, notifications: notifications.ms, imagePresign: imagePresign.ms, relevanceCheck: relevanceCheck.ms, citizenTicketCreate: citizenCreate.ms, citizenTicketSubmit: citizenSubmit.ms, projectCreateWithDependencies: projectCreation.ms, dependencyResponse: dependencyResponse.ms },
     dashboardMs: { cold: dashboardCold.ms, cached: dashboardCached.ms },
     enginesMs: { conflicts: conflictCheck.ms, conflictsFound: conflictCheck.value.length },
     concurrency: { requests: 25, wallMs: concurrent.ms, failed: concurrent.value.filter((response) => response.status >= 400).length },
     database: { countProbeMs: dbProbe.ms, fixtureCount: dbProbe.value },
     processMemoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
-    targets: { normalUnder500ms: normalLatencies.every((ms) => ms < 500), dashboardUnder1500ms: dashboardCold.ms < 1500, loginsUnder1000ms: [citizenLogin.ms, projectHeadLogin.ms, engineerLogin.ms, adminLogin.ms].every((ms) => ms < 1000) },
+    targets: { normalUnder500ms: normalLatencies.every((ms) => ms < 500), dashboardUnder1500ms: dashboardCold.ms < 1500, loginsUnder1000ms: [citizenLogin.ms, projectHeadLogin.ms, engineerLogin.ms].every((ms) => ms < 1000) },
   };
   console.log(JSON.stringify(report, null, 2));
   assert.equal(report.targets.normalUnder500ms, true);

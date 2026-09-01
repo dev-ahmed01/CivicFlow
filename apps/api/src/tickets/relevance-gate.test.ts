@@ -40,7 +40,7 @@ describe("pre-ticket image relevance gate", () => {
   beforeEach(() => {
     vi.spyOn(prisma.user, "findUnique").mockResolvedValue({ id: citizenId, role: "CITIZEN", agencyId: null, wardId: null, mustResetPassword: false } as never);
     vi.spyOn(prisma.category, "findUnique").mockResolvedValue({ id: categoryId } as never);
-    vi.spyOn(prisma.adminConfig, "findUnique").mockResolvedValue({ key: "ai_relevance.pass_threshold", value: 0.6 } as never);
+    vi.spyOn(prisma.systemConfig, "findUnique").mockResolvedValue({ key: "ai_relevance.pass_threshold", value: 0.6 } as never);
   });
   afterEach(() => vi.restoreAllMocks());
 
