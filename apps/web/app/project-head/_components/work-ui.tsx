@@ -40,6 +40,7 @@ const projectLabels: Record<ProjectState, string> = {
   UPTAKEN: "Planning in progress",
   TIMELINE_SET: "Schedule set",
   CONFLICT_CHECKED: "Coordination checked",
+  READY_TO_START: "Ready to start",
   ACTIVE: "In progress",
   MODIFIED: "Schedule updated",
   COMPLETED: "Completion submitted",

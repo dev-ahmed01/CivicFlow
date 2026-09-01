@@ -22,6 +22,7 @@ const PRE_EXECUTION_STATES = new Set<ProjectState>([
   ProjectState.UPTAKEN,
   ProjectState.TIMELINE_SET,
   ProjectState.CONFLICT_CHECKED,
+  ProjectState.READY_TO_START,
 ]);
 const BLOCKING_DEPENDENCY_STATES: DependencyState[] = [
   DependencyState.REQUESTED,

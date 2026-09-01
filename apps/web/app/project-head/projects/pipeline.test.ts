@@ -10,7 +10,8 @@ describe("Project Head work pipeline", () => {
 
   it("does not present planned work as active before execution", () => {
     expect(pipelineStage("project", "TIMELINE_SET")).toBe("SCHEDULED");
-    expect(pipelineStage("project", "CONFLICT_CHECKED")).toBe("READY");
+    expect(pipelineStage("project", "CONFLICT_CHECKED")).toBe("SCHEDULED");
+    expect(pipelineStage("project", "READY_TO_START")).toBe("READY");
     expect(pipelineStage("project", "ACTIVE")).toBe("ACTIVE");
   });
 

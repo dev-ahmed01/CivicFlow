@@ -3,7 +3,6 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import { CivicWorkOrigin, CoordinationStatus, DependencyState, GrievanceStatus, ProjectState, TicketState, UserRole, WorkflowActionType, prisma } from "db";
 import {
   agencyOriginatedTicketRequestSchema,
-  inspectionReportRequestSchema,
   ticketStateSchema,
 } from "@civicos/shared";
 import { z } from "zod";
@@ -13,7 +12,7 @@ import { checkProjectConflicts } from "../conflicts/service";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
 import { buildProjectHeadPerformance } from "../analytics/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
-import { completeWorkflowAction, createWorkflowAction } from "../deadlines/service";
+import { createWorkflowAction } from "../deadlines/service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -415,83 +414,9 @@ export function createAgencyRouter(storage: ImageStorage): Router {
     "/tickets/:id/inspection-report",
     requireRole(UserRole.PROJECT_HEAD),
     requirePasswordResetComplete,
-    asyncRoute(async (request, response) => {
-      const parsed = inspectionReportRequestSchema.safeParse(request.body);
-      if (!parsed.success) {
-        response.status(400).json({ error: "Invalid inspection report", details: parsed.error.flatten() });
-        return;
-      }
-      const ticketId = routeId(request);
-      if (!(await ownsTicket(request, ticketId))) {
-        response.status(404).json({ error: "Ticket not found" });
-        return;
-      }
-
-      if (parsed.data.action === "presign") {
-        const ticket = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { state: true } });
-        if (ticket.state !== TicketState.ROUTED_TO_AGENCY && ticket.state !== TicketState.INSPECTION_DUE) {
-          response.status(409).json({ error: `Inspection cannot be opened from ${ticket.state}` });
-          return;
-        }
-        const input = parsed.data;
-        const reportId = randomUUID();
-        const objectKey = `inspection-reports/${ticketId}/${reportId}-${safeFileName(input.fileName)}`;
-        const upload = await storage.createUpload(objectKey, input.contentType);
-        await prisma.$transaction(async (transaction) => {
-          if (ticket.state === TicketState.ROUTED_TO_AGENCY) {
-            await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.INSPECTION_DUE } });
-            await transaction.ticketStateTransition.create({
-              data: { ticketId, fromState: ticket.state, toState: TicketState.INSPECTION_DUE, reason: "INSPECTION_OPENED", actedById: request.auth!.userId },
-            });
-          }
-          await transaction.inspectionReport.create({
-            data: {
-              id: reportId,
-              ticketId,
-              submittedById: request.auth!.userId,
-              fileUrl: upload.publicUrl,
-              objectKey,
-              contentType: input.contentType,
-              notes: input.notes,
-            },
-          });
-        });
-        response.status(201).json({ reportId, upload, state: TicketState.INSPECTION_DUE });
-        return;
-      }
-
-      const report = await prisma.inspectionReport.findFirst({
-        where: { id: parsed.data.reportId, ticketId, submittedById: request.auth!.userId },
-        select: { id: true, objectKey: true, contentType: true },
-      });
-      if (!report) {
-        response.status(404).json({ error: "Inspection report not found" });
-        return;
-      }
-      if (!(await storage.verifyUpload(report.objectKey, report.contentType))) {
-        response.status(422).json({ error: "The inspection file is missing, empty, too large, or has an unexpected file type. Upload it again." });
-        return;
-      }
-      const ticket = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { state: true } });
-      if (ticket.state !== TicketState.INSPECTION_DUE) {
-        response.status(409).json({ error: `Inspection cannot be completed from ${ticket.state}` });
-        return;
-      }
-      await prisma.$transaction(async (transaction) => {
-        const now = new Date();
-        await transaction.inspectionReport.update({ where: { id: report.id }, data: { uploadedAt: now } });
-        await transaction.ticket.update({ where: { id: ticketId }, data: { state: TicketState.INSPECTION_COMPLETE } });
-        await transaction.ticketStateTransition.create({
-          data: { ticketId, fromState: TicketState.INSPECTION_DUE, toState: TicketState.INSPECTION_COMPLETE, reason: "INSPECTION_COMPLETE", actedById: request.auth!.userId },
-        });
-        await completeWorkflowAction(transaction, `ticket:${ticketId}:inspect`, now);
-        await createWorkflowAction(transaction, {
-          dedupeKey: `ticket:${ticketId}:create-project`, type: WorkflowActionType.CREATE_PROJECT, ticketId,
-          responsibleUserId: request.auth!.userId, responsibleAgencyId: projectHeadAgency(request),
-        }, now);
-      });
-      response.json({ reportId: report.id, ticketId, state: TicketState.INSPECTION_COMPLETE });
-    }),
+    (_request, response) => {
+      response.status(410).json({ error: "Project Heads assign inspections; Engineers submit structured inspection evidence through /inspections" });
+    },
   );
 
   return router;

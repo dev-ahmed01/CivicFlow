@@ -12,6 +12,11 @@ import { apiFetch } from "../../_lib/api";
 
 const emptyRoadData: RoadIntelligenceData = { conflicts: [], recommendations: [], segment: null, interventionHistory: [] };
 type RecordTab = "OVERVIEW" | "ACTIVITY" | "COORDINATION" | "DOCUMENTS";
+type ProjectDetailWithDocumentLinks = Omit<EngineerProjectDetail, "ticket"> & {
+  ticket: (Omit<NonNullable<EngineerProjectDetail["ticket"]>, "inspectionReports"> & {
+    inspectionReports: Array<Omit<NonNullable<EngineerProjectDetail["ticket"]>["inspectionReports"][number], "fileUrl"> & { fileUrl: string }>;
+  }) | null;
+};
 
 function label(value: string): string {
   return value.replaceAll("_", " ").replaceAll("-", " ").toLowerCase().replace(/^./, (first) => first.toUpperCase());
@@ -51,7 +56,7 @@ function deadlineText(value: Date | string): string {
 }
 
 export function ProjectDetailClient({ projectId }: { projectId: string }) {
-  const [project, setProject] = useState<EngineerProjectDetail>();
+  const [project, setProject] = useState<ProjectDetailWithDocumentLinks>();
   const [conflicts, setConflicts] = useState<CoordinationConflict[]>([]);
   const [roadData, setRoadData] = useState<RoadIntelligenceData>(emptyRoadData);
   const [dependencies, setDependencies] = useState<DependencyListItem[]>([]);
@@ -75,7 +80,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
         apiFetch<{ agencies: Agency[]; requestTypes: string[] }>("/coordination-options"),
       ]);
       const relatedRequests = [...sentResult.requests, ...receivedResult.requests].filter((request) => request.projectId === projectId || request.conflictingProjectId === projectId);
-      setProject(projectResult.project);
+      setProject(projectResult.project as ProjectDetailWithDocumentLinks);
       setConflicts(conflictResult.conflicts);
       setRoadData(roadResult);
       setDependencies(dependencyResult.dependencies.filter((dependency) => dependency.projectId === projectId));
@@ -146,7 +151,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
   } else if (project.state === "PENDING_UPTAKE") {
     nextStep = `${project.engineer?.email ?? "The assigned engineer"} must accept the work before planning continues.`;
     primaryAction = null;
-  } else if (["UPTAKEN", "TIMELINE_SET", "CONFLICT_CHECKED"].includes(project.state)) {
+  } else if (["UPTAKEN", "TIMELINE_SET", "CONFLICT_CHECKED", "READY_TO_START"].includes(project.state)) {
     nextStep = project.plannedStart && project.plannedEnd ? "Planning is recorded. Review the schedule and any connected agency work." : "The assigned engineer must confirm the delivery timeline.";
     primaryAction = <NextActionButton href="/project-head/work-calendar">Open schedule</NextActionButton>;
   } else if (["COMPLETED", "AWAITING_VERIFICATION"].includes(project.state)) {

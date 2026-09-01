@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { CivicWorkOrigin, ProjectState, TicketState, UserRole, WorkflowActionType, prisma, type Prisma } from "db";
+import { CivicWorkOrigin, ProjectBlockerStatus, ProjectState, ReassignmentRequestStatus, TicketState, UserRole, WorkflowActionType, prisma, type Prisma } from "db";
 import {
   completionEvidenceRequestSchema,
   createProjectSchema,
   projectStateSchema,
+  reportProjectBlockerSchema,
+  requestReassignmentSchema,
+  resolveProjectBlockerSchema,
+  respondReassignmentSchema,
   updateProjectStatusSchema,
   updateProjectTimelineSchema,
 } from "@civicos/shared";
@@ -17,6 +21,7 @@ import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service
 import { createNotification, createNotifications, requestPushDelivery } from "../notifications/service";
 import { paginationMeta, parsePagination } from "../http/pagination";
 import { completeWorkflowAction, createWorkflowAction } from "../deadlines/service";
+import { canSaveTimeline, canStartWork, stateAfterTimelineCheck } from "./lifecycle";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -24,9 +29,15 @@ const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Respo
 };
 const idSchema = z.string().uuid();
 const scopeSchema = z.enum(["mine", "assigned", "geographic"]);
+const engineerStageSchema = z.enum(["scheduled", "active", "completed"]);
 
 function routeId(request: Request): string {
   const value = request.params.id;
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function routeParam(request: Request, key: string): string {
+  const value = request.params[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
@@ -82,7 +93,7 @@ const projectInclude = {
       category: { select: { id: true, name: true } },
       ward: { select: { id: true, name: true } },
       observations: { orderBy: { createdAt: "asc" as const }, select: { imageUrl: true, note: true, images: { where: { uploadedAt: { not: null } }, orderBy: { createdAt: "asc" as const }, take: 1, select: { objectKey: true, url: true } } } },
-      inspectionReports: { where: { uploadedAt: { not: null } }, orderBy: { createdAt: "desc" as const }, select: { id: true, fileUrl: true, objectKey: true, contentType: true, notes: true, uploadedAt: true, createdAt: true } },
+      inspectionReports: { orderBy: { createdAt: "desc" as const }, include: { assignedEngineer: { select: { id: true, email: true } }, assignedBy: { select: { id: true, email: true } }, evidence: { orderBy: { createdAt: "asc" as const } } } },
     },
   },
   dependencies: { include: { respondingAgency: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" as const } },
@@ -111,7 +122,8 @@ function projectForResponse(storage: ImageStorage, project: ProjectWithDetails) 
       })),
       inspectionReports: project.ticket.inspectionReports.map(({ objectKey, ...report }) => ({
         ...report,
-        fileUrl: storageReadUrl(storage, objectKey, report.fileUrl),
+        fileUrl: objectKey && report.fileUrl ? storageReadUrl(storage, objectKey, report.fileUrl) : null,
+        evidence: report.evidence.map(({ objectKey: evidenceKey, ...evidence }) => ({ ...evidence, fileUrl: storageReadUrl(storage, evidenceKey, evidence.fileUrl) })),
       })),
     } : null,
     completionEvidence: project.completionEvidence.map((evidence) => ({
@@ -311,8 +323,9 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       const agency = request.query.agency ? idSchema.safeParse(request.query.agency) : null;
       const ward = request.query.ward ? idSchema.safeParse(request.query.ward) : null;
       const scope = request.query.scope ? scopeSchema.safeParse(request.query.scope) : null;
+      const engineerStage = request.query.stage ? engineerStageSchema.safeParse(request.query.stage) : null;
       const pagination = parsePagination(request.query);
-      if ((status && !status.success) || (agency && !agency.success) || (ward && !ward.success) || (scope && !scope.success) || !pagination.success) {
+      if ((status && !status.success) || (agency && !agency.success) || (ward && !ward.success) || (scope && !scope.success) || (engineerStage && !engineerStage.success) || !pagination.success) {
         response.status(400).json({ error: "Invalid project filter" });
         return;
       }
@@ -322,9 +335,14 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       }
 
       const engineerScope = request.auth!.role === UserRole.ENGINEER ? (scope?.success ? scope.data : "mine") : undefined;
+      const stageStates: Record<z.infer<typeof engineerStageSchema>, ProjectState[]> = {
+        scheduled: [ProjectState.UPTAKEN, ProjectState.TIMELINE_SET, ProjectState.CONFLICT_CHECKED, ProjectState.READY_TO_START],
+        active: [ProjectState.ACTIVE, ProjectState.MODIFIED],
+        completed: [ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION, ProjectState.CLOSED],
+      };
       const where: Prisma.ProjectWhereInput = {
         agencyId: actorAgency(request),
-        ...(engineerScope === "mine" ? { engineerId: request.auth!.userId, state: status?.success ? status.data : { notIn: [ProjectState.CLOSED, ProjectState.CANCELLED] } } : {}),
+        ...(engineerScope === "mine" ? { engineerId: request.auth!.userId, state: status?.success ? status.data : engineerStage?.success ? { in: stageStates[engineerStage.data] } : { notIn: [ProjectState.CLOSED, ProjectState.CANCELLED] } } : {}),
         ...(engineerScope === "assigned" ? { engineerId: request.auth!.userId, state: ProjectState.PENDING_UPTAKE } : {}),
         ...(engineerScope === "geographic" && status?.success ? { state: status.data } : {}),
         ...(!engineerScope && status?.success ? { state: status.data } : {}),
@@ -410,8 +428,9 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         `;
         const project = rows[0];
         if (!project || !canEngineerEdit(request, project)) return { kind: "missing" as const };
-        if (project.state !== ProjectState.UPTAKEN && project.state !== ProjectState.ACTIVE && project.state !== ProjectState.MODIFIED) return { kind: "state" as const, state: project.state };
+        if (!canSaveTimeline(project.state)) return { kind: "state" as const, state: project.state };
         const initialTimeline = project.state === ProjectState.UPTAKEN;
+        const executionAlreadyStarted = project.actualStart !== null;
         const interimState = initialTimeline ? ProjectState.TIMELINE_SET : ProjectState.MODIFIED;
         await transaction.project.update({ where: { id: project.id }, data: {
           plannedStart: new Date(parsed.data.plannedStart),
@@ -433,31 +452,33 @@ export function createProjectsRouter(storage: ImageStorage): Router {
           await transaction.project.update({ where: { id: project.id }, data: { state: ProjectState.CONFLICT_CHECKED } });
           await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: ProjectState.TIMELINE_SET, toState: ProjectState.CONFLICT_CHECKED, reason: "CONFLICT_CHECK_COMPLETE", actedById: request.auth!.userId } });
         }
-        await transaction.project.update({
-          where: { id: project.id },
-          data: { state: ProjectState.ACTIVE, actualStart: project.actualStart ?? new Date(), updatedById: request.auth!.userId },
-        });
-        await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: initialTimeline ? ProjectState.CONFLICT_CHECKED : ProjectState.MODIFIED, toState: ProjectState.ACTIVE, reason: conflicts.length === 0 ? "NO_BLOCKING_CONFLICTS" : "ADVISORY_CONFLICTS_REVIEWED", actedById: request.auth!.userId } });
-
-        if (project.ticketId) {
-          const ticket = await transaction.ticket.findUnique({ where: { id: project.ticketId }, select: { state: true } });
-          if (ticket?.state === TicketState.ENGINEER_ASSIGNED) {
-            await transaction.ticket.update({ where: { id: project.ticketId }, data: { state: TicketState.WORK_IN_PROGRESS } });
-            await transaction.ticketStateTransition.create({ data: { ticketId: project.ticketId, fromState: ticket.state, toState: TicketState.WORK_IN_PROGRESS, reason: "EXECUTION_STARTED", actedById: request.auth!.userId } });
-          }
-        }
+        const readyState = stateAfterTimelineCheck(project.actualStart);
+        await transaction.project.update({ where: { id: project.id }, data: { state: readyState, updatedById: request.auth!.userId } });
+        await transaction.projectStateTransition.create({ data: {
+          projectId: project.id,
+          fromState: initialTimeline ? ProjectState.CONFLICT_CHECKED : ProjectState.MODIFIED,
+          toState: readyState,
+          reason: executionAlreadyStarted ? "ACTIVE_TIMELINE_UPDATED" : "READY_TO_START_AFTER_ADVISORY_CHECKS",
+          actedById: request.auth!.userId,
+        } });
+        await transaction.projectAuditEvent.create({ data: {
+          projectId: project.id,
+          action: executionAlreadyStarted ? "ACTIVE_TIMELINE_UPDATED" : "TIMELINE_READY_TO_START",
+          actorId: request.auth!.userId,
+          metadata: { genericConflicts: conflicts.length, roadConflicts: roadConflicts.length, advisory: true },
+        } });
         await notifyProjectStakeholders(
           transaction,
           project,
-          initialTimeline ? "WORK_STARTED" : "PROJECT_TIMELINE_MODIFIED",
-          { conflicts: conflicts.length },
+          initialTimeline ? "PROJECT_READY_TO_START" : "PROJECT_TIMELINE_MODIFIED",
+          { conflicts: conflicts.length, roadConflicts: roadConflicts.length, state: readyState },
         );
         if (project.ticketId && project.engineerId) {
           await completeWorkflowAction(transaction, `project:${project.id}:timeline`);
-          await createWorkflowAction(transaction, {
-            dedupeKey: `project:${project.id}:complete-work`, type: WorkflowActionType.COMPLETE_WORK,
+          if (!executionAlreadyStarted) await createWorkflowAction(transaction, {
+            dedupeKey: `project:${project.id}:start-work`, type: WorkflowActionType.START_WORK,
             ticketId: project.ticketId, projectId: project.id, responsibleUserId: project.engineerId, responsibleAgencyId: project.agencyId,
-            explicitDeadline: new Date(parsed.data.plannedEnd),
+            explicitDeadline: new Date(parsed.data.plannedStart),
           });
         }
         return { kind: "updated" as const, conflicts, roadConflicts };
@@ -465,6 +486,49 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       if (result.kind === "missing") response.status(404).json({ error: "Assigned project not found" });
       else if (result.kind === "state") response.status(409).json({ error: `Timeline cannot be set from ${result.state}` });
       else response.json({ project: await prisma.project.findUniqueOrThrow({ where: { id: routeId(request) } }), conflicts: result.conflicts, roadConflicts: result.roadConflicts });
+    }),
+  );
+
+  router.post(
+    "/projects/:id/start",
+    requireRole(UserRole.ENGINEER),
+    requirePasswordResetComplete,
+    asyncRoute(async (request, response) => {
+      const result = await prisma.$transaction(async (transaction) => {
+        const rows = await transaction.$queryRaw<Array<{ id: string; agencyId: string; engineerId: string | null; state: ProjectState; ticketId: string | null; plannedEnd: Date | null }>>`
+          SELECT "id", "agencyId", "engineerId", "state", "ticketId", "plannedEnd" FROM "Project"
+          WHERE "id" = ${routeId(request)}::uuid FOR UPDATE
+        `;
+        const project = rows[0];
+        if (!project || !canEngineerEdit(request, project)) return { kind: "missing" as const };
+        if (!canStartWork(project.state)) return { kind: "state" as const, state: project.state };
+        const now = new Date();
+        await transaction.project.update({ where: { id: project.id }, data: { state: ProjectState.ACTIVE, actualStart: now, updatedById: request.auth!.userId } });
+        await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: ProjectState.READY_TO_START, toState: ProjectState.ACTIVE, reason: "ENGINEER_STARTED_WORK", actedById: request.auth!.userId } });
+        await transaction.projectAuditEvent.create({ data: { projectId: project.id, action: "WORK_STARTED", actorId: request.auth!.userId, metadata: { actualStart: now.toISOString() } } });
+        if (project.ticketId) {
+          const ticket = await transaction.ticket.findUnique({ where: { id: project.ticketId }, select: { state: true } });
+          if (ticket?.state === TicketState.ENGINEER_ASSIGNED) {
+            await transaction.ticket.update({ where: { id: project.ticketId }, data: { state: TicketState.WORK_IN_PROGRESS } });
+            await transaction.ticketStateTransition.create({ data: { ticketId: project.ticketId, fromState: ticket.state, toState: TicketState.WORK_IN_PROGRESS, reason: "ENGINEER_STARTED_WORK", actedById: request.auth!.userId } });
+          }
+          await completeWorkflowAction(transaction, `project:${project.id}:start-work`, now);
+          if (project.engineerId) await createWorkflowAction(transaction, {
+            dedupeKey: `project:${project.id}:complete-work`,
+            type: WorkflowActionType.COMPLETE_WORK,
+            ticketId: project.ticketId,
+            projectId: project.id,
+            responsibleUserId: project.engineerId,
+            responsibleAgencyId: project.agencyId,
+            ...(project.plannedEnd ? { explicitDeadline: project.plannedEnd } : {}),
+          }, now);
+        }
+        await notifyProjectStakeholders(transaction, project, "WORK_STARTED", { actualStart: now.toISOString() });
+        return { kind: "started" as const };
+      });
+      if (result.kind === "missing") response.status(404).json({ error: "Assigned project not found" });
+      else if (result.kind === "state") response.status(409).json({ error: `Work cannot be started from ${result.state}` });
+      else response.json({ project: await prisma.project.findUniqueOrThrow({ where: { id: routeId(request) } }) });
     }),
   );
 
@@ -606,6 +670,83 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       }
     }),
   );
+
+  router.post("/projects/:id/reassignment-requests", requireRole(UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
+    const parsed = requestReassignmentSchema.safeParse(request.body);
+    if (!parsed.success) { response.status(400).json({ error: "Invalid reassignment request", details: parsed.error.flatten() }); return; }
+    const project = await prisma.project.findFirst({ where: { id: routeId(request), agencyId: actorAgency(request), engineerId: request.auth!.userId }, select: { id: true, ticketId: true, state: true, title: true } });
+    if (!project) { response.status(404).json({ error: "Assigned project not found" }); return; }
+    if (project.state !== ProjectState.PENDING_UPTAKE) { response.status(409).json({ error: "Reassignment can only be requested before accepting work" }); return; }
+    const existing = await prisma.projectReassignmentRequest.findFirst({ where: { projectId: project.id, status: ReassignmentRequestStatus.PENDING }, select: { id: true } });
+    if (existing) { response.status(409).json({ error: "A reassignment request is already awaiting a decision", requestId: existing.id }); return; }
+    const result = await prisma.$transaction(async (transaction) => {
+      const item = await transaction.projectReassignmentRequest.create({ data: { projectId: project.id, requestedById: request.auth!.userId, reason: parsed.data.reason, note: parsed.data.note, availableFrom: parsed.data.availableFrom ? new Date(parsed.data.availableFrom) : undefined } });
+      await transaction.projectAuditEvent.create({ data: { projectId: project.id, action: "REASSIGNMENT_REQUESTED", actorId: request.auth!.userId, metadata: { requestId: item.id, reason: parsed.data.reason } } });
+      const heads = await transaction.user.findMany({ where: { agencyId: actorAgency(request), role: UserRole.PROJECT_HEAD, deactivatedAt: null }, select: { id: true } });
+      await createNotifications(transaction, heads.map(({ id }) => ({ userId: id, type: "PROJECT_REASSIGNMENT_REQUESTED", payload: { projectId: project.id, requestId: item.id, title: project.title } })));
+      return item;
+    });
+    requestPushDelivery(); response.status(201).json({ request: result });
+  }));
+
+  router.get("/project-reassignment-requests", requireRole(UserRole.PROJECT_HEAD), requirePasswordResetComplete, asyncRoute(async (request, response) => {
+    const requests = await prisma.projectReassignmentRequest.findMany({ where: { project: { agencyId: actorAgency(request) } }, include: { project: { select: { id: true, referenceNumber: true, title: true, state: true } }, requestedBy: { select: { id: true, email: true } }, newEngineer: { select: { id: true, email: true } } }, orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 200 });
+    response.json({ requests });
+  }));
+
+  router.post("/project-reassignment-requests/:requestId/respond", requireRole(UserRole.PROJECT_HEAD), requirePasswordResetComplete, asyncRoute(async (request, response) => {
+    const parsed = respondReassignmentSchema.safeParse(request.body);
+    if (!parsed.success) { response.status(400).json({ error: "Invalid reassignment decision", details: parsed.error.flatten() }); return; }
+    const result = await prisma.$transaction(async (transaction) => {
+      const item = await transaction.projectReassignmentRequest.findFirst({ where: { id: routeParam(request, "requestId"), status: ReassignmentRequestStatus.PENDING, project: { agencyId: actorAgency(request) } }, include: { project: { select: { id: true, engineerId: true, agencyId: true } } } });
+      if (!item) return null;
+      let engineerId: string | undefined;
+      if (parsed.data.decision === "APPROVE") {
+        const engineer = await transaction.user.findFirst({ where: { id: parsed.data.engineerId, agencyId: item.project.agencyId, role: UserRole.ENGINEER, deactivatedAt: null }, select: { id: true } });
+        if (!engineer) return { kind: "engineer" as const };
+        engineerId = engineer.id;
+        await transaction.project.update({ where: { id: item.project.id }, data: { engineerId, updatedById: request.auth!.userId } });
+      }
+      const status = parsed.data.decision === "APPROVE" ? ReassignmentRequestStatus.APPROVED : ReassignmentRequestStatus.DECLINED;
+      await transaction.projectReassignmentRequest.update({ where: { id: item.id }, data: { status, decidedById: request.auth!.userId, newEngineerId: engineerId, decisionNote: parsed.data.note, decidedAt: new Date() } });
+      await transaction.projectAuditEvent.create({ data: { projectId: item.project.id, action: `REASSIGNMENT_${status}`, actorId: request.auth!.userId, metadata: { requestId: item.id, newEngineerId: engineerId ?? null, note: parsed.data.note } } });
+      const recipients = [item.requestedById, ...(engineerId && engineerId !== item.requestedById ? [engineerId] : [])];
+      await createNotifications(transaction, recipients.map((userId) => ({ userId, type: `PROJECT_REASSIGNMENT_${status}`, payload: { projectId: item.project.id, requestId: item.id } })));
+      return { kind: "decided" as const, status };
+    });
+    if (!result) response.status(404).json({ error: "Pending reassignment request not found" });
+    else if (result.kind === "engineer") response.status(422).json({ error: "Choose an active Engineer from your agency" });
+    else { requestPushDelivery(); response.json(result); }
+  }));
+
+  router.post("/projects/:id/blockers", requireRole(UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
+    const parsed = reportProjectBlockerSchema.safeParse(request.body);
+    if (!parsed.success) { response.status(400).json({ error: "Invalid blocker", details: parsed.error.flatten() }); return; }
+    const project = await prisma.project.findFirst({ where: { id: routeId(request), agencyId: actorAgency(request), engineerId: request.auth!.userId, state: { in: [ProjectState.ACTIVE, ProjectState.MODIFIED] } }, select: { id: true, title: true } });
+    if (!project) { response.status(404).json({ error: "Active assigned project not found" }); return; }
+    const blocker = await prisma.$transaction(async (transaction) => {
+      const item = await transaction.projectBlocker.create({ data: { projectId: project.id, reportedById: request.auth!.userId, ...parsed.data } });
+      await transaction.projectAuditEvent.create({ data: { projectId: project.id, action: "BLOCKER_REPORTED", actorId: request.auth!.userId, metadata: { blockerId: item.id, severity: item.severity, title: item.title } } });
+      const heads = await transaction.user.findMany({ where: { agencyId: actorAgency(request), role: UserRole.PROJECT_HEAD, deactivatedAt: null }, select: { id: true } });
+      await createNotifications(transaction, heads.map(({ id }) => ({ userId: id, type: "PROJECT_BLOCKER_REPORTED", payload: { projectId: project.id, blockerId: item.id, severity: item.severity, title: project.title } })));
+      return item;
+    });
+    requestPushDelivery(); response.status(201).json({ blocker });
+  }));
+
+  router.get("/project-blockers", requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
+    const blockers = await prisma.projectBlocker.findMany({ where: { project: { agencyId: actorAgency(request), ...(request.auth!.role === UserRole.ENGINEER ? { engineerId: request.auth!.userId } : {}) }, ...(request.query.status === "all" ? {} : { status: ProjectBlockerStatus.OPEN }) }, include: { project: { select: { id: true, referenceNumber: true, title: true, state: true } }, reportedBy: { select: { id: true, email: true } } }, orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 200 });
+    response.json({ blockers });
+  }));
+
+  router.post("/project-blockers/:blockerId/resolve", requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), requirePasswordResetComplete, asyncRoute(async (request, response) => {
+    const parsed = resolveProjectBlockerSchema.safeParse(request.body);
+    if (!parsed.success) { response.status(400).json({ error: "Invalid blocker resolution", details: parsed.error.flatten() }); return; }
+    const blocker = await prisma.projectBlocker.findFirst({ where: { id: routeParam(request, "blockerId"), status: ProjectBlockerStatus.OPEN, project: { agencyId: actorAgency(request), ...(request.auth!.role === UserRole.ENGINEER ? { engineerId: request.auth!.userId } : {}) } }, select: { id: true, projectId: true } });
+    if (!blocker) { response.status(404).json({ error: "Open blocker not found" }); return; }
+    await prisma.$transaction([prisma.projectBlocker.update({ where: { id: blocker.id }, data: { status: ProjectBlockerStatus.RESOLVED, resolution: parsed.data.resolution, resolvedById: request.auth!.userId, resolvedAt: new Date() } }), prisma.projectAuditEvent.create({ data: { projectId: blocker.projectId, action: "BLOCKER_RESOLVED", actorId: request.auth!.userId, metadata: { blockerId: blocker.id, resolution: parsed.data.resolution } } })]);
+    response.json({ status: ProjectBlockerStatus.RESOLVED });
+  }));
 
   return router;
 }

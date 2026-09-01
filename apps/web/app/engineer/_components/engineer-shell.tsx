@@ -8,9 +8,11 @@ import { NotificationBell } from "../../_components/notification-center";
 import { CitizenIcon, type CitizenIconName } from "../../_components/ui";
 
 const workLinks: Array<{ href: string; label: string; icon: CitizenIconName; active: (path: string) => boolean }> = [
-  { href: "/engineer", label: "Overview", icon: "file", active: (path) => path === "/engineer" },
-  { href: "/engineer/projects", label: "Projects", icon: "clipboard", active: (path) => path.startsWith("/engineer/projects") },
+  { href: "/engineer", label: "Today", icon: "clock", active: (path) => path === "/engineer" },
+  { href: "/engineer/inspections", label: "Inspections", icon: "file", active: (path) => path.startsWith("/engineer/inspections") },
+  { href: "/engineer/projects", label: "My Work", icon: "clipboard", active: (path) => path.startsWith("/engineer/projects") },
   { href: "/engineer/dependencies", label: "Dependencies", icon: "refresh", active: (path) => path.startsWith("/engineer/dependencies") },
+  { href: "/engineer/map", label: "Map", icon: "location", active: (path) => path.startsWith("/engineer/map") },
 ];
 
 const accountLinks: Array<{ href: string; label: string; icon: CitizenIconName; active: (path: string) => boolean }> = [

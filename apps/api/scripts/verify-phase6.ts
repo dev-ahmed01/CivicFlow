@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import jwt from "jsonwebtoken";
 import request from "supertest";
-import { ProjectState, TicketState, prisma } from "db";
+import { InspectionRecommendation, InspectionStatus, ProjectState, TicketState, prisma } from "db";
 import { createApp } from "../src/app";
 import type { ImageStorage } from "../src/images/storage";
 
@@ -52,7 +52,23 @@ async function createInspectedTicket(): Promise<string> {
     `;
     await transaction.observation.create({ data: { id: observationId, ticketId, submitterId: reporterId, imageUrl: `https://images.example.test/${ticketId}.jpg` } });
     await transaction.image.create({ data: { observationId, url: `https://images.example.test/${ticketId}.jpg`, objectKey: `phase6/${ticketId}.jpg`, isPrimary: true, uploadedAt: new Date() } });
-    await transaction.inspectionReport.create({ data: { ticketId, submittedById: "40000000-0000-4000-8000-000000000103", fileUrl: `https://images.example.test/${ticketId}-inspection.pdf`, objectKey: `phase6/${ticketId}-inspection.pdf`, contentType: "application/pdf", notes: "The failed luminaire and feeder require replacement.", uploadedAt: new Date() } });
+    await transaction.inspectionReport.create({ data: {
+      ticketId,
+      assignedEngineerId: bescomEngineerId,
+      assignedById: "40000000-0000-4000-8000-000000000103",
+      submittedById: bescomEngineerId,
+      deadline: new Date("2026-10-10T12:00:00.000Z"),
+      status: InspectionStatus.REVIEWED,
+      recommendation: InspectionRecommendation.PROCEED,
+      observations: "The failed luminaire and feeder require replacement.",
+      submittedAt: new Date(),
+      reviewedAt: new Date(),
+      fileUrl: `https://images.example.test/${ticketId}-inspection.pdf`,
+      objectKey: `phase6/${ticketId}-inspection.pdf`,
+      contentType: "application/pdf",
+      notes: "The failed luminaire and feeder require replacement.",
+      uploadedAt: new Date(),
+    } });
     await transaction.validation.createMany({ data: [1, 2, 3].map((number) => ({ ticketId, validatorId: validatorId(number), vote: "CONFIRM" as const, counted: true })) });
   });
   return ticketId;
@@ -96,11 +112,16 @@ async function main(): Promise<void> {
       dependencyFlags: ["Electrical isolation"],
     }).expect(200);
     assert.deepEqual(timeline.body.conflicts, []);
-    assert.equal(timeline.body.project.state, ProjectState.ACTIVE);
-    assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } })).state, TicketState.WORK_IN_PROGRESS);
+    assert.equal(timeline.body.project.state, ProjectState.READY_TO_START);
+    assert.equal(timeline.body.project.actualStart, null);
+    assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } })).state, TicketState.PROJECT_CREATED);
     const transitions = await prisma.projectStateTransition.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
-    assert.deepEqual(transitions.map(({ toState }) => toState).slice(0, 6), [ProjectState.CREATED, ProjectState.PENDING_UPTAKE, ProjectState.UPTAKEN, ProjectState.TIMELINE_SET, ProjectState.CONFLICT_CHECKED, ProjectState.ACTIVE]);
+    assert.deepEqual(transitions.map(({ toState }) => toState).slice(0, 6), [ProjectState.CREATED, ProjectState.PENDING_UPTAKE, ProjectState.UPTAKEN, ProjectState.TIMELINE_SET, ProjectState.CONFLICT_CHECKED, ProjectState.READY_TO_START]);
     assert.deepEqual((await request(app).get(`/projects/${projectId}/conflicts`).set("Authorization", `Bearer ${engineerToken}`).expect(200)).body.conflicts, []);
+
+    await request(app).post(`/projects/${projectId}/start`).set("Authorization", `Bearer ${engineerToken}`).expect(200);
+    assert.equal((await prisma.project.findUniqueOrThrow({ where: { id: projectId } })).state, ProjectState.ACTIVE);
+    assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } })).state, TicketState.WORK_IN_PROGRESS);
 
     await request(app).patch(`/projects/${projectId}/timeline`).set("Authorization", `Bearer ${engineerToken}`).send({
       plannedStart: "2026-10-26T00:00:00.000Z",

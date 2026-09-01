@@ -23,6 +23,7 @@ import type {
   UserRole as SharedUserRole,
 } from "@civicos/shared";
 import { createNotification } from "../notifications/service";
+import { createDependencyRequests, DependencyActionError } from "../dependencies/service";
 import { checkProjectConflicts } from "../conflicts/service";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
 import {
@@ -75,9 +76,10 @@ export function civicWorkReadScope(actor: CivicWorkActor): Prisma.ProjectWhereIn
 }
 
 export function assertCoordinationRead(actor: CivicWorkActor): void {
-  if (actor.role !== UserRole.PROJECT_HEAD) {
-    throw new CivicWorkError(403, "The work calendar is limited to Project Heads", "WORK_CALENDAR_FORBIDDEN");
+  if (actor.role !== UserRole.PROJECT_HEAD && actor.role !== UserRole.ENGINEER) {
+    throw new CivicWorkError(403, "The city work map is limited to operational users", "WORK_CALENDAR_FORBIDDEN");
   }
+  requiredAgency(actor);
 }
 
 export function assertCitizenTransparencyRead(actor: CivicWorkActor): void {
@@ -112,6 +114,7 @@ const publicStatusByProjectState: Record<ProjectState, {
   UPTAKEN: { status: "PLANNED", statusLabel: "Being prepared", publicProgress: "The work team is preparing the next steps.", completionStatus: "NOT_STARTED" },
   TIMELINE_SET: { status: "SCHEDULED", statusLabel: "Scheduled", publicProgress: "The work has been scheduled.", completionStatus: "NOT_STARTED" },
   CONFLICT_CHECKED: { status: "SCHEDULED", statusLabel: "Scheduled", publicProgress: "The work has been scheduled.", completionStatus: "NOT_STARTED" },
+  READY_TO_START: { status: "SCHEDULED", statusLabel: "Ready to start", publicProgress: "The work is scheduled and ready to begin.", completionStatus: "NOT_STARTED" },
   ACTIVE: { status: "IN_PROGRESS", statusLabel: "In progress", publicProgress: "Work is currently in progress.", completionStatus: "IN_PROGRESS" },
   MODIFIED: { status: "IN_PROGRESS", statusLabel: "In progress", publicProgress: "Work is in progress with an updated plan.", completionStatus: "IN_PROGRESS" },
   COMPLETED: { status: "COMPLETED", statusLabel: "Completed", publicProgress: "The agency has marked the work complete.", completionStatus: "COMPLETED" },
@@ -430,6 +433,14 @@ export async function createPlannedCivicWork(actor: CivicWorkActor, input: Creat
         type: "PROJECT_ASSIGNMENT",
         payload: { projectId: project.id, plannedWork: true },
       });
+    }
+    if (input.dependencies?.length) {
+      try {
+        await createDependencyRequests(transaction, project.id, agencyId, input.dependencies, actor.userId);
+      } catch (error) {
+        if (error instanceof DependencyActionError) throw new CivicWorkError(error.status, error.message, "INVALID_PLANNED_WORK_DEPENDENCY");
+        throw error;
+      }
     }
     // Phase 4 — registry entry immediately enters both existing advisory
     // checks. Neither result blocks registration or engineer assignment.

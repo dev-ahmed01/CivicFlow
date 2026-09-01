@@ -24,6 +24,7 @@ import { createAnalyticsRouter } from "./analytics/router";
 import { createDeadlineJobsRouter, createGrievancesRouter } from "./grievances/router";
 import { createCivicWorksRouter } from "./civic-works/router";
 import { createCoordinationRouter } from "./coordination/router";
+import { createInspectionsRouter } from "./inspections/router";
 
 export interface AppDependencies {
   otpProvider?: OtpProvider;
@@ -75,6 +76,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   ));
   app.use(createValidationsRouter(imageStorage));
   app.use(createAgencyRouter(imageStorage));
+  app.use(createInspectionsRouter(imageStorage));
   app.use(createProjectsRouter(imageStorage));
   app.use(createCivicWorksRouter());
   app.use(createCoordinationRouter(imageStorage));

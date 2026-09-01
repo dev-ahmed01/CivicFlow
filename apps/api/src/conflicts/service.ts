@@ -94,6 +94,7 @@ export async function checkProjectConflicts(
   const activeStates = [
     ProjectState.TIMELINE_SET,
     ProjectState.CONFLICT_CHECKED,
+    ProjectState.READY_TO_START,
     ProjectState.ACTIVE,
     ProjectState.MODIFIED,
   ];

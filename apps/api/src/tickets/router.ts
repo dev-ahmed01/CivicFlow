@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { Channel, Prisma, ProjectState, TicketState, UserRole, prisma } from "db";
+import { Channel, InspectionStatus, Prisma, ProjectState, TicketState, UserRole, prisma } from "db";
 import { z } from "zod";
 import {
   citizenTicketFilterSchema,
@@ -146,6 +146,7 @@ function projectStatusLabel(state: ProjectState): string {
   if (state === ProjectState.PENDING_UPTAKE) return "Engineer assignment awaiting acceptance";
   if (state === ProjectState.UPTAKEN) return "Engineer accepted the work";
   if (state === ProjectState.TIMELINE_SET || state === ProjectState.CONFLICT_CHECKED) return "Work is being scheduled";
+  if (state === ProjectState.READY_TO_START) return "Work is ready to start";
   if (state === ProjectState.ACTIVE || state === ProjectState.MODIFIED) return "Work in progress";
   if (state === ProjectState.COMPLETED) return "Completion evidence is being prepared";
   if (state === ProjectState.AWAITING_VERIFICATION) return "Awaiting citizen verification";
@@ -822,9 +823,12 @@ export function createTicketsRouter(
           },
         },
         inspectionReports: {
-          where: { uploadedAt: { not: null } },
           orderBy: { createdAt: "desc" },
-          select: { id: true, fileUrl: true, objectKey: true, contentType: true, notes: true, uploadedAt: true, createdAt: true },
+          include: {
+            assignedEngineer: { select: { id: true, email: true } },
+            assignedBy: { select: { id: true, email: true } },
+            evidence: { orderBy: { createdAt: "asc" } },
+          },
         },
         project: { select: { id: true, state: true, engineerId: true, plannedStart: true, plannedEnd: true, intervention: true } },
         workflowActions: { where: { respondedAt: null }, orderBy: { deadline: "asc" }, take: 1, include: { responsibleUser: { select: { id: true, email: true } } } },
@@ -840,7 +844,11 @@ export function createTicketsRouter(
         ward: internal.ward,
         description: internal.observations[0]?.note ?? null,
         evidence: (internal.observations[0]?.images ?? []).map(({ objectKey, ...image }) => ({ ...image, url: storageReadUrl(storage, objectKey, image.url) })),
-        inspectionReports: internal.inspectionReports.map(({ objectKey, ...report }) => ({ ...report, fileUrl: storageReadUrl(storage, objectKey, report.fileUrl) })),
+        inspectionReports: internal.inspectionReports.map(({ objectKey, ...report }) => ({
+          ...report,
+          fileUrl: objectKey && report.fileUrl ? storageReadUrl(storage, objectKey, report.fileUrl) : null,
+          evidence: report.evidence.map(({ objectKey: evidenceKey, ...evidence }) => ({ ...evidence, fileUrl: storageReadUrl(storage, evidenceKey, evidence.fileUrl) })),
+        })),
         project: internal.project ? { ...internal.project, intervention: internal.project.intervention ? {
           ...internal.project.intervention,
           dependencyRefs: Array.isArray(internal.project.intervention.dependencyRefs)
@@ -875,9 +883,9 @@ export function createTicketsRouter(
           createdAt: true,
           state: true,
           inspectionReports: {
-            where: { uploadedAt: { not: null } },
+            where: { status: { in: [InspectionStatus.SUBMITTED, InspectionStatus.REVIEWED] } },
             orderBy: { createdAt: "asc" },
-            select: { id: true, notes: true, uploadedAt: true, createdAt: true },
+            select: { id: true, notes: true, observations: true, submittedAt: true, uploadedAt: true, createdAt: true },
           },
           project: {
             select: {
@@ -903,8 +911,8 @@ export function createTicketsRouter(
         id: report.id,
         source: "INSPECTION" as const,
         label: "Inspection update",
-        text: report.notes,
-        at: report.uploadedAt ?? report.createdAt,
+        text: report.observations ?? report.notes ?? "Structured site inspection submitted",
+        at: report.submittedAt ?? report.uploadedAt ?? report.createdAt,
       })),
       ...(ticketNotes?.project?.workNotes ?? []).map((note) => ({
         id: note.id,

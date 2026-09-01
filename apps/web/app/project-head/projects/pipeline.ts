@@ -8,8 +8,8 @@ export function pipelineStage(kind: "ticket" | "project", state: TicketState | P
     if (state === "INSPECTION_DUE") return "INSPECTION";
     return "READY";
   }
-  if (["CREATED", "PENDING_UPTAKE", "UPTAKEN", "CONFLICT_CHECKED"].includes(state)) return "READY";
-  if (["TIMELINE_SET", "MODIFIED"].includes(state)) return "SCHEDULED";
+  if (["CREATED", "PENDING_UPTAKE", "UPTAKEN", "READY_TO_START"].includes(state)) return "READY";
+  if (["TIMELINE_SET", "CONFLICT_CHECKED", "MODIFIED"].includes(state)) return "SCHEDULED";
   if (state === "ACTIVE") return "ACTIVE";
   if (["COMPLETED", "AWAITING_VERIFICATION"].includes(state)) return "CLOSURE";
   return "CLOSED";

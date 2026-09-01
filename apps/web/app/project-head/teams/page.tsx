@@ -12,13 +12,18 @@ export default function TeamsPage() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string>();
+  const [reassignments, setReassignments] = useState<Array<{ id: string; reason: string; note: string | null; status: string; project: { id: string; referenceNumber: string; title: string }; requestedBy: EngineerSummary }>>([]);
+  const [blockers, setBlockers] = useState<Array<{ id: string; title: string; details: string; severity: string; project: { id: string; referenceNumber: string; title: string }; reportedBy: EngineerSummary }>>([]);
+  const [replacementByRequest, setReplacementByRequest] = useState<Record<string, string>>({});
   const load = useCallback(async () => {
     try {
-      const [team, work] = await Promise.all([
+      const [team, work, reassignmentResult, blockerResult] = await Promise.all([
         apiFetch<{ engineers: EngineerSummary[] }>("/project-head/engineers"),
         loadAllAgencyProjects(),
+        apiFetch<{ requests: typeof reassignments }>("/project-reassignment-requests"),
+        apiFetch<{ blockers: typeof blockers }>("/project-blockers"),
       ]);
-      setEngineers(team.engineers); setProjects(work); setError(undefined);
+      setEngineers(team.engineers); setProjects(work); setReassignments(reassignmentResult.requests); setBlockers(blockerResult.blockers); setError(undefined);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load the agency team"); }
   }, []);
   usePortalPolling(load);
@@ -36,10 +41,12 @@ export default function TeamsPage() {
   }, { available: 0, atCapacity: 0 }), [engineers, workload]);
 
   return <>
-    <PageHeader title="Team" description="Engineer capacity, current civic work, pending assignments, and next deadlines." />
+    <PageHeader title="Team & Capacity" description="Engineer capacity, current civic work, reassignment decisions, blockers, and next deadlines." />
     {error ? <p className="error" role="alert">{error}</p> : null}
     <p className="ph-team-summary">{engineers.length} engineer{engineers.length === 1 ? "" : "s"} · {capacity.available} available · {capacity.atCapacity} at capacity</p>
     <section className="ph-work-toolbar ph-team-toolbar"><label><span>Search engineers</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name or email" /></label></section>
+    {reassignments.some(({ status }) => status === "PENDING") ? <section className="portal-panel ph-team-decisions"><p className="eyebrow">Needs decision</p><h2>Reassignment requests</h2>{reassignments.filter(({ status }) => status === "PENDING").map((item) => <article key={item.id}><div><strong>{item.project.title}</strong><small>{item.project.referenceNumber} · {item.requestedBy.email} · {item.reason.replaceAll("_", " ")}</small><p>{item.note ?? "No additional note"}</p></div><label>Replacement Engineer<select value={replacementByRequest[item.id] ?? ""} onChange={(event) => setReplacementByRequest((current) => ({ ...current, [item.id]: event.target.value }))}><option value="">Choose Engineer</option>{engineers.filter(({ id }) => id !== item.requestedBy.id).map((engineer) => <option key={engineer.id} value={engineer.id}>{engineer.email}</option>)}</select></label><div><button className="ph-secondary-button" type="button" onClick={() => void apiFetch(`/project-reassignment-requests/${item.id}/respond`, { method: "POST", body: JSON.stringify({ decision: "DECLINE", note: "Current assignment retained by Project Head" }) }).then(load)}>Keep Assignment</button><button className="portal-primary-button" disabled={!replacementByRequest[item.id]} type="button" onClick={() => void apiFetch(`/project-reassignment-requests/${item.id}/respond`, { method: "POST", body: JSON.stringify({ decision: "APPROVE", engineerId: replacementByRequest[item.id], note: "Reassigned after agency capacity review" }) }).then(load)}>Approve Reassignment</button></div></article>)}</section> : null}
+    {blockers.length ? <section className="portal-panel ph-team-decisions"><p className="eyebrow">Field attention</p><h2>Open blockers</h2>{blockers.map((item) => <article key={item.id}><div><strong>{item.title}</strong><small>{item.severity} · {item.project.referenceNumber} · {item.reportedBy.email}</small><p>{item.details}</p></div><button className="ph-secondary-button" type="button" onClick={() => { const resolution = window.prompt("How was this blocker resolved?"); if (resolution) void apiFetch(`/project-blockers/${item.id}/resolve`, { method: "POST", body: JSON.stringify({ resolution }) }).then(load); }}>Resolve Blocker</button></article>)}</section> : null}
     <section className="ph-work-register"><div className="table-scroll"><table><thead><tr><th>Engineer</th><th>Active works</th><th>Pending assignments</th><th>Next deadline</th><th>Workload / availability</th></tr></thead><tbody>{visibleEngineers.map((engineer) => {
       const assigned = workload.get(engineer.id) ?? [];
       const active = assigned.filter((project) => ["UPTAKEN", "ACTIVE", "MODIFIED"].includes(project.state));

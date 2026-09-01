@@ -46,6 +46,7 @@ enum ProjectState {
   UPTAKEN
   TIMELINE_SET
   CONFLICT_CHECKED
+  READY_TO_START
   ACTIVE
   MODIFIED
   COMPLETED
@@ -73,6 +74,46 @@ enum ProjectEvidenceKind {
   PERMIT
   INSPECTION
   OTHER
+}
+
+enum InspectionStatus {
+  ASSIGNED
+  ACCEPTED
+  IN_PROGRESS
+  SUBMITTED
+  REVIEWED
+}
+
+enum InspectionIssueConfirmation {
+  CONFIRMED
+  PARTIALLY_CONFIRMED
+  NOT_OBSERVED
+}
+
+enum InspectionSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum InspectionComplexity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum InspectionRecommendation {
+  PROCEED
+  COORDINATION_REQUIRED
+  ADDITIONAL_INVESTIGATION
+  NO_WORK_REQUIRED
+}
+
+enum InspectionReviewDecision {
+  CREATE_WORK
+  ADDITIONAL_INSPECTION
+  NO_WORK_REQUIRED
 }
 
 enum ConflictSeverity {
@@ -138,10 +179,14 @@ enum ValidationVote {
 
 enum WorkflowActionType {
   INSPECT_TICKET
+  ACCEPT_INSPECTION
+  COMPLETE_INSPECTION
+  REVIEW_INSPECTION
   CREATE_PROJECT
   ASSIGN_ENGINEER
   ACCEPT_PROJECT
   SET_TIMELINE
+  START_WORK
   COMPLETE_WORK
   SUBMIT_COMPLETION
   RESPOND_DEPENDENCY
@@ -160,6 +205,17 @@ enum GrievanceStatus {
   ESCALATED
   RESOLVED
   REOPENED
+}
+
+enum ReassignmentRequestStatus {
+  PENDING
+  APPROVED
+  DECLINED
+}
+
+enum ProjectBlockerStatus {
+  OPEN
+  RESOLVED
 }
 
 model User {
@@ -193,7 +249,11 @@ model User {
   pushTokens                     PushToken[]
   otpChallenges                  OtpChallenge[]
   refreshSessions                RefreshSession[]
-  inspectionReports              InspectionReport[]
+  submittedInspectionReports     InspectionReport[]              @relation("InspectionSubmitter")
+  assignedInspections            InspectionReport[]              @relation("InspectionEngineer")
+  inspectionAssignmentsCreated   InspectionReport[]              @relation("InspectionAssigner")
+  reviewedInspections            InspectionReport[]              @relation("InspectionReviewer")
+  inspectionEvidence             InspectionEvidence[]
   dependencyTransitions          DependencyStateTransition[]     @relation("DependencyTransitionActor")
   projectTransitions             ProjectStateTransition[]        @relation("ProjectTransitionActor")
   ticketTransitions              TicketStateTransition[]         @relation("TicketTransitionActor")
@@ -211,6 +271,11 @@ model User {
   coordinationAssignments        CoordinationRequest[]           @relation("CoordinationEngineer")
   coordinationEntries            CoordinationEntry[]
   coordinationAttachments        CoordinationAttachment[]
+  reassignmentRequests           ProjectReassignmentRequest[] @relation("ReassignmentRequester")
+  reassignmentDecisions          ProjectReassignmentRequest[] @relation("ReassignmentDecider")
+  reassignmentDestinations       ProjectReassignmentRequest[] @relation("ReassignmentNewEngineer")
+  blockersReported               ProjectBlocker[]             @relation("BlockerReporter")
+  blockersResolved               ProjectBlocker[]             @relation("BlockerResolver")
 
   @@index([agencyId])
   @@index([wardId])
@@ -334,21 +399,68 @@ model TicketReferenceCounter {
 }
 
 model InspectionReport {
-  id            String    @id @default(uuid()) @db.Uuid
-  ticketId      String    @db.Uuid
-  submittedById String    @db.Uuid
-  fileUrl       String
-  objectKey     String    @unique
-  contentType   String
-  notes         String
-  uploadedAt    DateTime?
-  createdAt     DateTime  @default(now())
+  id                     String                      @id @default(uuid()) @db.Uuid
+  ticketId               String                      @db.Uuid
+  assignedEngineerId     String                      @db.Uuid
+  assignedById           String                      @db.Uuid
+  submittedById          String?                     @db.Uuid
+  reviewedById           String?                     @db.Uuid
+  status                 InspectionStatus            @default(ASSIGNED)
+  deadline               DateTime
+  acceptedAt             DateTime?
+  startedAt              DateTime?
+  submittedAt            DateTime?
+  reviewedAt             DateTime?
+  issueConfirmation      InspectionIssueConfirmation?
+  severity               InspectionSeverity?
+  observations           String?
+  recommendedWork        String?
+  complexity             InspectionComplexity?
+  coordinationRequired   Boolean?
+  otherAgencyInvolvement String?
+  recommendation         InspectionRecommendation?
+  latitude               Float?
+  longitude              Float?
+  locationConfirmedAt    DateTime?
+  reviewDecision         InspectionReviewDecision?
+  reviewNote             String?
+  fileUrl                String?
+  objectKey              String?                     @unique
+  contentType            String?
+  notes                  String?
+  uploadedAt             DateTime?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
 
-  ticket      Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  submittedBy User   @relation(fields: [submittedById], references: [id], onDelete: Restrict)
+  ticket           Ticket               @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  assignedEngineer User                 @relation("InspectionEngineer", fields: [assignedEngineerId], references: [id], onDelete: Restrict)
+  assignedBy       User                 @relation("InspectionAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
+  submittedBy      User?                @relation("InspectionSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedBy       User?                @relation("InspectionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  evidence         InspectionEvidence[]
 
   @@index([ticketId, createdAt])
+  @@index([assignedEngineerId, status, deadline])
+  @@index([assignedById])
   @@index([submittedById])
+  @@index([reviewedById])
+}
+
+model InspectionEvidence {
+  id           String    @id @default(uuid()) @db.Uuid
+  inspectionId String    @db.Uuid
+  uploadedById String    @db.Uuid
+  fileUrl      String
+  objectKey    String    @unique
+  contentType  String
+  uploadedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  inspection InspectionReport @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  uploadedBy User             @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([inspectionId, createdAt])
+  @@index([uploadedById])
 }
 
 model Observation {
@@ -492,6 +604,8 @@ model Project {
   grievances           Grievance[]
   coordinationRequests CoordinationRequest[]
   conflictingCoordinationRequests CoordinationRequest[] @relation("CoordinationConflictingProject")
+  reassignmentRequests ProjectReassignmentRequest[]
+  blockers             ProjectBlocker[]
 
   @@index([ticketId])
   @@index([categoryId])
@@ -507,6 +621,50 @@ model Project {
   @@index([agencyId, createdAt])
   @@index([engineerId, state, createdAt])
   @@index([geometry], type: Gist, map: "Project_geometry_gist_idx")
+}
+
+model ProjectReassignmentRequest {
+  id             String                    @id @default(uuid()) @db.Uuid
+  projectId      String                    @db.Uuid
+  requestedById  String                    @db.Uuid
+  decidedById    String?                   @db.Uuid
+  newEngineerId  String?                   @db.Uuid
+  reason         String                    @db.VarChar(80)
+  note           String?
+  availableFrom  DateTime?
+  status         ReassignmentRequestStatus @default(PENDING)
+  decisionNote   String?
+  decidedAt      DateTime?
+  createdAt      DateTime                  @default(now())
+
+  project      Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requestedBy  User    @relation("ReassignmentRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  decidedBy    User?   @relation("ReassignmentDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  newEngineer  User?   @relation("ReassignmentNewEngineer", fields: [newEngineerId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([requestedById, createdAt])
+}
+
+model ProjectBlocker {
+  id           String               @id @default(uuid()) @db.Uuid
+  projectId    String               @db.Uuid
+  reportedById String               @db.Uuid
+  resolvedById String?              @db.Uuid
+  title        String               @db.VarChar(180)
+  details      String
+  severity     String               @db.VarChar(20)
+  status       ProjectBlockerStatus @default(OPEN)
+  resolution   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime             @default(now())
+
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reportedBy User    @relation("BlockerReporter", fields: [reportedById], references: [id], onDelete: Restrict)
+  resolvedBy User?   @relation("BlockerResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([status, createdAt])
 }
 
 model CivicWorkReferenceCounter {

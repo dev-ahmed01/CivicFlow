@@ -76,7 +76,7 @@ export function createCivicWorksRouter(): Router {
 
   router.get(
     "/civic-works/calendar",
-    requireRole(UserRole.PROJECT_HEAD),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     asyncRoute(async (request, response) => {
       const parsed = civicWorkCalendarQuerySchema.safeParse(request.query);
       if (!parsed.success) {
@@ -89,7 +89,7 @@ export function createCivicWorksRouter(): Router {
 
   router.get(
     "/civic-works/ledger",
-    requireRole(UserRole.PROJECT_HEAD),
+    requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER),
     asyncRoute(async (request, response) => {
       const parsed = civicWorkLedgerQuerySchema.safeParse(request.query);
       if (!parsed.success) {

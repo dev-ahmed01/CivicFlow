@@ -1616,6 +1616,84 @@ body:not(:has(.portal-shell, .login-shell)) .cv-primary-button { background: var
   .ph-schedule-history > header { gap: 14px; }
 }
 
+/* SIH redesign · Engineer field operations and structured inspections */
+.field-module { --field-ink: #173c2a; --field-teal: #0c6b62; --field-line: #d9e2dc; max-width: 1320px; }
+.field-state { background: #edf3ef; border: 1px solid #cbd8d0; border-radius: 999px; color: var(--field-ink); display: inline-flex; font-size: 10px; font-weight: 760; letter-spacing: .04em; padding: 6px 9px; text-transform: uppercase; white-space: nowrap; }
+.state-assigned { background: #fff5df; border-color: #ebc775; color: #86570b; }
+.state-in_progress { background: #e8f2ff; border-color: #a9c9ea; color: #185f91; }
+.state-submitted, .state-reviewed { background: #e9f6ed; border-color: #a7cfb1; color: #246b37; }
+.field-record-list { border-top: 1px solid var(--field-line); }
+.field-record-row { align-items: center; border-bottom: 1px solid var(--field-line); color: inherit; display: grid; gap: 18px; grid-template-columns: 115px minmax(220px, 1.2fr) minmax(180px, .8fr) 160px 20px; padding: 16px 4px; text-decoration: none; }
+.field-record-row:hover { background: #f7faf8; }
+.field-record-row > span:not(.field-state) { display: grid; gap: 4px; min-width: 0; }
+.field-record-row strong { font-size: 12px; }
+.field-record-row small { color: #617168; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspection-context, .structured-inspection-form, .inspection-result, .field-primary-action { border-bottom: 1px solid var(--field-line); padding: 24px 0; }
+.inspection-context h2, .structured-inspection-form h2, .inspection-result h2, .field-primary-action h2 { margin: 4px 0 8px; }
+.inspection-context dl, .inspection-result dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 20px 0; }
+.inspection-context dl > div, .inspection-result dl > div { border-left: 1px solid var(--field-line); display: grid; gap: 5px; padding: 0 16px; }
+.inspection-context dl > div:first-child, .inspection-result dl > div:first-child { border-left: 0; padding-left: 0; }
+.inspection-context dt, .inspection-result dt { color: #617168; font-size: 10px; }
+.inspection-context dd, .inspection-result dd { font-size: 12px; font-weight: 650; margin: 0; }
+.inspection-observations { display: flex; gap: 12px; overflow-x: auto; }
+.inspection-observations figure { flex: 0 0 210px; margin: 0; }
+.inspection-observations img { aspect-ratio: 4/3; border-radius: 6px; object-fit: cover; width: 100%; }
+.inspection-observations figcaption { color: #617168; font-size: 10px; padding-top: 6px; }
+.field-primary-action { align-items: center; background: #f1f7f4; display: flex; gap: 24px; justify-content: space-between; padding-inline: 20px; }
+.field-primary-action p { color: #617168; margin: 0; max-width: 620px; }
+.structured-inspection-form .form-grid { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; margin: 22px 0; }
+.structured-inspection-form label { display: grid; gap: 7px; font-size: 11px; font-weight: 650; }
+.structured-inspection-form .span-2 { grid-column: 1 / -1; }
+.structured-inspection-form input, .structured-inspection-form select, .structured-inspection-form textarea { border: 1px solid #bccbc2; border-radius: 5px; min-height: 42px; padding: 10px; }
+.structured-inspection-form label:has(input[type="checkbox"]) { align-items: center; display: flex; }
+.structured-inspection-form input[type="checkbox"] { min-height: 0; width: auto; }
+.today-date { color: #617168; font-size: 11px; }
+.today-needs-action, .today-schedule, .today-upcoming { border-bottom: 1px solid var(--field-line); padding: 22px 0; }
+.today-needs-action h2, .today-schedule h2, .today-upcoming h2 { margin: 4px 0 14px; }
+.today-action-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.today-action-grid a { border-left: 1px solid var(--field-line); color: inherit; display: grid; gap: 4px; padding: 12px 18px; text-decoration: none; }
+.today-action-grid a:first-child { border-left: 0; padding-left: 0; }
+.today-action-grid strong { color: var(--field-teal); font-size: 25px; }
+.today-action-grid span { color: #617168; font-size: 10px; }
+.today-schedule ol { list-style: none; margin: 0; padding: 0; }
+.today-schedule li { align-items: center; border-top: 1px solid var(--field-line); display: grid; gap: 14px; grid-template-columns: 70px 12px minmax(0, 1fr) auto; padding: 14px 2px; }
+.today-schedule time { color: #617168; font-size: 11px; }
+.today-marker { background: var(--field-teal); border-radius: 50%; height: 8px; width: 8px; }
+.today-schedule li > div { display: grid; gap: 3px; }
+.today-schedule small, .today-schedule li > div > span, .today-upcoming small { color: #617168; font-size: 10px; }
+.today-schedule strong, .today-upcoming strong { font-size: 12px; }
+.today-schedule a { color: var(--field-teal); font-size: 11px; font-weight: 700; text-decoration: none; }
+.today-upcoming > a { align-items: center; border-top: 1px solid var(--field-line); color: inherit; display: grid; gap: 16px; grid-template-columns: 62px minmax(0, 1fr) 18px; padding: 13px 2px; text-decoration: none; }
+.today-upcoming > a > span { display: grid; gap: 3px; }
+.today-upcoming time { color: var(--field-teal); font-size: 10px; font-weight: 700; }
+.engineer-disclosure summary { color: var(--field-teal); cursor: pointer; font-size: 12px; font-weight: 720; }
+.engineer-disclosure[open] summary { margin-bottom: 14px; }
+.ph-team-decisions article { align-items: end; border-top: 1px solid #d9e2dc; display: grid; gap: 16px; grid-template-columns: minmax(220px, 1fr) minmax(190px, .5fr) auto; padding: 16px 0; }
+.ph-team-decisions article > div { display: grid; gap: 4px; }
+.ph-team-decisions article small, .ph-team-decisions article p { color: #617168; font-size: 10px; margin: 0; }
+.ph-team-decisions article label { display: grid; font-size: 10px; gap: 5px; }
+.ph-team-decisions article > div:last-child { display: flex; gap: 8px; }
+
+@media (max-width: 780px) {
+  .engineer-shell { padding-bottom: 72px; }
+  .engineer-shell .portal-sidebar { background: #173c2a; bottom: 0; height: 66px; left: 0; padding: 0; position: fixed; right: 0; top: auto; z-index: 900; }
+  .engineer-shell .portal-brand, .engineer-shell .portal-role, .engineer-shell .portal-nav-group > p, .engineer-shell .portal-nav-group:nth-child(2), .engineer-shell .portal-logout { display: none; }
+  .engineer-shell .portal-sidebar nav, .engineer-shell .portal-nav-group:first-child { display: grid; grid-template-columns: repeat(5, 1fr); margin: 0; width: 100%; }
+  .engineer-shell .portal-sidebar nav a { align-items: center; border-radius: 0; display: flex; flex-direction: column; font-size: 9px; gap: 3px; justify-content: center; min-height: 66px; padding: 6px 2px; }
+  .engineer-shell .portal-content { padding: 24px 16px 42px; }
+  .field-record-row { align-items: start; grid-template-columns: 92px minmax(0, 1fr) 16px; }
+  .field-record-row > span:nth-child(3), .field-record-row > span:nth-child(4) { grid-column: 2; }
+  .field-record-row > b { grid-column: 3; grid-row: 1; }
+  .inspection-context dl, .inspection-result dl, .today-action-grid { grid-template-columns: 1fr 1fr; }
+  .inspection-context dl > div:nth-child(3), .inspection-result dl > div:nth-child(3) { border-left: 0; padding-left: 0; }
+  .inspection-context dl > div { margin-top: 12px; }
+  .field-primary-action { align-items: stretch; flex-direction: column; }
+  .structured-inspection-form .form-grid { grid-template-columns: 1fr; }
+  .structured-inspection-form .span-2 { grid-column: auto; }
+  .today-action-grid a:nth-child(3) { border-left: 0; padding-left: 0; }
+  .ph-team-decisions article { align-items: stretch; grid-template-columns: 1fr; }
+}
+
 /* Project Head visual refinement â€” one quiet operational language across records,
    registers, schedules, reporting, and forms. */
 .project-head-shell {
