@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   })), [
     { agency: "BWSSB", purpose: "pipeline", start: "2027-06-10", end: "2027-06-16" },
     { agency: "BESCOM", purpose: "cable", start: "2027-06-15", end: "2027-06-18" },
-    { agency: "PWD / Roads Authority", purpose: "resurfacing", start: "2027-06-20", end: "2027-06-24" },
+    { agency: "BBMP Road Infrastructure", purpose: "resurfacing", start: "2027-06-20", end: "2027-06-24" },
   ]);
 
   const warnings = await checkRoadConflicts(prisma, resurfacingProjectId);

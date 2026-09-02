@@ -189,7 +189,7 @@ Start a stopwatch when the citizen taps “Report an Issue”; stop after the th
 
 1. Citizen mobile: sign in by SMS OTP (production) or the explicit fixed demo code (free-demo), choose Streetlight, capture evidence, confirm location, submit.
 2. Three citizen mobiles: open Community validation requests and confirm the issue. The third unique confirmation routes it to BESCOM.
-3. BESCOM Project Head web: open Ticket queue, attach the inspection file, and complete inspection.
+3. BESCOM Project Head web: assign the site inspection to a BESCOM Engineer; on the Engineer portal, accept it, start it, submit structured findings with geotagged evidence, then return to the Project Head to review the result.
 4. BESCOM Project Head web: create the project, assign the BESCOM engineer, select PWD dependency, and enter the statement of need.
 5. PWD Project Head web: respond in Dependency inbox and assign the PWD engineer.
 6. PWD Engineer mobile: open Dependencies and mark the support fulfilled.

@@ -3,6 +3,7 @@ import request from "supertest";
 import { prisma } from "db";
 import { civicWorkCalendarItemSchema, civicWorkLedgerItemSchema, civicWorkSchema } from "@civicos/shared";
 import { createApp } from "../src/app";
+import type { ImageStorage } from "../src/images/storage";
 
 const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
 
@@ -15,6 +16,11 @@ const btmWardId = "10000000-0000-4000-8000-000000000005";
 const waterCategoryId = "30000000-0000-4000-8000-000000000003";
 const bwssbAgencyId = "20000000-0000-4000-8000-000000000001";
 const createdIds: string[] = [];
+const storage: ImageStorage = {
+  createUpload(objectKey, contentType) { return { uploadUrl: `https://uploads.example.test/${objectKey}`, publicUrl: `https://evidence.example.test/${objectKey}`, headers: { "Content-Type": contentType }, expiresInSeconds: 900 }; },
+  createDownload(objectKey) { return `https://evidence.example.test/${objectKey}`; },
+  async verifyUpload() { return true; },
+};
 
 async function internalLogin(app: ReturnType<typeof createApp>, email: string, expectedRole: "PROJECT_HEAD" | "ENGINEER") {
   const response = await request(app).post("/auth/internal/login").send({ email, password: demoInternalPassword, expectedRole }).expect(200);
@@ -38,7 +44,7 @@ async function cleanup(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const app = createApp({ otpProvider: { async sendOtp() {} } });
+  const app = createApp({ otpProvider: { async sendOtp() {} }, imageStorage: storage });
   const [headToken, engineerToken, citizenToken] = await Promise.all([
     internalLogin(app, "head.bwssb@civicos.local", "PROJECT_HEAD"),
     internalLogin(app, "engineer.bwssb@civicos.local", "ENGINEER"),
@@ -70,6 +76,19 @@ async function main(): Promise<void> {
     assert.match(work.referenceNumber, /^CW\d{9,}$/);
     assert.deepEqual(work.geometry, plannedWork.geometry);
     assert.ok(work.audit.some(({ action }) => action === "PLANNED_WORK_CREATED"));
+
+    const evidence = await request(app)
+      .post(`/civic-works/${work.id}/evidence`)
+      .set("Authorization", `Bearer ${headToken}`)
+      .send({ action: "presign", fileName: "BTM-planning-brief.pdf", label: "Approved planning brief", kind: "PLANNING_DOCUMENT", contentType: "application/pdf", sizeBytes: 4096 })
+      .expect(201);
+    await request(app)
+      .post(`/civic-works/${work.id}/evidence`)
+      .set("Authorization", `Bearer ${headToken}`)
+      .send({ action: "complete", evidenceId: evidence.body.evidenceId })
+      .expect(200);
+    const workWithEvidence = civicWorkSchema.parse((await request(app).get(`/civic-works/${work.id}`).set("Authorization", `Bearer ${headToken}`).expect(200)).body.work);
+    assert.equal(workWithEvidence.evidence.some(({ id, uploadedAt }) => id === evidence.body.evidenceId && uploadedAt !== null), true);
 
     const persisted = await prisma.$queryRaw<Array<{ geometry: string; srid: number }>>`
       SELECT ST_AsGeoJSON("geometry") AS "geometry", ST_SRID("geometry") AS "srid"
@@ -127,11 +146,12 @@ async function main(): Promise<void> {
       .query({ dateFrom: "2026-01-01T00:00:00.000Z", dateTo: "2026-12-31T23:59:59.999Z" })
       .set("Authorization", `Bearer ${headToken}`)
       .expect(400);
-    await request(app)
+    const engineerLedger = await request(app)
       .get("/civic-works/ledger")
       .query({ wardId: btmWardId })
       .set("Authorization", `Bearer ${engineerToken}`)
-      .expect(403);
+      .expect(200);
+    assert.ok((engineerLedger.body.works as Array<{ id: string }>).some(({ id }) => id === work.id), "Engineer read-only ledger should include shared location context");
     await request(app)
       .get("/civic-works/calendar")
       .query({ wardId: btmWardId, dateFrom: "2026-01-01T00:00:00.000Z", dateTo: "2026-12-31T23:59:59.999Z" })
@@ -186,7 +206,7 @@ async function main(): Promise<void> {
       .expect(200);
     assert.equal(cancelled.body.work.state, "CANCELLED");
     assert.ok(cancelled.body.work.cancelledAt);
-    console.log("Civic Work Registry verification passed: creation, RBAC, dates, PostGIS, spatial calendar, location ledger, linkage, update, and cancellation.");
+    console.log("Civic Work Registry verification passed: creation, planning evidence, RBAC, dates, PostGIS, spatial calendar, location ledger, linkage, update, and cancellation.");
   } finally {
     await cleanup();
     await prisma.$disconnect();

@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { UserRole } from "db";
+import { UserRole, prisma } from "db";
 import {
   cancelCivicWorkSchema,
   civicWorkCalendarQuerySchema,
   civicWorkLedgerQuerySchema,
+  civicWorkEvidenceRequestSchema,
   createPlannedCivicWorkSchema,
   listCivicWorksQuerySchema,
   nearbyCivicWorksQuerySchema,
@@ -11,6 +13,7 @@ import {
 } from "@civicos/shared";
 import { z } from "zod";
 import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/middleware";
+import type { ImageStorage } from "../images/storage";
 import {
   cancelPlannedCivicWork,
   CivicWorkError,
@@ -44,7 +47,9 @@ function routeId(request: Request): string | null {
   return parsed.success ? parsed.data : null;
 }
 
-export function createCivicWorksRouter(): Router {
+function safeFileName(value: string): string { return value.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-120); }
+
+export function createCivicWorksRouter(storage: ImageStorage): Router {
   const router = Router();
   router.use("/civic-works", requireAuth, requirePasswordResetComplete);
 
@@ -153,6 +158,26 @@ export function createCivicWorksRouter(): Router {
       response.json({ work: await cancelPlannedCivicWork(actor(request), id, parsed.data) });
     }),
   );
+
+  router.post("/civic-works/:id/evidence", requireRole(UserRole.PROJECT_HEAD), asyncRoute(async (request, response) => {
+    const id = routeId(request);
+    const parsed = civicWorkEvidenceRequestSchema.safeParse(request.body);
+    if (!id || !parsed.success) { response.status(400).json({ error: "Invalid planning evidence", ...(!parsed.success ? { details: parsed.error.flatten() } : {}) }); return; }
+    const work = await prisma.project.findFirst({ where: { id, agencyId: actor(request).agencyId ?? "" }, select: { id: true } });
+    if (!work) { response.status(404).json({ error: "Agency civic work not found" }); return; }
+    if (parsed.data.action === "presign") {
+      const evidenceId = randomUUID();
+      const objectKey = `civic-work-evidence/${id}/${evidenceId}-${safeFileName(parsed.data.fileName)}`;
+      const upload = await storage.createUpload(objectKey, parsed.data.contentType);
+      await prisma.projectEvidence.create({ data: { id: evidenceId, projectId: id, createdById: actor(request).userId, kind: parsed.data.kind, label: parsed.data.label, url: upload.publicUrl, objectKey, contentType: parsed.data.contentType } });
+      response.status(201).json({ evidenceId, upload }); return;
+    }
+    const evidence = await prisma.projectEvidence.findFirst({ where: { id: parsed.data.evidenceId, projectId: id, createdById: actor(request).userId, uploadedAt: null }, select: { id: true, objectKey: true, contentType: true } });
+    if (!evidence?.objectKey || !evidence.contentType) { response.status(404).json({ error: "Pending planning evidence not found" }); return; }
+    if (!(await storage.verifyUpload(evidence.objectKey, evidence.contentType))) { response.status(422).json({ error: "The planning evidence is missing or invalid" }); return; }
+    await prisma.projectEvidence.update({ where: { id: evidence.id }, data: { uploadedAt: new Date() } });
+    response.json({ evidenceId: evidence.id, uploaded: true });
+  }));
 
   router.use((error: unknown, _request: Request, response: Response, next: NextFunction) => {
     if (error instanceof CivicWorkError) {

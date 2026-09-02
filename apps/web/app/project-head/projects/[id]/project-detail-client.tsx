@@ -12,12 +12,6 @@ import { apiFetch } from "../../_lib/api";
 
 const emptyRoadData: RoadIntelligenceData = { conflicts: [], recommendations: [], segment: null, interventionHistory: [] };
 type RecordTab = "OVERVIEW" | "ACTIVITY" | "COORDINATION" | "DOCUMENTS";
-type ProjectDetailWithDocumentLinks = Omit<EngineerProjectDetail, "ticket"> & {
-  ticket: (Omit<NonNullable<EngineerProjectDetail["ticket"]>, "inspectionReports"> & {
-    inspectionReports: Array<Omit<NonNullable<EngineerProjectDetail["ticket"]>["inspectionReports"][number], "fileUrl"> & { fileUrl: string }>;
-  }) | null;
-};
-
 function label(value: string): string {
   return value.replaceAll("_", " ").replaceAll("-", " ").toLowerCase().replace(/^./, (first) => first.toUpperCase());
 }
@@ -56,7 +50,7 @@ function deadlineText(value: Date | string): string {
 }
 
 export function ProjectDetailClient({ projectId }: { projectId: string }) {
-  const [project, setProject] = useState<ProjectDetailWithDocumentLinks>();
+  const [project, setProject] = useState<EngineerProjectDetail>();
   const [conflicts, setConflicts] = useState<CoordinationConflict[]>([]);
   const [roadData, setRoadData] = useState<RoadIntelligenceData>(emptyRoadData);
   const [dependencies, setDependencies] = useState<DependencyListItem[]>([]);
@@ -80,7 +74,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
         apiFetch<{ agencies: Agency[]; requestTypes: string[] }>("/coordination-options"),
       ]);
       const relatedRequests = [...sentResult.requests, ...receivedResult.requests].filter((request) => request.projectId === projectId || request.conflictingProjectId === projectId);
-      setProject(projectResult.project as ProjectDetailWithDocumentLinks);
+      setProject(projectResult.project);
       setConflicts(conflictResult.conflicts);
       setRoadData(roadResult);
       setDependencies(dependencyResult.dependencies.filter((dependency) => dependency.projectId === projectId));
@@ -132,7 +126,8 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
   };
   const openConflict = conflictGroups.flat().find((conflict) => !conflict.coordination);
   const incomingRequest = requests.find((request) => request.respondingAgency.id === project.agencyId && !["COMPLETED", "CLOSED", "REJECTED"].includes(request.status));
-  const documentCount = (project.ticket?.observations.length ?? 0) + (project.ticket?.inspectionReports.length ?? 0) + project.completionEvidence.length + requests.reduce((total, request) => total + request.entries.reduce((entryTotal, entry) => entryTotal + entry.attachments.length, 0), 0);
+  const inspectionDocumentCount = project.ticket?.inspectionReports.reduce((total, report) => total + (report.fileUrl ? 1 : 0) + report.evidence.length, 0) ?? 0;
+  const documentCount = (project.ticket?.observations.length ?? 0) + inspectionDocumentCount + project.completionEvidence.length + requests.reduce((total, request) => total + request.entries.reduce((entryTotal, entry) => entryTotal + entry.attachments.length, 0), 0);
 
   let nextStep = "Continue monitoring delivery from this work record.";
   let primaryAction: ReactNode = <NextActionButton href="/project-head/work-calendar">Open schedule</NextActionButton>;
@@ -189,6 +184,17 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       <section className="ph-record-group"><SectionHeader title="Road coordination" description="Deterministic overlap and sequencing checks for this road segment. Warnings remain advisory." /><RoadIntelligencePanel data={roadData} projectId={projectId} plannedStart={project.plannedStart} plannedEnd={project.plannedEnd} onAction={actOnRecommendation} /></section>
     </div> : null}
 
-    {tab === "DOCUMENTS" ? <section className="ph-record-group" role="tabpanel"><SectionHeader title="Documents and evidence" description="Inspection reports, site evidence, completion evidence, and coordination attachments." />{documentCount ? <div className="ph-document-list">{project.ticket?.observations.map((item, index) => <a href={item.imageUrl} key={`observation-${index}`} rel="noreferrer" target="_blank"><span><strong>Reported evidence {index + 1}</strong><small>{item.note ?? "Citizen or agency evidence"}</small></span><span>Open ↗</span></a>)}{project.ticket?.inspectionReports.map((item, index) => <a href={item.fileUrl} key={item.id} rel="noreferrer" target="_blank"><span><strong>Inspection report {index + 1}</strong><small>{item.notes ?? item.contentType}</small></span><span>Open ↗</span></a>)}{project.completionEvidence.map((item, index) => <a href={item.photoUrl} key={item.id} rel="noreferrer" target="_blank"><span><strong>Completion evidence {index + 1}</strong><small>{item.notes}</small></span><span>Open ↗</span></a>)}{requests.flatMap((request) => request.entries.flatMap((entry) => entry.attachments.map((attachment) => <a href={attachment.url} key={attachment.id} rel="noreferrer" target="_blank"><span><strong>{attachment.fileName}</strong><small>{request.subject} · {attachment.contentType}</small></span><span>Open ↗</span></a>)))}</div> : <p className="portal-muted">No documents are available on this record.</p>}</section> : null}
+    {tab === "DOCUMENTS" ? <section className="ph-record-group" role="tabpanel">
+      <SectionHeader title="Documents and evidence" description="Inspection reports, site evidence, completion evidence, and coordination attachments." />
+      {documentCount ? <div className="ph-document-list">
+        {project.ticket?.observations.map((item, index) => <a href={item.imageUrl} key={`observation-${index}`} rel="noreferrer" target="_blank"><span><strong>Reported evidence {index + 1}</strong><small>{item.note ?? "Citizen or agency evidence"}</small></span><span>Open ↗</span></a>)}
+        {project.ticket?.inspectionReports.flatMap((report, reportIndex) => [
+          ...(report.fileUrl ? [<a href={report.fileUrl} key={`${report.id}-legacy`} rel="noreferrer" target="_blank"><span><strong>Inspection report {reportIndex + 1}</strong><small>{report.notes ?? report.contentType ?? "Legacy inspection file"}</small></span><span>Open ↗</span></a>] : []),
+          ...report.evidence.map((evidence, evidenceIndex) => <a href={evidence.fileUrl} key={evidence.id} rel="noreferrer" target="_blank"><span><strong>Inspection evidence {reportIndex + 1}.{evidenceIndex + 1}</strong><small>{evidence.contentType}</small></span><span>Open ↗</span></a>),
+        ])}
+        {project.completionEvidence.map((item, index) => <a href={item.photoUrl} key={item.id} rel="noreferrer" target="_blank"><span><strong>Completion evidence {index + 1}</strong><small>{item.notes}</small></span><span>Open ↗</span></a>)}
+        {requests.flatMap((request) => request.entries.flatMap((entry) => entry.attachments.map((attachment) => <a href={attachment.url} key={attachment.id} rel="noreferrer" target="_blank"><span><strong>{attachment.fileName}</strong><small>{request.subject} · {attachment.contentType}</small></span><span>Open ↗</span></a>)))}
+      </div> : <p className="portal-muted">No documents are available on this record.</p>}
+    </section> : null}
   </div>;
 }

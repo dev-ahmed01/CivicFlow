@@ -741,6 +741,7 @@ model ProjectEvidence {
   objectKey   String?             @unique
   contentType String?
   createdById String              @db.Uuid
+  uploadedAt  DateTime?
   createdAt   DateTime            @default(now())
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

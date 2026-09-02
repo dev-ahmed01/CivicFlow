@@ -4,6 +4,8 @@ Civic infrastructure accountability platform — built for Smart India Hackathon
 
 The Project Head web portal opens on an agency-scoped **Command Centre**: priority decisions, live operations, a compact city-work map, and a feed backed by recorded workflow notifications. Its **Work Pipeline** unifies citizen-originated and agency-planned work across Intake, Inspection, Ready, Scheduled, Active, Closure, and Closed stages.
 
+The final operational personas are **Citizen**, **Project Head**, and **Engineer**. Project Heads decide and coordinate within their agency; Engineers perform assigned inspections and field execution; the system detects conflicts and produces explainable, advisory recommendations. Saving a schedule never starts work—only the assigned Engineer's explicit **Start Work** action records `actualStart` and begins execution.
+
 ## Repo layout
 
 ```
@@ -99,13 +101,15 @@ Web notification bells use 30-second polling against `GET /notifications?unread=
 
 Run the delivery/unread acceptance check against the seeded local database with `pnpm verify:phase9`.
 
+Run `pnpm verify:sih-redesign` for the role/scope, inspection, reassignment, schedule/start, blocker, shared-map, and audit acceptance path. Run `pnpm verify:sih-demo` for the longer seeded rehearsal covering the citizen flow, planned-work registry, conflicts, coordination, Engineer execution, notifications, evidence, verification, and reset.
+
 ## Demo scripts
 
 Two rehearsed end-to-end walkthroughs (built out fully in Phase 12):
 - **General flow** — a full citizen-report → validation → routing → inspection → project → dependency → execution → completion cycle on a non-road category
 - **Flagship road-cutting flow** — three agencies logging conflicting interventions on the same road segment, the system catching a restoration-too-early conflict, and the sequencing engine recommending a coordinated order
 
-The current BTM Layout SIH walkthrough, stable fixture IDs, role roster, reset instructions, deployment checklist, and limitations live in [`docs/Phase_08_SIH_Demo_Runbook.md`](docs/Phase_08_SIH_Demo_Runbook.md). Run `pnpm verify:sih-demo` against the local demo stack to reset, exercise, and reset the complete demonstration path. The older Phase 12 reference remains in [`docs/Phase_12_runbook.md`](docs/Phase_12_runbook.md).
+The current BTM Layout SIH walkthrough, stable fixture IDs, role roster, reset instructions, validation commands, and limitations live in [`docs/Phase_08_SIH_Demo_Runbook.md`](docs/Phase_08_SIH_Demo_Runbook.md). Run `pnpm verify:sih-demo` against the local demo stack to reset, exercise, and reset the complete demonstration path. The older Phase 12 reference remains in [`docs/Phase_12_runbook.md`](docs/Phase_12_runbook.md).
 
 Deployment profiles are intentionally separate: `render.yaml` is the fail-closed production architecture, while `render.demo.yaml` is the $0 SIH profile using Render Free with a Supabase PostgreSQL/PostGIS URL, Cloudflare R2, explicit fixed-code demo authentication, and an explicitly simulated relevance adapter or compatible free/local CLIP endpoint. The runbook records the free-tier limits and never treats free-demo evidence as production evidence.
 

@@ -35,6 +35,7 @@
     "verify:coordination": "pnpm --filter api verify:coordination",
     "verify:upload": "pnpm --filter api verify:upload",
     "verify:phase4-workflow": "pnpm --filter api verify:phase4-workflow",
+    "verify:sih-redesign": "pnpm --filter api verify:sih-redesign",
     "verify:sih-demo": "pnpm demo:reset && pnpm verify:auth && pnpm verify:phase2 && pnpm verify:civic-work-registry && pnpm verify:phase7 && pnpm verify:coordination && pnpm verify:phase4-workflow && pnpm verify:phase6 && pnpm verify:phase9 && pnpm verify:phase15 && pnpm verify:upload && pnpm demo:reset"
   },
   "devDependencies": {

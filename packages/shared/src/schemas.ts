@@ -960,8 +960,14 @@ export const civicWorkEvidenceSchema = z.object({
   label: z.string(),
   url: z.string().url(),
   contentType: z.string().nullable(),
+  uploadedAt: dateSchema.nullable(),
   createdAt: dateSchema,
 });
+
+export const civicWorkEvidenceRequestSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("presign"), fileName: z.string().trim().min(1).max(200), label: z.string().trim().min(2).max(180), kind: z.enum(["PLANNING_DOCUMENT", "SITE_PHOTO", "PERMIT", "INSPECTION", "OTHER"]).default("PLANNING_DOCUMENT"), contentType: z.enum(["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"]), sizeBytes: z.number().int().positive().max(20 * 1024 * 1024) }),
+  z.object({ action: z.literal("complete"), evidenceId: idSchema }),
+]);
 
 export const projectConflictSchema = z.object({
   id: idSchema,

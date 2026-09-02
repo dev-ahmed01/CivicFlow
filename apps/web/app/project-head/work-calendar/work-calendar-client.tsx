@@ -56,6 +56,7 @@ export function WorkCalendarClient() {
   const [agencyId, setAgencyId] = useState("");
   const [mapBounds, setMapBounds] = useState<MapBounds>(bengaluruDemoBounds);
   const [period, setPeriod] = useState<"ALL" | CivicWorkPeriod>("ALL");
+  const [workState, setWorkState] = useState("ALL");
   const [works, setWorks] = useState<CivicWorkCalendarItem[]>([]);
   const [wards, setWards] = useState<WardSummary[]>([]);
   const [roads, setRoads] = useState<RoadSegmentSummary[]>([]);
@@ -144,8 +145,8 @@ export function WorkCalendarClient() {
   const counts = useMemo(() => works.reduce((summary, work) => { summary[work.period] += 1; return summary; }, { PAST: 0, CURRENT: 0, FUTURE: 0 }), [works]);
   const visibleWorks = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return works.filter((work) => (period === "ALL" || work.period === period) && (!query || [work.title, work.locationLabel, work.roadSegment?.roadName, work.ward?.name, work.agency.name].some((value) => value?.toLowerCase().includes(query))));
-  }, [period, search, works]);
+    return works.filter((work) => (period === "ALL" || work.period === period) && (workState === "ALL" || work.state === workState) && (!query || [work.title, work.locationLabel, work.roadSegment?.roadName, work.ward?.name, work.agency.name].some((value) => value?.toLowerCase().includes(query))));
+  }, [period, search, workState, works]);
   const ownAgencyId = getSession()?.user.agencyId;
 
   const openHistory = () => {
@@ -163,7 +164,7 @@ export function WorkCalendarClient() {
       <label><span>Agency</span><select value={agencyId} onChange={(event) => setAgencyId(event.target.value)}><option value="">All agencies</option>{agencies.map((agency) => <option key={agency.id} value={agency.id}>{agency.name}</option>)}</select></label>
       <button aria-expanded={moreFilters} className="ph-secondary-button" onClick={() => setMoreFilters((open) => !open)} type="button">{moreFilters ? "Fewer filters" : "Date & more filters"}</button>
     </section>
-    {moreFilters ? <section className="ph-schedule-more-filters"><label><span>Road / area</span><select value={roadSegmentId} onChange={(event) => { setRoadSegmentId(event.target.value); setHistoryOpen(false); }}><option value="">{wardId ? "Entire ward" : "All mapped roads"}</option>{roads.map((road) => <option key={road.id} value={road.id}>{road.roadName}</option>)}</select></label><label><span>From</span><input max={dateTo} type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label><span>To</span><input min={dateFrom} type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></section> : null}
+    {moreFilters ? <section className="ph-schedule-more-filters"><label><span>Road / area</span><select value={roadSegmentId} onChange={(event) => { setRoadSegmentId(event.target.value); setHistoryOpen(false); }}><option value="">{wardId ? "Entire ward" : "All mapped roads"}</option>{roads.map((road) => <option key={road.id} value={road.id}>{road.roadName}</option>)}</select></label><label><span>Work status</span><select value={workState} onChange={(event) => setWorkState(event.target.value)}><option value="ALL">All statuses</option><option value="CREATED">Created</option><option value="PENDING_UPTAKE">Assigned</option><option value="UPTAKEN">Accepted</option><option value="TIMELINE_SET">Scheduled</option><option value="CONFLICT_CHECKED">Conflict checked</option><option value="READY_TO_START">Ready to start</option><option value="ACTIVE">Active</option><option value="COMPLETED">Completed</option><option value="AWAITING_VERIFICATION">Awaiting verification</option><option value="CLOSED">Closed</option><option value="CANCELLED">Cancelled</option></select></label><label><span>From</span><input max={dateTo} type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label><span>To</span><input min={dateFrom} type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></section> : null}
 
     <div className="work-calendar-toolbar">
       <div aria-label="Schedule view" className="work-calendar-tabs" role="tablist">{(["MAP", "TIMELINE"] as const).map((item) => <button aria-selected={view === item} className={view === item ? "active" : ""} key={item} onClick={() => setView(item)} role="tab" type="button">{item === "MAP" ? "Map" : "Timeline"}</button>)}</div>

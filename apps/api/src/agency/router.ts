@@ -20,11 +20,6 @@ const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Respo
 };
 const idSchema = z.string().uuid();
 
-function routeId(request: Request): string {
-  const value = request.params.id;
-  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
-}
-
 function safeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-120);
 }
@@ -33,12 +28,6 @@ function projectHeadAgency(request: Request): string {
   const agencyId = request.auth?.agencyId;
   if (!agencyId) throw new Error("Project Head account is missing an agency assignment");
   return agencyId;
-}
-
-async function ownsTicket(request: Request, ticketId: string): Promise<boolean> {
-  const agencyId = projectHeadAgency(request);
-  const ticket = await prisma.ticket.findFirst({ where: { id: ticketId, assignedAgencyId: agencyId }, select: { id: true } });
-  return Boolean(ticket);
 }
 
 export function createAgencyRouter(storage: ImageStorage): Router {

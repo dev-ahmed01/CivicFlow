@@ -42,4 +42,11 @@ _(Update this section as phases complete — Codex should read it to know what a
 - [x] Phase 11 — Design system / UI polish
 - [x] Phase 12 — Seed data, demo rehearsal, deployment
 - [x] SIH Role Redesign Phase 1 — Three-persona role model; retired global administration surfaces
+- [x] SIH Role Redesign Phase 2 — Planning/execution lifecycle with explicit Engineer Start Work
+- [x] SIH Role Redesign Phase 3 — Engineer-owned structured site inspections
+- [x] SIH Role Redesign Phase 4 — Agency planned-work registry with conflict checks
 - [x] SIH Role Redesign Phase 5 — Project Head Command Centre and unified Work Pipeline
+- [x] SIH Role Redesign Phase 6 — City Work Map, shared timeline, and permanent road history
+- [x] SIH Role Redesign Phase 7 — Coordination & Conflicts decision workspace
+- [x] SIH Role Redesign Phase 8 — Mobile-first Engineer field operations
+- [x] SIH Role Redesign Phase 9 — Deterministic SIH demo and end-to-end validation

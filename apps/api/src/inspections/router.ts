@@ -44,7 +44,7 @@ function responseInspection(storage: ImageStorage, inspection: InspectionRecord)
   const { objectKey, ...report } = inspection;
   return {
     ...report,
-    fileUrl: inspection.objectKey && inspection.fileUrl ? storageReadUrl(storage, inspection.objectKey, inspection.fileUrl) : null,
+    fileUrl: objectKey && inspection.fileUrl ? storageReadUrl(storage, objectKey, inspection.fileUrl) : null,
     evidence: inspection.evidence.map(({ objectKey, ...item }) => ({ ...item, fileUrl: storageReadUrl(storage, objectKey, item.fileUrl) })),
   };
 }
@@ -218,7 +218,11 @@ export function createInspectionsRouter(storage: ImageStorage): Router {
       }
       const now = new Date();
       await transaction.inspectionReport.update({ where: { id: inspection.id }, data: { status: InspectionStatus.REVIEWED, reviewedById: request.auth!.userId, reviewedAt: now, reviewDecision: parsed.data.decision, reviewNote: parsed.data.note } });
-      await completeWorkflowAction(transaction, `inspection:${inspection.id}:review:${request.auth!.userId}`, now);
+      // One agency decision resolves the shared review queue for every Project Head.
+      await transaction.workflowAction.updateMany({
+        where: { dedupeKey: { startsWith: `inspection:${inspection.id}:review:` }, respondedAt: null },
+        data: { respondedAt: now },
+      });
       if (parsed.data.decision === "NO_WORK_REQUIRED") {
         const ticket = await transaction.ticket.findUniqueOrThrow({ where: { id: inspection.ticketId }, select: { id: true, state: true } });
         await transaction.ticket.update({ where: { id: ticket.id }, data: { state: TicketState.CLOSED } });

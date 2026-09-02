@@ -247,20 +247,46 @@ async function main(): Promise<void> {
     const agencyQueue = await request(app).get("/tickets?limit=50").set("Authorization", bearer(projectHead)).expect(200);
     assert.equal(agencyQueue.body.tickets.some((ticket: { id: string }) => ticket.id === ticketId), true);
 
-    const inspection = await request(app)
-      .post(`/tickets/${ticketId}/inspection-report`)
+    const engineer = await internalLogin(app, "engineer.bescom@civicos.local", UserRole.ENGINEER);
+    sessionUserIds.add(engineer.userId);
+    assert.equal(engineer.userId, bescomEngineerId);
+    const inspectionAssignment = await request(app)
+      .post(`/tickets/${ticketId}/inspections`)
       .set("Authorization", bearer(projectHead))
-      .send({
-        action: "presign",
-        fileName: "streetlight-inspection.pdf",
-        contentType: "application/pdf",
-        notes: "Inspection confirms a failed luminaire and feeder connection requiring replacement.",
-      })
+      .send({ engineerId: bescomEngineerId, deadline: "2028-01-08T12:00:00.000Z" })
+      .expect(201);
+    const inspectionId = inspectionAssignment.body.inspection.id as string;
+    await request(app).post(`/inspections/${inspectionId}/accept`).set("Authorization", bearer(engineer)).expect(200);
+    await request(app).post(`/inspections/${inspectionId}/start`).set("Authorization", bearer(engineer)).expect(200);
+    const inspectionEvidence = await request(app)
+      .post(`/inspections/${inspectionId}/evidence`)
+      .set("Authorization", bearer(engineer))
+      .send({ action: "presign", fileName: "streetlight-site.jpg", contentType: "image/jpeg", sizeBytes: 4096 })
       .expect(201);
     await request(app)
-      .post(`/tickets/${ticketId}/inspection-report`)
+      .post(`/inspections/${inspectionId}/evidence`)
+      .set("Authorization", bearer(engineer))
+      .send({ action: "complete", evidenceId: inspectionEvidence.body.evidenceId })
+      .expect(200);
+    await request(app)
+      .post(`/inspections/${inspectionId}/submit`)
+      .set("Authorization", bearer(engineer))
+      .send({
+        issueConfirmation: "CONFIRMED",
+        severity: "HIGH",
+        observations: "The streetlight luminaire and feeder connection failed at the reported pole.",
+        recommendedWork: "Replace the luminaire, repair the feeder connection, and test illumination.",
+        complexity: "MEDIUM",
+        coordinationRequired: false,
+        recommendation: "PROCEED",
+        latitude: 12.9142,
+        longitude: 77.6101,
+      })
+      .expect(200);
+    await request(app)
+      .post(`/inspections/${inspectionId}/review`)
       .set("Authorization", bearer(projectHead))
-      .send({ action: "complete", reportId: inspection.body.reportId })
+      .send({ decision: "CREATE_WORK", note: "Structured field evidence confirms the repair scope." })
       .expect(200);
 
     const projectCreated = await request(app)
@@ -271,9 +297,6 @@ async function main(): Promise<void> {
     const projectId = projectCreated.body.project.id as string;
     assert.equal(projectCreated.body.project.state, ProjectState.PENDING_UPTAKE);
 
-    const engineer = await internalLogin(app, "engineer.bescom@civicos.local", UserRole.ENGINEER);
-    sessionUserIds.add(engineer.userId);
-    assert.equal(engineer.userId, bescomEngineerId);
     const engineerNotifications = await notificationsFor(app, engineer);
     assert.equal(hasNotification(engineerNotifications, "PROJECT_ASSIGNMENT", "projectId", projectId), true);
     const assignedProjects = await request(app)
@@ -283,7 +306,7 @@ async function main(): Promise<void> {
     assert.equal(assignedProjects.body.projects.some((project: { id: string }) => project.id === projectId), true);
 
     await request(app).post(`/projects/${projectId}/uptake`).set("Authorization", bearer(engineer)).expect(200);
-    await request(app)
+    const scheduled = await request(app)
       .patch(`/projects/${projectId}/timeline`)
       .set("Authorization", bearer(engineer))
       .send({
@@ -293,6 +316,10 @@ async function main(): Promise<void> {
         dependencyFlags: [],
       })
       .expect(200);
+    assert.equal(scheduled.body.project.state, ProjectState.READY_TO_START);
+    assert.equal(scheduled.body.project.actualStart, null);
+    assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } })).state, TicketState.ENGINEER_ASSIGNED);
+    await request(app).post(`/projects/${projectId}/start`).set("Authorization", bearer(engineer)).expect(200);
     assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } })).state, TicketState.WORK_IN_PROGRESS);
     const reporterDuringWork = await request(app)
       .get(`/tickets/${ticketId}`)
@@ -365,7 +392,7 @@ async function main(): Promise<void> {
     assert.equal(validators.some(({ userId }) => ticketActors.has(userId)), true);
 
     console.log(
-      `Phase 15 acceptance verified: ${demoInvitationCount} demo-wide citizen invitations, six real authenticated users, relevance-gated submission, concurrent configured ${verificationQuorum}-citizen quorum, agency routing, Project Head inspection/assignment, engineer execution, citizen completion verification, persistent notifications, authoritative My Tickets updates, and actor-attributed state history.`,
+      `Phase 15 acceptance verified: ${demoInvitationCount} demo-wide citizen invitations, six real authenticated users, relevance-gated submission, concurrent configured ${verificationQuorum}-citizen quorum, agency routing, Project Head inspection assignment and review, Engineer field inspection/execution, citizen completion verification, persistent notifications, authoritative My Tickets updates, and actor-attributed state history.`,
     );
   } finally {
     for (const userId of sessionUserIds) {

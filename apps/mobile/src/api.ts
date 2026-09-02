@@ -333,6 +333,10 @@ export async function uptakeProject(projectId: string): Promise<void> {
   await apiFetch(`/projects/${projectId}/uptake`, { method: "POST" });
 }
 
+export async function startProject(projectId: string): Promise<void> {
+  await apiFetch(`/projects/${projectId}/start`, { method: "POST" });
+}
+
 export async function updateProjectTimeline(projectId: string, input: { plannedStart: string; plannedEnd: string; workDescription: string; dependencyFlags: string[] }): Promise<ProjectConflict[]> {
   const result = await apiFetch<{ conflicts: ProjectConflict[]; roadConflicts: RoadConflict[] }>(`/projects/${projectId}/timeline`, { method: "PATCH", body: JSON.stringify(input) });
   // M-E6 — preserve the established warning sheet while labeling road-specific checks.

@@ -98,9 +98,8 @@ async function main(): Promise<void> {
     const projectId = created.body.project.id as string;
     assert.equal(created.body.project.state, ProjectState.PENDING_UPTAKE);
 
-    const geographic = await request(app).get(`/projects?scope=geographic&agency=${bescomAgencyId}`).set("Authorization", `Bearer ${otherEngineerToken}`).expect(200);
-    assert.equal(geographic.body.projects.find((item: { id: string }) => item.id === projectId).editable, false);
-    assert.equal((await request(app).get(`/projects/${projectId}`).set("Authorization", `Bearer ${otherEngineerToken}`).expect(200)).body.project.editable, false);
+    await request(app).get(`/projects?scope=geographic&agency=${bescomAgencyId}`).set("Authorization", `Bearer ${otherEngineerToken}`).expect(403);
+    await request(app).get(`/projects/${projectId}`).set("Authorization", `Bearer ${otherEngineerToken}`).expect(404);
     await request(app).post(`/projects/${projectId}/uptake`).set("Authorization", `Bearer ${otherEngineerToken}`).expect(404);
 
     await request(app).post(`/projects/${projectId}/uptake`).set("Authorization", `Bearer ${engineerToken}`).expect(200);
@@ -114,7 +113,7 @@ async function main(): Promise<void> {
     assert.deepEqual(timeline.body.conflicts, []);
     assert.equal(timeline.body.project.state, ProjectState.READY_TO_START);
     assert.equal(timeline.body.project.actualStart, null);
-    assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } })).state, TicketState.PROJECT_CREATED);
+    assert.equal((await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } })).state, TicketState.ENGINEER_ASSIGNED);
     const transitions = await prisma.projectStateTransition.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
     assert.deepEqual(transitions.map(({ toState }) => toState).slice(0, 6), [ProjectState.CREATED, ProjectState.PENDING_UPTAKE, ProjectState.UPTAKEN, ProjectState.TIMELINE_SET, ProjectState.CONFLICT_CHECKED, ProjectState.READY_TO_START]);
     assert.deepEqual((await request(app).get(`/projects/${projectId}/conflicts`).set("Authorization", `Bearer ${engineerToken}`).expect(200)).body.conflicts, []);

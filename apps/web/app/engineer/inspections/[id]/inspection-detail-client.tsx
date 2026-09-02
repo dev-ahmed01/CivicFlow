@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useState, type FormEvent } from "react";
 import type { InspectionDetail } from "@civicos/shared";
 import { notifyPortalDataChanged, usePortalPolling } from "../../../_lib/portal-refresh";
@@ -50,7 +51,7 @@ export function InspectionDetailClient({ inspectionId }: { inspectionId: string 
   return <div className="field-module inspection-detail">
     <header className="portal-heading"><div><Link className="back-link" href="/engineer/inspections">← Inspections</Link><p className="eyebrow">{inspection.ticket.referenceNumber}</p><h1>{inspection.ticket.title}</h1><p>{inspection.ticket.address}</p></div><span className={`field-state state-${inspection.status.toLowerCase()}`}>{inspection.status.replaceAll("_", " ")}</span></header>
     {error ? <p className="error" role="alert">{error}</p> : null}
-    <section className="inspection-context"><header><p className="eyebrow">Citizen issue context</p><h2>What was reported</h2></header><dl><div><dt>Category</dt><dd>{inspection.ticket.category.name}</dd></div><div><dt>Ward</dt><dd>{inspection.ticket.ward.name}</dd></div><div><dt>Road</dt><dd>{inspection.ticket.roadSegment?.roadName ?? "Not linked"}</dd></div><div><dt>Deadline</dt><dd>{new Date(inspection.deadline).toLocaleString("en-IN")}</dd></div></dl><div className="inspection-observations">{inspection.ticket.observations.map((item) => <figure key={item.id}><img alt="Reported site evidence" src={item.imageUrl} /><figcaption>{item.note ?? item.address ?? "Citizen evidence"}</figcaption></figure>)}</div></section>
+    <section className="inspection-context"><header><p className="eyebrow">Citizen issue context</p><h2>What was reported</h2></header><dl><div><dt>Category</dt><dd>{inspection.ticket.category.name}</dd></div><div><dt>Ward</dt><dd>{inspection.ticket.ward.name}</dd></div><div><dt>Road</dt><dd>{inspection.ticket.roadSegment?.roadName ?? "Not linked"}</dd></div><div><dt>Deadline</dt><dd>{new Date(inspection.deadline).toLocaleString("en-IN")}</dd></div></dl><div className="inspection-observations">{inspection.ticket.observations.map((item) => <figure key={item.id}><Image alt="Reported site evidence" height={320} src={item.imageUrl} unoptimized width={480} /><figcaption>{item.note ?? item.address ?? "Citizen evidence"}</figcaption></figure>)}</div></section>
     {inspection.status === "ASSIGNED" ? <section className="field-primary-action"><div><p className="eyebrow">Next action</p><h2>Accept the site inspection</h2><p>Accepting confirms that this inspection is assigned to you. It does not start civic work.</p></div><button className="primary-button" disabled={busy} onClick={() => void action("accept")} type="button">Accept Inspection</button></section> : null}
     {inspection.status === "ACCEPTED" ? <section className="field-primary-action"><div><p className="eyebrow">At the site</p><h2>Begin evidence capture</h2><p>Start the inspection when you reach the reported location.</p></div><button className="primary-button" disabled={busy} onClick={() => void action("start")} type="button">Start Inspection</button></section> : null}
     {editable ? <form className="structured-inspection-form" onSubmit={(event) => void submit(event)}><header><p className="eyebrow">Structured assessment</p><h2>Submit inspection result</h2><p>Your Project Head will review this result and decide whether civic work should be created.</p></header><div className="form-grid">
@@ -58,7 +59,7 @@ export function InspectionDetailClient({ inspectionId }: { inspectionId: string 
       <label>Severity<select name="severity" required><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="HIGH">High</option><option value="CRITICAL">Critical</option></select></label>
       <label className="span-2">Observations<textarea name="observations" minLength={10} required rows={4} /></label>
       <label className="span-2">Recommended work<textarea name="recommendedWork" minLength={5} required rows={3} /></label>
-      <label>Complexity<select name="complexity" required><option value="MODERATE">Moderate</option><option value="SIMPLE">Simple</option><option value="COMPLEX">Complex</option></select></label>
+      <label>Complexity<select name="complexity" required><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="HIGH">High</option></select></label>
       <label>Recommendation<select name="recommendation" required><option value="PROCEED">Proceed</option><option value="COORDINATION_REQUIRED">Coordination required</option><option value="ADDITIONAL_INVESTIGATION">Additional investigation</option><option value="NO_WORK_REQUIRED">No work required</option></select></label>
       <label>Latitude<input name="latitude" required step="any" type="number" /></label><label>Longitude<input name="longitude" required step="any" type="number" /></label>
       <label className="span-2"><input name="coordinationRequired" type="checkbox" /> Other-agency coordination is required</label><label className="span-2">Other agency involvement<input name="otherAgencyInvolvement" /></label>

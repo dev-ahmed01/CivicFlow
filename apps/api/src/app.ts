@@ -78,7 +78,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.use(createAgencyRouter(imageStorage));
   app.use(createInspectionsRouter(imageStorage));
   app.use(createProjectsRouter(imageStorage));
-  app.use(createCivicWorksRouter());
+  app.use(createCivicWorksRouter(imageStorage));
   app.use(createCoordinationRouter(imageStorage));
   app.use(createDependenciesRouter());
   app.use(createRoadIntelligenceRouter());

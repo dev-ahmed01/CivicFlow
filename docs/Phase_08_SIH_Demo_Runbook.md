@@ -9,7 +9,7 @@ The reset owns only the reserved BTM coordination fixtures. It removes rehearsal
 | Fixture | Stable ID | Baseline |
 |---|---|---|
 | BTM road segment | `80000000-0000-4000-8000-000000000002` | 16th Main Road, BTM Layout 2nd Stage |
-| PWD resurfacing | `8b000000-0000-4000-8000-000000000001` | 8–15 November 2026 |
+| BBMP road resurfacing | `8b000000-0000-4000-8000-000000000001` | 8–15 November 2026 · ready to start |
 | BWSSB pipeline | `8b000000-0000-4000-8000-000000000002` | 5–12 November 2026 |
 | Advisory conflict | `8d000000-0000-4000-8000-000000000001` | Restoration begins before pipeline excavation ends |
 
@@ -35,26 +35,26 @@ These are identifiers, not credentials. Obtain the internal demo password and ci
 
 | Account | Role | Agency/use |
 |---|---|---|
-| `head.pwd@civicos.local` | Project Head | PWD / Roads Authority initiates coordination |
+| `head.bbmp@civicos.local` | Project Head | BBMP Road Infrastructure initiates coordination |
 | `head.bwssb@civicos.local` | Project Head | BWSSB replies and accepts the dependency |
 | `engineer.bwssb@civicos.local` | Engineer | Pipeline inspection and evidence |
-| `engineer.pwd@civicos.local` | Engineer | Optional road-side inspection/execution |
+| `engineer.bbmp@civicos.local` | Engineer | Road-side inspection, planning, and execution |
 | `citizen.jayanagar@cityconnect.local` | Citizen | Reporting, tracking, nearby works, closure verification when eligible |
 
 The seed reads `DEMO_INTERNAL_PASSWORD`. Citizen OTP behavior is selected by the deployment profile: real SMS in production or an explicitly configured fixed code in the isolated demo profile.
 
 ## Recommended live order
 
-1. Warm `GET /health`, the public transparency page, and all three signed-in clients before presenting.
-2. As the PWD Project Head, open **Conflicts** and select the reserved BTM resurfacing conflict. Point out that the warning is advisory and names the overlapping BWSSB pipeline dates and road chainage.
-3. Open the PWD resurfacing project and send a structured coordination request to BWSSB. Request inspection/Engineer involvement and attach the prepared PDF inspection brief.
-4. As the BWSSB Project Head, open the request from Notifications, reply, assign the BWSSB Engineer, and formally accept the dependency.
-5. On the Engineer mobile client, open the coordination assignment, start the inspection, attach a geotagged site-evidence image, submit the inspection result, and complete the assigned action.
-6. Return to the PWD Project Head project. Show the explainable recommendation: **pipeline → consolidated inspection/restoration → resurfacing**. Open the rule trace, then accept or modify the advisory dates.
-7. Open **Spatial Work Calendar**, filter to BTM Layout/16th Main Road, and show the revised order.
-8. Open **Civic Work Ledger** and show the creation, conflict, coordination, dependency, sequence action, Engineer evidence, and status history.
-9. On the citizen mobile client, open nearby civic works at BTM Layout. Show the public status and dates; internal coordination text, dependency flags, private attachment metadata, and precise work geometry must not appear.
-10. Demonstrate the existing citizen report path separately: capture photo → relevance preflight → GPS/reporting-area resolution → submit → ticket tracking. The reserved agency-planned BTM work has no citizen reporter, so closure voting does not apply to it. Use a citizen-originated ticket when demonstrating closure verification.
+1. Warm `GET /health`, the transparency page, and separate signed-in browser profiles before presenting. Open the BBMP **Command Centre** first and answer “What requires my decision today?” from its real action queue.
+2. As the BBMP Project Head, choose **Register Planned Work** and show that agency work needs no citizen ticket. Use the reserved BBMP resurfacing record as the reset-safe fallback.
+3. Open **City Work Map**, filter to BTM Layout and 16th Main Road, and select both persisted works. Show agency identity, overlapping dates, lifecycle state, and the explicit read-only treatment of BWSSB work.
+4. Open **Coordination & Conflicts** and select the reserved conflict. Explain the deterministic restoration-too-early rule, repeated-excavation risk, and advisory sequence: **BWSSB pipeline → joint inspection/restoration → BBMP resurfacing**.
+5. Send or open the formal coordination record to BWSSB. As the BWSSB Project Head, reply, record the agreement/dependency, and keep the permanent decision history visible.
+6. For a citizen-originated issue, the Project Head chooses **Assign Inspection** and selects an Engineer from their own agency. The Engineer opens **Inspections**, accepts, starts, captures structured findings/GPS/evidence, and submits a recommendation. The Project Head reviews it and alone decides whether to create civic work, request another inspection, or close it as no work required.
+7. In **My Work**, the assigned Engineer accepts the civic work and saves the timeline. Point out that it is **Ready to Start**, `actualStart` is still empty, and the linked ticket is not yet in progress. Review advisory conflicts and dependencies.
+8. Press **Start Work** explicitly. Show the transition to Active, add a field update, report a blocker, and resolve that blocker from the Project Head's **Team & Capacity** view. Then submit completion evidence through the existing completion flow.
+9. Return to **City Work Map** and its road/location history. Show creation, conflict, coordination, accepted sequence, Engineer activity, completion evidence, and state history using the same persisted records.
+10. On the citizen experience, show public status and eligible closure verification for a citizen-originated ticket. Internal coordination text, dependency details, attachment metadata, and precise private geometry remain hidden.
 
 Keep the structured coordination request URL or request ID on the presenter card as a fallback; never put a token or password there.
 
@@ -65,7 +65,7 @@ Prepare these before the event:
 - One harmless PDF named `BTM-pipeline-inspection-brief.pdf`.
 - One JPEG site-evidence photo taken near the rehearsal location, with no faces, number plates, or personal data.
 - A phone with the current internal Android build and location/photo permissions already granted.
-- Separate browser profiles for PWD Project Head and BWSSB Project Head to avoid live logout delays.
+- Separate browser profiles for BBMP Project Head, BWSSB Project Head, and the relevant Engineer to avoid live logout delays.
 
 ## Reset and rollback
 

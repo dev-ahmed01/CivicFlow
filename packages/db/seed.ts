@@ -2,6 +2,11 @@ import {
   CivicWorkOrigin,
   CompletionVerificationDecision,
   DependencyState,
+  InspectionComplexity,
+  InspectionIssueConfirmation,
+  InspectionRecommendation,
+  InspectionSeverity,
+  InspectionStatus,
   Prisma,
   PrismaClient,
   ProjectState,
@@ -77,7 +82,7 @@ const ids = {
 const agencies = [
   { id: ids.agencies.bwssb, name: "BWSSB", type: "Water Board" },
   { id: ids.agencies.bescom, name: "BESCOM", type: "Electrical/Power" },
-  { id: ids.agencies.pwd, name: "PWD / Roads Authority", type: "Roads/PWD" },
+  { id: ids.agencies.pwd, name: "BBMP Road Infrastructure", type: "Roads/BBMP" },
   { id: ids.agencies.waste, name: "Municipal Waste Management", type: "Solid Waste" },
   { id: ids.agencies.traffic, name: "Bengaluru Traffic Police", type: "Traffic" },
   { id: ids.agencies.planning, name: "Town Planning Department", type: "Town Planning" },
@@ -202,7 +207,33 @@ async function seedEngineerWorkflowDemo(): Promise<void> {
     await prisma.inspectionReport.upsert({
       where: { objectKey: `demo/engineer/${item.suffix}-inspection.pdf` },
       update: { notes: "Site inspected; execution scope and safety controls confirmed.", uploadedAt: new Date() },
-      create: { ticketId, submittedById: item.agencyId === ids.agencies.pwd ? "40000000-0000-4000-8000-000000000101" : "40000000-0000-4000-8000-000000000102", fileUrl: `https://images.civicos.local/demo/${item.suffix}-inspection.pdf`, objectKey: `demo/engineer/${item.suffix}-inspection.pdf`, contentType: "application/pdf", notes: "Site inspected; execution scope and safety controls confirmed.", uploadedAt: new Date() },
+      create: {
+        ticketId,
+        assignedEngineerId: item.engineerId,
+        assignedById: item.agencyId === ids.agencies.pwd ? "40000000-0000-4000-8000-000000000101" : "40000000-0000-4000-8000-000000000102",
+        submittedById: item.engineerId,
+        deadline: item.start ?? new Date(Date.now() + 2 * 86_400_000),
+        status: InspectionStatus.REVIEWED,
+        acceptedAt: new Date(),
+        startedAt: new Date(),
+        submittedAt: new Date(),
+        reviewedAt: new Date(),
+        issueConfirmation: InspectionIssueConfirmation.CONFIRMED,
+        severity: InspectionSeverity.MEDIUM,
+        observations: "Site inspected; execution scope and safety controls confirmed.",
+        recommendedWork: "Proceed with the scoped repair and documented safety controls.",
+        complexity: InspectionComplexity.MEDIUM,
+        coordinationRequired: item.agencyId === ids.agencies.pwd,
+        recommendation: InspectionRecommendation.PROCEED,
+        latitude: item.latitude,
+        longitude: item.longitude,
+        locationConfirmedAt: new Date(),
+        fileUrl: `https://images.civicos.local/demo/${item.suffix}-inspection.pdf`,
+        objectKey: `demo/engineer/${item.suffix}-inspection.pdf`,
+        contentType: "application/pdf",
+        notes: "Site inspected; execution scope and safety controls confirmed.",
+        uploadedAt: new Date(),
+      },
     });
     await prisma.project.upsert({
       where: { id: projectId },
@@ -335,7 +366,26 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
     where: { id: demo.inspection },
     update: {
       ticketId: demo.ticket,
-      submittedById: projectHeadId,
+      assignedEngineerId: engineerId,
+      assignedById: projectHeadId,
+      submittedById: engineerId,
+      deadline: at(4),
+      status: InspectionStatus.REVIEWED,
+      acceptedAt: at(3, 6),
+      startedAt: at(3, 8),
+      submittedAt: at(4),
+      reviewedAt: at(4, 4),
+      issueConfirmation: InspectionIssueConfirmation.CONFIRMED,
+      severity: InspectionSeverity.HIGH,
+      observations: "Inspection confirmed two failed LED luminaires and a damaged feeder junction.",
+      recommendedWork: "Replace the luminaires and feeder junction after traffic-side access is coordinated.",
+      complexity: InspectionComplexity.MEDIUM,
+      coordinationRequired: true,
+      otherAgencyInvolvement: "Bengaluru Traffic Police",
+      recommendation: InspectionRecommendation.COORDINATION_REQUIRED,
+      latitude: 12.9306,
+      longitude: 77.5839,
+      locationConfirmedAt: at(4),
       fileUrl: `${evidenceBaseUrl}?text=BESCOM+inspection+report`,
       objectKey: "demo/general/streetlight-inspection.jpg",
       contentType: "image/jpeg",
@@ -346,7 +396,26 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
     create: {
       id: demo.inspection,
       ticketId: demo.ticket,
-      submittedById: projectHeadId,
+      assignedEngineerId: engineerId,
+      assignedById: projectHeadId,
+      submittedById: engineerId,
+      deadline: at(4),
+      status: InspectionStatus.REVIEWED,
+      acceptedAt: at(3, 6),
+      startedAt: at(3, 8),
+      submittedAt: at(4),
+      reviewedAt: at(4, 4),
+      issueConfirmation: InspectionIssueConfirmation.CONFIRMED,
+      severity: InspectionSeverity.HIGH,
+      observations: "Inspection confirmed two failed LED luminaires and a damaged feeder junction.",
+      recommendedWork: "Replace the luminaires and feeder junction after traffic-side access is coordinated.",
+      complexity: InspectionComplexity.MEDIUM,
+      coordinationRequired: true,
+      otherAgencyInvolvement: "Bengaluru Traffic Police",
+      recommendation: InspectionRecommendation.COORDINATION_REQUIRED,
+      latitude: 12.9306,
+      longitude: 77.5839,
+      locationConfirmedAt: at(4),
       fileUrl: `${evidenceBaseUrl}?text=BESCOM+inspection+report`,
       objectKey: "demo/general/streetlight-inspection.jpg",
       contentType: "image/jpeg",
@@ -499,7 +568,7 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
       create: { id: `96000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, ticketId: demo.ticket, fromState: index === 0 ? null : ticketStates[index - 1], toState, reason: "PART_I_31_DEMO", createdAt: at(Math.min(index + 1, 10), 4 + index % 5) },
     });
   }
-  const projectStates = [ProjectState.CREATED, ProjectState.PENDING_UPTAKE, ProjectState.UPTAKEN, ProjectState.TIMELINE_SET, ProjectState.ACTIVE, ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION, ProjectState.CLOSED];
+  const projectStates = [ProjectState.CREATED, ProjectState.PENDING_UPTAKE, ProjectState.UPTAKEN, ProjectState.TIMELINE_SET, ProjectState.CONFLICT_CHECKED, ProjectState.READY_TO_START, ProjectState.ACTIVE, ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION, ProjectState.CLOSED];
   for (const [index, toState] of projectStates.entries()) {
     await prisma.projectStateTransition.upsert({
       where: { id: `97000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}` },
@@ -550,8 +619,8 @@ async function seedRoadCuttingDemo(): Promise<void> {
     `;
     await prisma.project.upsert({
       where: { id: projectId },
-      update: { agencyId: item.agencyId, engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title },
-      create: { id: projectId, ticketId, categoryId: categories[0].id, agencyId: item.agencyId, wardId: ids.wards.jayanagar, ownerProjectHeadId: item.agencyId === ids.agencies.pwd ? "40000000-0000-4000-8000-000000000101" : item.agencyId === ids.agencies.bwssb ? "40000000-0000-4000-8000-000000000102" : "40000000-0000-4000-8000-000000000103", origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, locationLabel: "Segment X · 11th Main Road, Jayanagar", engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title },
+      update: { agencyId: item.agencyId, engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, actualStart: item.start, workDescription: item.title },
+      create: { id: projectId, ticketId, categoryId: categories[0].id, agencyId: item.agencyId, wardId: ids.wards.jayanagar, ownerProjectHeadId: item.agencyId === ids.agencies.pwd ? "40000000-0000-4000-8000-000000000101" : item.agencyId === ids.agencies.bwssb ? "40000000-0000-4000-8000-000000000102" : "40000000-0000-4000-8000-000000000103", origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, locationLabel: "Segment X · 11th Main Road, Jayanagar", engineerId: item.engineerId, state: ProjectState.ACTIVE, plannedStart: item.start, plannedEnd: item.end, actualStart: item.start, workDescription: item.title },
     });
     await prisma.workflowAction.upsert({
       where: { dedupeKey: `project:${projectId}:complete-work` },
@@ -602,9 +671,9 @@ async function seedPhase4CoordinationDemo(): Promise<void> {
       id: fixture.resurfacingProject,
       interventionId: fixture.resurfacingIntervention,
       agencyId: ids.agencies.pwd,
-      ownerId: "40000000-0000-4000-8000-000000000101",
-      engineerId: "40000000-0000-4000-8000-000000000201",
-      title: "BTM 16th Main road resurfacing",
+      ownerId: "40000000-0000-4000-8000-000000000104",
+      engineerId: "40000000-0000-4000-8000-000000000204",
+      title: "BBMP Road Resurfacing · BTM 16th Main",
       purpose: "resurfacing",
       start: new Date("2026-11-08T03:30:00.000Z"),
       end: new Date("2026-11-15T12:30:00.000Z"),
@@ -625,8 +694,8 @@ async function seedPhase4CoordinationDemo(): Promise<void> {
   for (const [index, item] of works.entries()) {
     await prisma.project.upsert({
       where: { id: item.id },
-      update: { categoryId: categories[0].id, agencyId: item.agencyId, ownerProjectHeadId: item.ownerId, createdById: item.ownerId, updatedById: item.ownerId, origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, description: "Phase 4 BTM coordination demonstration on the same road chainage.", locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru", wardId: ids.wards.btmLayout, state: ProjectState.TIMELINE_SET, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title, engineerId: item.engineerId },
-      create: { id: item.id, categoryId: categories[0].id, agencyId: item.agencyId, ownerProjectHeadId: item.ownerId, createdById: item.ownerId, updatedById: item.ownerId, origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, description: "Phase 4 BTM coordination demonstration on the same road chainage.", locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru", wardId: ids.wards.btmLayout, state: ProjectState.TIMELINE_SET, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title, engineerId: item.engineerId },
+      update: { categoryId: categories[0].id, agencyId: item.agencyId, ownerProjectHeadId: item.ownerId, createdById: item.ownerId, updatedById: item.ownerId, origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, description: "SIH BTM coordination demonstration on the same road chainage.", locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru", wardId: ids.wards.btmLayout, state: ProjectState.READY_TO_START, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title, engineerId: item.engineerId },
+      create: { id: item.id, categoryId: categories[0].id, agencyId: item.agencyId, ownerProjectHeadId: item.ownerId, createdById: item.ownerId, updatedById: item.ownerId, origin: CivicWorkOrigin.AGENCY_PLANNED, title: item.title, description: "SIH BTM coordination demonstration on the same road chainage.", locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru", wardId: ids.wards.btmLayout, state: ProjectState.READY_TO_START, plannedStart: item.start, plannedEnd: item.end, workDescription: item.title, engineerId: item.engineerId },
     });
     await prisma.intervention.upsert({
       where: { projectId: item.id },
@@ -641,8 +710,8 @@ async function seedPhase4CoordinationDemo(): Promise<void> {
         id: transitionId,
         projectId: item.id,
         fromState: ProjectState.CREATED,
-        toState: ProjectState.TIMELINE_SET,
-        reason: "PLANNED_TIMELINE_REGISTERED",
+        toState: ProjectState.READY_TO_START,
+        reason: "PLANNED_WORK_CONFLICT_CHECKED",
         actedById: item.ownerId,
       },
     });
@@ -812,9 +881,11 @@ async function main(): Promise<void> {
     { id: "40000000-0000-4000-8000-000000000101", role: UserRole.PROJECT_HEAD, email: "head.pwd@civicos.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000102", role: UserRole.PROJECT_HEAD, email: "head.bwssb@civicos.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000103", role: UserRole.PROJECT_HEAD, email: "head.bescom@civicos.local", agencyId: ids.agencies.bescom, passwordHash, mustResetPassword: false },
+    { id: "40000000-0000-4000-8000-000000000104", role: UserRole.PROJECT_HEAD, email: "head.bbmp@civicos.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000201", role: UserRole.ENGINEER, email: "engineer.pwd@civicos.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000202", role: UserRole.ENGINEER, email: "engineer.bwssb@civicos.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000203", role: UserRole.ENGINEER, email: "engineer.bescom@civicos.local", agencyId: ids.agencies.bescom, passwordHash, mustResetPassword: false },
+    { id: "40000000-0000-4000-8000-000000000204", role: UserRole.ENGINEER, email: "engineer.bbmp@civicos.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
   ];
 
   for (const user of users) {
@@ -843,7 +914,7 @@ async function main(): Promise<void> {
   console.log(`Seeded ${engineerDemoProjects.length} Executive Engineer demo projects.`);
   console.log("Seeded the Part I §31 closed streetlight lifecycle with validation, dependency, execution, and citizen verification history.");
   console.log("Seeded Segment X flagship road-cutting scenario (PWD, BWSSB, BESCOM).");
-  console.log("Seeded the Phase 4 BTM conflict-to-coordination scenario (PWD resurfacing and BWSSB pipeline work).");
+  console.log("Seeded the SIH BTM conflict-to-coordination scenario (BBMP resurfacing and BWSSB pipeline work).");
   console.log("Seeded three standalone planned works in BTM Layout, including an intentional overlapping pair.");
   console.log(process.env.DEMO_INTERNAL_PASSWORD
     ? "Internal demo-user password loaded from DEMO_INTERNAL_PASSWORD."

@@ -88,8 +88,14 @@ async function main(): Promise<void> {
     const prominent = projectConflictSchema.array().parse((await saveTimeline(app, bwssbToken, projectB)).body.conflicts);
     assert.equal(prominent.some((conflict) => conflict.conflictingProjectId === projectA && conflict.severity === "PROMINENT"), true);
     assert.equal(prominent.every((conflict) => conflict.projectId === projectB), true);
-    assert.equal((await prisma.project.findUniqueOrThrow({ where: { id: projectA } })).state, ProjectState.ACTIVE);
-    assert.equal((await prisma.project.findUniqueOrThrow({ where: { id: projectB } })).state, ProjectState.ACTIVE);
+    const [scheduledA, scheduledB] = await Promise.all([
+      prisma.project.findUniqueOrThrow({ where: { id: projectA } }),
+      prisma.project.findUniqueOrThrow({ where: { id: projectB } }),
+    ]);
+    assert.equal(scheduledA.state, ProjectState.READY_TO_START);
+    assert.equal(scheduledB.state, ProjectState.READY_TO_START);
+    assert.equal(scheduledA.actualStart, null, "conflict-checked scheduling must not start execution");
+    assert.equal(scheduledB.actualStart, null, "conflict warnings remain advisory without implying execution");
 
     const firstLogCount = await prisma.conflictLog.count();
     await saveTimeline(app, bwssbToken, projectB);

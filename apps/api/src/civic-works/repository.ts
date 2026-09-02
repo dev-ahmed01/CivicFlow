@@ -31,8 +31,9 @@ export const civicWorkInclude = {
     },
   },
   evidence: {
+    where: { uploadedAt: { not: null } },
     orderBy: { createdAt: "desc" as const },
-    select: { id: true, kind: true, label: true, url: true, contentType: true, createdAt: true },
+    select: { id: true, kind: true, label: true, url: true, contentType: true, uploadedAt: true, createdAt: true },
   },
   auditEvents: {
     orderBy: { createdAt: "desc" as const },
