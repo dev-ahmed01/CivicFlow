@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "db";
 import type { CoordinationConflict } from "@civicos/shared";
+import { readCivicWorkGeometries } from "../civic-works/repository";
 
 type Client = Prisma.TransactionClient | PrismaClient;
 
@@ -10,6 +11,7 @@ const workSelect = {
   plannedStart: true,
   plannedEnd: true,
   agency: { select: { id: true, name: true } },
+  intervention: { select: { startOffsetM: true, affectedLengthM: true } },
 } satisfies Prisma.ProjectSelect;
 
 const coordinationSelect = {
@@ -90,6 +92,7 @@ export async function coordinationConflictsForProject(client: Client, projectId:
       reason: `These works share or closely overlap ${item.locationDescription}, and their proposed execution windows overlap.`,
       severity: item.severity,
       roadConflictType: null,
+      overlapLengthM: null,
       advisory: true as const,
       detectedAt: item.createdAt,
       coordination: latest ? { requestId: latest.id, dependencyId: latest.dependencyId, status: latest.status } : null,
@@ -109,10 +112,19 @@ export async function coordinationConflictsForProject(client: Client, projectId:
       reason: item.reason.replace(/[;.]?\s*advisory only\.?$/i, "."),
       severity: item.severity,
       roadConflictType: item.type,
+      overlapLengthM: pair.source.intervention && pair.conflicting.intervention
+        ? Math.max(0, Math.min(pair.source.intervention.startOffsetM + pair.source.intervention.affectedLengthM, pair.conflicting.intervention.startOffsetM + pair.conflicting.intervention.affectedLengthM) - Math.max(pair.source.intervention.startOffsetM, pair.conflicting.intervention.startOffsetM))
+        : null,
       advisory: true as const,
       detectedAt: item.createdAt,
       coordination: latest ? { requestId: latest.id, dependencyId: latest.dependencyId, status: latest.status } : null,
     } satisfies CoordinationConflict];
   });
-  return [...genericItems, ...roadItems].sort((first, second) => second.detectedAt.getTime() - first.detectedAt.getTime());
+  const items = [...genericItems, ...roadItems];
+  const geometries = await readCivicWorkGeometries(client, [...new Set(items.flatMap((item) => [item.sourceWork.id, item.conflictingWork.id]))]);
+  return items.map((item) => ({
+    ...item,
+    sourceWork: { ...item.sourceWork, geometry: geometries.get(item.sourceWork.id) ?? null },
+    conflictingWork: { ...item.conflictingWork, geometry: geometries.get(item.conflictingWork.id) ?? null },
+  })).sort((first, second) => second.detectedAt.getTime() - first.detectedAt.getTime());
 }

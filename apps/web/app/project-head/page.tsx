@@ -10,11 +10,17 @@ import {
   type CivicWorkCalendarItem,
   type Notification,
   type PaginationMeta,
+  type ProjectHeadTicketSummary,
   type ProjectHeadDashboardCounts,
+  type ProjectListItem,
 } from "@civicos/shared";
-import { EmptyState, PageHeader } from "../_components/ui";
+import { ActionCard } from "../_components/operational-ui";
+import { EmptyState, PageHeader, relativeDate } from "../_components/ui";
 import { usePortalPolling } from "../_lib/portal-refresh";
 import { apiFetch } from "./_lib/api";
+import { loadAllAgencyProjects } from "./_lib/paginated-projects";
+import { ProjectHeadRecordQuickView, type QuickRecord } from "./_components/record-quick-view";
+import { workStateLabel } from "./_components/work-ui";
 
 const WorkMap = dynamic(() => import("./work-calendar/work-map").then((module) => module.WorkMap), {
   ssr: false,
@@ -69,18 +75,25 @@ export default function ProjectHeadCommandCentrePage() {
   const [works, setWorks] = useState<CivicWorkCalendarItem[]>([]);
   const [mapBounds, setMapBounds] = useState<MapBounds>(bengaluruBounds);
   const [selectedId, setSelectedId] = useState<string>();
+  const [tickets, setTickets] = useState<ProjectHeadTicketSummary[]>([]);
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [quickRecord, setQuickRecord] = useState<QuickRecord>();
   const [error, setError] = useState<string>();
 
   const load = useCallback(async () => {
     try {
-      const [dashboard, feed, calendar] = await Promise.all([
+      const [dashboard, feed, calendar, ticketResult, projectResult] = await Promise.all([
         apiFetch<DashboardResponse>("/project-head/dashboard"),
         apiFetch<{ notifications: ClientNotification[] }>("/notifications?page=1&limit=8"),
         apiFetch<CalendarResponse>(`/civic-works/calendar?${calendarQuery(mapBounds)}`),
+        apiFetch<{ tickets: ProjectHeadTicketSummary[] }>("/tickets?page=1&limit=50"),
+        loadAllAgencyProjects(),
       ]);
       setData(dashboard);
       setNotifications(feed.notifications);
       setWorks(calendar.works);
+      setTickets(ticketResult.tickets);
+      setProjects(projectResult);
       setSelectedId((current) => current && calendar.works.some(({ id }) => id === current) ? current : undefined);
       setError(undefined);
     } catch (reason) {
@@ -104,6 +117,24 @@ export default function ProjectHeadCommandCentrePage() {
     return items.filter(({ count }) => count > 0).sort((left, right) => left.priority - right.priority);
   }, [data]);
 
+  const quickActions = useMemo(() => {
+    const ticketItems = tickets.filter((ticket) => ["ROUTED_TO_AGENCY", "INSPECTION_DUE", "INSPECTION_COMPLETE"].includes(ticket.state)).map((ticket) => ({
+      id: ticket.id, kind: "ticket" as const, reference: ticket.referenceNumber, title: ticket.title,
+      origin: "Citizen reported", location: `${ticket.ward.name} · ${ticket.category.name}`,
+      age: relativeDate(ticket.createdAt), owner: ticket.action?.responsibleUser.displayName ?? ticket.action?.responsibleUser.email ?? ticket.assignedAgency?.name,
+      state: workStateLabel(ticket.state), action: ["ROUTED_TO_AGENCY", "INSPECTION_DUE"].includes(ticket.state) ? "Assign Inspection" : "Review Inspection",
+      rank: ticket.state === "INSPECTION_COMPLETE" ? 1 : 0,
+    }));
+    const projectItems = projects.filter((project) => ["CREATED", "COMPLETED", "AWAITING_VERIFICATION"].includes(project.state) || project.conflictCount + project.roadConflictCount > project.coordinationCount).map((project) => ({
+      id: project.id, kind: "project" as const, reference: project.referenceNumber, title: project.title,
+      origin: project.origin === "CITIZEN_REPORTED" ? "Citizen reported" : "Agency planned", location: project.locationLabel ?? project.ticket?.ward.name ?? "Location pending",
+      age: relativeDate(project.updatedAt), owner: project.engineer?.displayName ?? project.engineer?.email ?? "Unassigned",
+      state: workStateLabel(project.state), action: project.state === "CREATED" ? "Assign Engineer" : ["COMPLETED", "AWAITING_VERIFICATION"].includes(project.state) ? "Review Completion" : "Open Coordination",
+      rank: project.state === "CREATED" ? 2 : project.state === "COMPLETED" ? 3 : 4,
+    }));
+    return [...ticketItems, ...projectItems].sort((left, right) => left.rank - right.rank).slice(0, 6);
+  }, [projects, tickets]);
+
   const selected = works.find(({ id }) => id === selectedId);
   return <div className="ph-command-page">
     <PageHeader title="Command Centre" description={data ? `${data.agency.name} · What requires my decision today?` : "What requires my decision today?"} action={<Link className="portal-primary-button" href="/project-head/projects/new">+ Register Planned Work</Link>} />
@@ -113,7 +144,7 @@ export default function ProjectHeadCommandCentrePage() {
       <div className="ph-command-primary-grid">
         <section className="ph-decision-register" aria-labelledby="decision-title">
           <header><div><p className="ph-operational-label">Needs decision</p><h2 id="decision-title">Priority actions</h2></div><strong>{attention.reduce((sum, item) => sum + item.count, 0)} open</strong></header>
-          {attention.length ? <ol>{attention.slice(0, 6).map((item) => <li data-tone={item.tone} key={item.label}><span className="ph-decision-count">{item.count}</span><div><strong>{item.label}</strong><p>{item.context}</p></div><Link href={item.href}>{item.action} →</Link></li>)}</ol> : <EmptyState title="No immediate decisions" description="New inspection, coordination, conflict, and closure decisions will appear here." />}
+          {quickActions.length ? <div className="ph-action-card-list">{quickActions.map((item) => <ActionCard actionLabel={item.action} age={item.age} key={`${item.kind}:${item.id}`} location={item.location} onOpen={() => setQuickRecord({ id: item.id, kind: item.kind })} origin={item.origin} owner={item.owner} reference={item.reference} state={item.state} title={item.title} tone={item.action === "Open Coordination" ? "warning" : item.action === "Review Completion" ? "success" : "info"} />)}</div> : attention.length ? <ol>{attention.slice(0, 6).map((item) => <li data-tone={item.tone} key={item.label}><span className="ph-decision-count">{item.count}</span><div><strong>{item.label}</strong><p>{item.context}</p></div><Link href={item.href}>{item.action} →</Link></li>)}</ol> : <EmptyState title="No immediate decisions" description="New inspection, coordination, conflict, and closure decisions will appear here." />}
         </section>
 
         <section className="ph-command-map" aria-labelledby="map-title">
@@ -142,6 +173,7 @@ export default function ProjectHeadCommandCentrePage() {
           return <li key={item.id}><span aria-hidden="true" className={`ph-feed-marker ${presentation.tone}`}>{presentation.icon}</span><time>{relativeNotificationTime(item.createdAt)}</time><div><small>What happened</small><strong>{presentation.message}</strong></div><div><small>Why it matters</small><p>{feedReason(item.type)}</p></div><div><small>Next action</small>{destination ? <Link href={destination}>{feedAction(item.type)} →</Link> : <span>No action required</span>}</div></li>;
         })}</ol> : <EmptyState title="No recorded activity yet" description="Workflow events will appear here as the system records them." />}
       </section>
+      <ProjectHeadRecordQuickView onChanged={() => void load()} onClose={() => setQuickRecord(undefined)} record={quickRecord} />
     </> : null}
   </div>;
 }

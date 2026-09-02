@@ -11,6 +11,7 @@ import { apiFetch } from "../_lib/api";
 import { loadAllAgencyProjects } from "../_lib/paginated-projects";
 import { ProjectCreateClient } from "./new/project-create-client";
 import { pipelineStage, type WorkView } from "./pipeline";
+import { ProjectHeadRecordQuickView, type QuickRecord } from "../_components/record-quick-view";
 
 type OriginFilter = "ALL" | "CITIZEN_REPORTED" | "AGENCY_PLANNED";
 type WorkRow = {
@@ -85,6 +86,7 @@ export default function WorkPipelinePage() {
   const [error, setError] = useState<string>();
   const [createOpen, setCreateOpen] = useState(false);
   const [ticketId, setTicketId] = useState("");
+  const [quickRecord, setQuickRecord] = useState<QuickRecord>();
 
   const load = useCallback(async () => {
     try {
@@ -182,18 +184,19 @@ export default function WorkPipelinePage() {
         const stage = pipelineStage(row.kind, row.state);
         const conflictOpen = Math.max(0, row.conflictCount - row.coordinationCount);
         return <tr data-risk={due.overdue ? "danger" : conflictOpen ? "warning" : "standard"} key={`${row.kind}:${row.id}`}>
-          <td data-label="Work"><Link className="ph-work-title-link" href={row.kind === "ticket" ? `/project-head/tickets/${row.id}` : `/project-head/projects/${row.id}`}><code>{row.reference}</code><strong>{row.title}</strong></Link></td>
+          <td data-label="Work"><button className="ph-work-title-link" onClick={() => setQuickRecord({ id: row.id, kind: row.kind })} type="button"><code>{row.reference}</code><strong>{row.title}</strong><small>Quick view</small></button></td>
           <td data-label="Origin / location"><strong>{originLabel(row.origin)}</strong><small>{row.location}{row.category ? ` · ${row.category}` : ""}</small></td>
           <td data-label="Stage"><span className={`ph-stage-label stage-${stage.toLowerCase()}`}>{stage[0]}{stage.slice(1).toLowerCase()}</span><small>{row.state.replaceAll("_", " ").toLowerCase()}</small></td>
           <td data-label="Responsible">{row.owner}</td>
           <td className={due.overdue ? "deadline-overdue" : ""} data-label="Deadline">{due.label}</td>
           <td data-label="Dependencies">{row.dependencyCount ? <Link href="/project-head/dependencies">{row.dependencyCount} linked →</Link> : <span>None</span>}</td>
           <td data-label="Conflict">{row.conflictCount ? <span className="ph-conflict-indicator"><strong>{row.conflictCount} warning{row.conflictCount === 1 ? "" : "s"}</strong><small>{conflictOpen ? `${conflictOpen} needs coordination` : "Coordination linked"}</small></span> : <span className="ph-no-conflict">None</span>}</td>
-          <td data-label="Next action"><Link className="ph-pipeline-action" href={action.href}>{action.label}<span aria-hidden="true">→</span></Link></td>
+          <td data-label="Next action"><button className="ph-pipeline-action" onClick={() => setQuickRecord({ id: row.id, kind: row.kind })} type="button">{action.label}<span aria-hidden="true">→</span></button></td>
         </tr>;
       })}</tbody></table></div>
       {visible.length === 0 ? <EmptyState title="No work matches this stage" description="Change the lifecycle stage, origin, or search term. Persisted work appears automatically." /> : null}
     </section>
     <div className="ph-pipeline-footer"><span>Showing {visible.length ? (effectivePage - 1) * pageSize + 1 : 0}–{Math.min(effectivePage * pageSize, filtered.length)} of {filtered.length} records</span><PaginationControls page={effectivePage} totalPages={totalPages} onPageChange={setPage} /></div>
+    <ProjectHeadRecordQuickView onChanged={() => void load()} onClose={() => setQuickRecord(undefined)} record={quickRecord} />
   </div>;
 }

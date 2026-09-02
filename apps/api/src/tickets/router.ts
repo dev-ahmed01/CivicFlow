@@ -805,6 +805,7 @@ export function createTicketsRouter(
       select: {
         state: true,
         reporterId: true,
+        assignedAgency: { select: { id: true, name: true } },
         ward: { select: { id: true, name: true } },
         category: {
           select: {
@@ -841,6 +842,7 @@ export function createTicketsRouter(
         ...ticket,
         internalState: internal.state,
         reporterId: internal.reporterId,
+        assignedAgency: internal.assignedAgency,
         ward: internal.ward,
         description: internal.observations[0]?.note ?? null,
         evidence: (internal.observations[0]?.images ?? []).map(({ objectKey, ...image }) => ({ ...image, url: storageReadUrl(storage, objectKey, image.url) })),

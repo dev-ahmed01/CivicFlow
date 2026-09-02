@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { CivicWorkOrigin, CoordinationStatus, DependencyState, GrievanceStatus, ProjectState, TicketState, UserRole, WorkflowActionType, prisma } from "db";
+import { CivicWorkOrigin, CoordinationStatus, DependencyState, GrievanceStatus, InspectionStatus, ProjectState, TicketState, UserRole, WorkflowActionType, prisma } from "db";
 import {
   agencyOriginatedTicketRequestSchema,
   ticketStateSchema,
@@ -136,12 +136,41 @@ export function createAgencyRouter(storage: ImageStorage): Router {
     requireRole(UserRole.PROJECT_HEAD),
     requirePasswordResetComplete,
     asyncRoute(async (request, response) => {
+      const now = new Date();
       const engineers = await prisma.user.findMany({
-        where: { agencyId: projectHeadAgency(request), role: UserRole.ENGINEER },
+        where: { agencyId: projectHeadAgency(request), role: UserRole.ENGINEER, deactivatedAt: null },
         orderBy: { email: "asc" },
-        select: { id: true, email: true },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          engineeringProjects: {
+            where: { state: { notIn: [ProjectState.CLOSED, ProjectState.CANCELLED] } },
+            select: { state: true },
+          },
+          assignedInspections: {
+            where: { status: { in: [InspectionStatus.ASSIGNED, InspectionStatus.ACCEPTED, InspectionStatus.IN_PROGRESS] } },
+            select: { deadline: true },
+          },
+          responsibleActions: {
+            where: { respondedAt: null },
+            select: { deadline: true },
+          },
+        },
       });
-      response.json({ engineers });
+      response.json({ engineers: engineers.map(({ engineeringProjects, assignedInspections, responsibleActions, ...engineer }) => {
+        const activeWorks = engineeringProjects.filter(({ state }) => [ProjectState.UPTAKEN, ProjectState.TIMELINE_SET, ProjectState.CONFLICT_CHECKED, ProjectState.READY_TO_START, ProjectState.ACTIVE, ProjectState.MODIFIED].includes(state)).length;
+        const pendingAssignments = engineeringProjects.filter(({ state }) => state === ProjectState.PENDING_UPTAKE).length;
+        const pendingInspections = assignedInspections.length;
+        const deadlines = [...assignedInspections.map(({ deadline }) => deadline), ...responsibleActions.map(({ deadline }) => deadline)];
+        const overdueTasks = deadlines.filter((deadline) => deadline.getTime() < now.getTime()).length;
+        const nextDeadline = deadlines.filter((deadline) => deadline.getTime() >= now.getTime()).sort((left, right) => left.getTime() - right.getTime())[0] ?? null;
+        // Phase 10 — deterministic capacity indicator; it explains persisted workload rather than predicting suitability.
+        const loadScore = activeWorks * 2 + pendingAssignments + pendingInspections + overdueTasks * 2;
+        const loadLabel = loadScore >= 7 ? "High load" : loadScore >= 3 ? "Moderate load" : "Available";
+        const loadReason = `${activeWorks} active work${activeWorks === 1 ? "" : "s"}, ${pendingInspections} inspection${pendingInspections === 1 ? "" : "s"}${overdueTasks ? `, ${overdueTasks} overdue` : ""}`;
+        return { ...engineer, activeWorks, pendingAssignments, pendingInspections, overdueTasks, nextDeadline, loadLabel, loadReason };
+      }) });
     }),
   );
 

@@ -20,6 +20,15 @@
   --cv-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --cv-radius-card: 12px;
   --cv-radius-chip: 20px;
+  --cv-type-page: clamp(1.75rem, 2.2vw, 2rem);
+  --cv-type-section: clamp(1.25rem, 1.6vw, 1.375rem);
+  --cv-type-card: clamp(1.0625rem, 1.3vw, 1.25rem);
+  --cv-type-body: 0.9375rem;
+  --cv-type-table: 0.875rem;
+  --cv-type-secondary: 0.875rem;
+  --cv-type-meta: 0.75rem;
+  --cv-leading-body: 1.6;
+  --cv-leading-tight: 1.25;
 }
 
 .portal-shell,

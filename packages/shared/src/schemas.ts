@@ -705,7 +705,20 @@ export const coordinationAttachmentRequestSchema = z.discriminatedUnion("action"
 ]);
 
 export const wardSummarySchema = wardSchema.pick({ id: true, name: true });
-export const engineerSummarySchema = z.object({ id: idSchema, email: z.string().email().nullable() });
+export const engineerSummarySchema = z.object({
+  id: idSchema,
+  email: z.string().email().nullable(),
+  displayName: z.string().nullable().optional(),
+});
+export const engineerCapacitySummarySchema = engineerSummarySchema.extend({
+  activeWorks: z.number().int().nonnegative(),
+  pendingAssignments: z.number().int().nonnegative(),
+  pendingInspections: z.number().int().nonnegative(),
+  overdueTasks: z.number().int().nonnegative(),
+  nextDeadline: dateSchema.nullable(),
+  loadLabel: z.enum(["Available", "Moderate load", "High load"]),
+  loadReason: z.string().min(1),
+});
 export const routingAgencySuggestionSchema = agencySchema.pick({ id: true, name: true, type: true });
 export const inspectionReportSummarySchema = z.object({
   id: idSchema,
@@ -804,6 +817,7 @@ export const projectHeadTicketSummarySchema = z.object({
 export const projectHeadTicketDetailSchema = citizenTicketSummarySchema.extend({
   internalState: ticketStateSchema,
   reporterId: idSchema.nullable(),
+  assignedAgency: agencySchema.pick({ id: true, name: true }).nullable(),
   ward: wardSummarySchema,
   description: z.string().nullable(),
   evidence: z.array(z.object({ id: idSchema, url: z.string().url(), uploadedAt: dateSchema.nullable() })),
@@ -1123,6 +1137,7 @@ const coordinationConflictWorkSchema = z.object({
   agency: agencySchema.pick({ id: true, name: true }),
   plannedStart: dateSchema.nullable(),
   plannedEnd: dateSchema.nullable(),
+  geometry: civicWorkGeometrySchema.nullable().optional(),
 });
 
 export const coordinationConflictSchema = z.object({
@@ -1135,6 +1150,7 @@ export const coordinationConflictSchema = z.object({
   reason: z.string().min(1),
   severity: z.string().min(1),
   roadConflictType: roadConflictTypeSchema.nullable(),
+  overlapLengthM: z.number().nonnegative().nullable().optional(),
   advisory: z.literal(true),
   detectedAt: dateSchema,
   coordination: z.object({
@@ -1479,6 +1495,7 @@ export type ReviewInspection = z.infer<typeof reviewInspectionSchema>;
 export type CreateProject = z.infer<typeof createProjectSchema>;
 export type WardSummary = z.infer<typeof wardSummarySchema>;
 export type EngineerSummary = z.infer<typeof engineerSummarySchema>;
+export type EngineerCapacitySummary = z.infer<typeof engineerCapacitySummarySchema>;
 export type RoutingAgencySuggestion = z.infer<typeof routingAgencySuggestionSchema>;
 export type InspectionReportSummary = z.infer<typeof inspectionReportSummarySchema>;
 export type InspectionDetail = z.infer<typeof inspectionDetailSchema>;
