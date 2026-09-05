@@ -19,6 +19,14 @@ const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Respo
   void handler(request, response, next).catch(next);
 };
 const idSchema = z.string().uuid();
+const activeWorkStates = new Set<ProjectState>([
+  ProjectState.UPTAKEN,
+  ProjectState.TIMELINE_SET,
+  ProjectState.CONFLICT_CHECKED,
+  ProjectState.READY_TO_START,
+  ProjectState.ACTIVE,
+  ProjectState.MODIFIED,
+]);
 
 function safeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-120);
@@ -159,7 +167,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         },
       });
       response.json({ engineers: engineers.map(({ engineeringProjects, assignedInspections, responsibleActions, ...engineer }) => {
-        const activeWorks = engineeringProjects.filter(({ state }) => [ProjectState.UPTAKEN, ProjectState.TIMELINE_SET, ProjectState.CONFLICT_CHECKED, ProjectState.READY_TO_START, ProjectState.ACTIVE, ProjectState.MODIFIED].includes(state)).length;
+        const activeWorks = engineeringProjects.filter(({ state }) => activeWorkStates.has(state)).length;
         const pendingAssignments = engineeringProjects.filter(({ state }) => state === ProjectState.PENDING_UPTAKE).length;
         const pendingInspections = assignedInspections.length;
         const deadlines = [...assignedInspections.map(({ deadline }) => deadline), ...responsibleActions.map(({ deadline }) => deadline)];
