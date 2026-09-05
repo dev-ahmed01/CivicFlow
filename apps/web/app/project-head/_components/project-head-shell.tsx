@@ -8,14 +8,14 @@ import { NotificationBell } from "../../_components/notification-center";
 import { CitizenIcon, type CitizenIconName } from "../../_components/ui";
 
 const workLinks: Array<{ href: string; label: string; icon: CitizenIconName; active: (path: string) => boolean }> = [
-  { href: "/project-head", label: "Command Centre", icon: "clock", active: (path) => path === "/project-head" },
-  { href: "/project-head/projects", label: "Work Pipeline", icon: "clipboard", active: (path) => path.startsWith("/project-head/projects") || path.startsWith("/project-head/tickets") || path.startsWith("/project-head/grievances") },
-  { href: "/project-head/work-calendar", label: "City Work Map", icon: "location", active: (path) => path.startsWith("/project-head/work-calendar") },
-  { href: "/project-head/dependencies", label: "Coordination & Conflicts", icon: "send", active: (path) => path.startsWith("/project-head/dependencies") || path.startsWith("/project-head/coordination") || path.startsWith("/project-head/conflicts") },
-  { href: "/project-head/teams", label: "Team & Capacity", icon: "person", active: (path) => path.startsWith("/project-head/teams") },
+  { href: "/project-head", label: "Today", icon: "clock", active: (path) => path === "/project-head" },
+  { href: "/project-head/projects", label: "Work", icon: "clipboard", active: (path) => path.startsWith("/project-head/projects") || path.startsWith("/project-head/tickets") || path.startsWith("/project-head/grievances") },
+  { href: "/project-head/work-calendar", label: "Schedule", icon: "location", active: (path) => path.startsWith("/project-head/work-calendar") },
+  { href: "/project-head/dependencies", label: "Coordination", icon: "send", active: (path) => path.startsWith("/project-head/dependencies") || path.startsWith("/project-head/coordination") || path.startsWith("/project-head/conflicts") },
+  { href: "/project-head/teams", label: "Team", icon: "person", active: (path) => path.startsWith("/project-head/teams") },
 ];
 
-const insightLink = { href: "/project-head/reports", label: "Insights & Audit", icon: "file" as const, active: (path: string) => path.startsWith("/project-head/reports") };
+const insightLink = { href: "/project-head/reports", label: "Insights", icon: "file" as const, active: (path: string) => path.startsWith("/project-head/reports") };
 
 export function ProjectHeadShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -52,7 +52,7 @@ export function ProjectHeadShell({ children }: { children: ReactNode }) {
         <details className="ph-user-control"><summary><span className="ph-user-avatar" aria-hidden="true">PH</span><span><strong>{session?.user.email ?? "Project Head"}</strong><small>Project Head</small></span></summary><div><Link href="/project-head/profile">Profile</Link><button type="button" onClick={() => void signOut()}>Sign out</button></div></details>
       </aside>
       <div className="ph-workspace">
-        <header className="ph-topbar"><button aria-expanded={mobileOpen} aria-label="Toggle navigation" className="ph-menu-button" onClick={() => setMobileOpen((open) => !open)} type="button"><span /><span /><span /></button><span className="ph-topbar-context">Municipal operations workspace</span><NotificationBell active={pathname === "/project-head/notifications"} apiFetch={apiFetch} href="/project-head/notifications" /></header>
+        <header className="ph-topbar"><button aria-expanded={mobileOpen} aria-label="Toggle navigation" className="ph-menu-button" onClick={() => setMobileOpen((open) => !open)} type="button"><span /><span /><span /></button><NotificationBell active={pathname === "/project-head/notifications"} apiFetch={apiFetch} href="/project-head/notifications" /></header>
         <main className="portal-content">{children}</main>
       </div>
     </div>

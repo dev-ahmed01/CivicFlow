@@ -156,7 +156,7 @@ export function WorkCalendarClient() {
   };
 
   return <div className="work-calendar-page ph-schedule-page">
-    <PageHeader title="City Work Map" description="See who is doing what, where and when across municipal agencies." action={<span className="ph-result-count">{resultTotal} works in view</span>} />
+    <PageHeader title="Schedule" description="Map and timeline views of municipal work across agencies." action={<span className="ph-result-count">{resultTotal} works in view</span>} />
 
     <section aria-label="Schedule filters" className="ph-schedule-filter-bar">
       <label className="ph-location-search"><span>Search location or work</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Road, ward, work or agency" /></label>

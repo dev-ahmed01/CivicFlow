@@ -54,12 +54,12 @@ async function loadAllTickets(): Promise<ProjectHeadTicketSummary[]> {
 
 function rowAction(row: WorkRow): { label: string; href: string } {
   if (row.grievanceId) return { label: "Review issue", href: `/project-head/grievances?grievance=${row.grievanceId}` };
-  if (row.kind === "ticket" && ["ROUTED_TO_AGENCY", "INSPECTION_DUE"].includes(row.state)) return { label: "Assign Inspection", href: `/project-head/tickets/${row.id}` };
-  if (row.kind === "ticket") return { label: "Review Inspection", href: `/project-head/tickets/${row.id}` };
-  if (row.state === "CREATED") return { label: "Assign Engineer", href: `/project-head/projects/${row.id}` };
-  if (row.state === "CONFLICT_CHECKED" && row.conflictCount > row.coordinationCount) return { label: "Open Coordination", href: "/project-head/conflicts" };
-  if (["COMPLETED", "AWAITING_VERIFICATION"].includes(row.state)) return { label: "Review Completion", href: `/project-head/projects/${row.id}` };
-  return { label: "Open Work", href: `/project-head/projects/${row.id}` };
+  if (row.kind === "ticket" && ["ROUTED_TO_AGENCY", "INSPECTION_DUE"].includes(row.state)) return { label: "Assign inspection", href: `/project-head/tickets/${row.id}` };
+  if (row.kind === "ticket") return { label: "Review inspection", href: `/project-head/tickets/${row.id}` };
+  if (row.state === "CREATED") return { label: "Assign engineer", href: `/project-head/projects/${row.id}` };
+  if (row.state === "CONFLICT_CHECKED" && row.conflictCount > row.coordinationCount) return { label: "Open coordination", href: "/project-head/conflicts" };
+  if (["COMPLETED", "AWAITING_VERIFICATION"].includes(row.state)) return { label: "Review completion", href: `/project-head/projects/${row.id}` };
+  return { label: "Open work", href: `/project-head/projects/${row.id}` };
 }
 
 function deadline(row: WorkRow): { label: string; overdue: boolean } {
@@ -169,12 +169,12 @@ export default function WorkPipelinePage() {
   const changeView = (next: WorkView) => { setView(next); setPage(1); };
 
   return <div className="ph-work-page">
-    <PageHeader title="Work Pipeline" description="Drive citizen issues and agency-planned work from intake to verified closure." action={<Link className="portal-primary-button" href="/project-head/projects/new">+ Register Planned Work</Link>} />
+    <PageHeader title="Work" description="Citizen issues and agency-planned work, from intake to verified closure." action={<Link className="portal-primary-button" href="/project-head/projects/new">Register planned work</Link>} />
     <div aria-label="Work lifecycle stages" className="portal-tabs ph-work-tabs" role="tablist">{views.map((item) => <button aria-selected={view === item.id} key={item.id} onClick={() => changeView(item.id)} role="tab" type="button">{item.label}<span>{counts.get(item.id) ?? 0}</span></button>)}</div>
 
     {createOpen ? <section className="portal-inline-drawer project-ready-drawer" aria-label="Create civic work from inspection"><div className="drawer-heading"><div><h2>Create civic work from an inspection</h2><p>Choose a reviewed citizen issue, then assign an Executive Engineer and any formal agency dependencies.</p></div><button className="secondary" onClick={() => setCreateOpen(false)} type="button">Close</button></div><div className="eligible-ticket-list">{eligibleTickets.map((ticket) => <button aria-pressed={ticketId === ticket.id} className={ticketId === ticket.id ? "eligible-ticket selected" : "eligible-ticket"} key={ticket.id} onClick={() => setTicketId(ticket.id)} type="button"><span><code>{ticket.referenceNumber}</code><WorkStatus state={ticket.state} /></span><strong>{ticket.title}</strong><small>{ticket.category.name} · {ticket.ward.name}</small></button>)}{eligibleTickets.length === 0 ? <EmptyState title="No reviewed inspections are ready" description="Submitted inspection results will appear here when they are ready for a Project Head decision." /> : null}</div>{ticketId ? <ProjectCreateClient onCreated={() => void load()} ticketId={ticketId} /> : null}</section> : null}
 
-    <section aria-label="Work filters" className="ph-work-toolbar"><label><span>Search work</span><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Reference, title, location or responsible person" /></label><label><span>Origin</span><select value={origin} onChange={(event) => { setOrigin(event.target.value as OriginFilter); setPage(1); }}><option value="ALL">All origins</option><option value="CITIZEN_REPORTED">Citizen issues</option><option value="AGENCY_PLANNED">Agency planned</option></select></label><button className="ph-secondary-button" onClick={() => setCreateOpen((open) => !open)} type="button">Create from Inspection</button></section>
+    <section aria-label="Work filters" className="ph-work-toolbar"><label><span>Search work</span><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Reference, title, location or responsible person" /></label><label><span>Origin</span><select value={origin} onChange={(event) => { setOrigin(event.target.value as OriginFilter); setPage(1); }}><option value="ALL">All origins</option><option value="CITIZEN_REPORTED">Citizen issues</option><option value="AGENCY_PLANNED">Agency planned</option></select></label><button className="ph-secondary-button" onClick={() => setCreateOpen((open) => !open)} type="button">Create from inspection</button></section>
     {error ? <p className="error" role="alert">{error}</p> : null}
 
     <section className="ph-pipeline-register" aria-live="polite">
@@ -184,13 +184,13 @@ export default function WorkPipelinePage() {
         const stage = pipelineStage(row.kind, row.state);
         const conflictOpen = Math.max(0, row.conflictCount - row.coordinationCount);
         return <tr data-risk={due.overdue ? "danger" : conflictOpen ? "warning" : "standard"} key={`${row.kind}:${row.id}`}>
-          <td data-label="Work"><button className="ph-work-title-link" onClick={() => setQuickRecord({ id: row.id, kind: row.kind })} type="button"><code>{row.reference}</code><strong>{row.title}</strong><small>Quick view</small></button></td>
-          <td data-label="Origin / location"><strong>{originLabel(row.origin)}</strong><small>{row.location}{row.category ? ` · ${row.category}` : ""}</small></td>
+          <td data-label="Work"><button className="ph-work-title-link" onClick={() => setQuickRecord({ id: row.id, kind: row.kind })} type="button"><code>{row.reference}</code><strong>{row.title}</strong><small className="ph-work-context">{originLabel(row.origin)} · {row.location}{row.category ? ` · ${row.category}` : ""}</small><small className="ph-quick-view-label">Quick view</small></button></td>
+          <td className="ph-pipeline-origin" data-label="Origin / location"><strong>{originLabel(row.origin)}</strong><small>{row.location}{row.category ? ` · ${row.category}` : ""}</small></td>
           <td data-label="Stage"><span className={`ph-stage-label stage-${stage.toLowerCase()}`}>{stage[0]}{stage.slice(1).toLowerCase()}</span><small>{row.state.replaceAll("_", " ").toLowerCase()}</small></td>
           <td data-label="Responsible">{row.owner}</td>
           <td className={due.overdue ? "deadline-overdue" : ""} data-label="Deadline">{due.label}</td>
-          <td data-label="Dependencies">{row.dependencyCount ? <Link href="/project-head/dependencies">{row.dependencyCount} linked →</Link> : <span>None</span>}</td>
-          <td data-label="Conflict">{row.conflictCount ? <span className="ph-conflict-indicator"><strong>{row.conflictCount} warning{row.conflictCount === 1 ? "" : "s"}</strong><small>{conflictOpen ? `${conflictOpen} needs coordination` : "Coordination linked"}</small></span> : <span className="ph-no-conflict">None</span>}</td>
+          <td className="ph-pipeline-dependency" data-label="Dependencies">{row.dependencyCount ? <Link href="/project-head/dependencies">{row.dependencyCount} linked →</Link> : <span>None</span>}</td>
+          <td className={row.conflictCount ? "ph-pipeline-conflict" : "ph-pipeline-conflict ph-cell-empty"} data-label="Conflict">{row.conflictCount ? <span className="ph-conflict-indicator"><strong>{row.conflictCount} warning{row.conflictCount === 1 ? "" : "s"}</strong><small>{conflictOpen ? `${conflictOpen} needs coordination` : "Coordination linked"}</small></span> : <span className="ph-no-conflict">None</span>}</td>
           <td data-label="Next action"><button className="ph-pipeline-action" onClick={() => setQuickRecord({ id: row.id, kind: row.kind })} type="button">{action.label}<span aria-hidden="true">→</span></button></td>
         </tr>;
       })}</tbody></table></div>

@@ -1,7 +1,7 @@
 "use client";
 
 import type { CitizenTicketTimelineResponse, CivicWork, CoordinationConflict, EngineerCapacitySummary, EngineerProjectDetail, ProjectHeadTicketDetail } from "@civicos/shared";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { BeforeAfterEvidence, DetailDrawer, DrawerDeepLink, DrawerSection, EngineerAssignmentCard, EvidenceGallery, LocationPreview, StatusSummary, type EvidenceItem } from "../../_components/operational-ui";
 import { notifyPortalDataChanged } from "../../_lib/portal-refresh";
 import { workStateLabel } from "./work-ui";

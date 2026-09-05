@@ -112,7 +112,7 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
   }
 
   return <div className="ph-record-page">
-    <header className="ph-record-header"><div><Link className="back-link" href="/project-head/projects">← Back to Work Pipeline</Link><h1>{ticket.title}</h1><p><code>{ticket.referenceNumber}</code> · {ticket.ward.name} · {ticket.category.name}</p></div><div className="ph-record-header-actions"><WorkStatus state={ticket.internalState} />{primaryAction}</div></header>
+    <header className="ph-record-header"><div><Link className="back-link" href="/project-head/projects">← Back to Work</Link><h1>{ticket.title}</h1><p><code>{ticket.referenceNumber}</code> · {ticket.ward.name} · {ticket.category.name}</p></div><div className="ph-record-header-actions"><WorkStatus state={ticket.internalState} />{primaryAction}</div></header>
     {error ? <p className="error" role="alert">{error}</p> : null}
     <RecordTabs active={tab} onChange={setTab} tabs={[{ id: "OVERVIEW", label: "Overview" }, { id: "ACTIVITY", label: "Activity", count: activity.length }, { id: "DOCUMENTS", label: "Documents", count: documents }]} />
 

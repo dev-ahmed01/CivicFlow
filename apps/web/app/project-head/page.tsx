@@ -20,7 +20,7 @@ import { usePortalPolling } from "../_lib/portal-refresh";
 import { apiFetch } from "./_lib/api";
 import { loadAllAgencyProjects } from "./_lib/paginated-projects";
 import { ProjectHeadRecordQuickView, type QuickRecord } from "./_components/record-quick-view";
-import { workStateLabel } from "./_components/work-ui";
+import { WorkStatus, workStateLabel } from "./_components/work-ui";
 
 const WorkMap = dynamic(() => import("./work-calendar/work-map").then((module) => module.WorkMap), {
   ssr: false,
@@ -63,10 +63,10 @@ function feedReason(type: string): string {
 }
 
 function feedAction(type: string): string {
-  if (["CONFLICT_DETECTED", "ROAD_CONFLICT_DETECTED", "SEQUENCING_RECOMMENDATION"].includes(type)) return "Review conflict";
+  if (["CONFLICT_DETECTED", "ROAD_CONFLICT_DETECTED", "SEQUENCING_RECOMMENDATION"].includes(type)) return "Inspect conflict";
   if (type.includes("DEPENDENCY") || type.includes("COORDINATION")) return "Open coordination";
   if (type.includes("COMPLETED") || type.includes("COMPLETION")) return "Review completion";
-  return "Open record";
+  return "Open work";
 }
 
 export default function ProjectHeadCommandCentrePage() {
@@ -105,9 +105,9 @@ export default function ProjectHeadCommandCentrePage() {
   const attention = useMemo<AttentionRow[]>(() => {
     if (!data) return [];
     const items: AttentionRow[] = [
-      { label: "Inspections awaiting assignment", count: data.counts.inspectionsAwaitingAssignment, context: "Validated citizen issues need an inspection decision.", href: "/project-head/projects?view=INSPECTION", action: "Open intake", priority: 1, tone: "warning" },
+      { label: "Inspections awaiting assignment", count: data.counts.inspectionsAwaitingAssignment, context: "Validated citizen issues need an inspection decision.", href: "/project-head/projects?view=INSPECTION", action: "Inspect", priority: 1, tone: "warning" },
       { label: "Submitted inspections awaiting review", count: data.counts.inspectionsAwaitingReview, context: "Inspection findings are ready for a Project Head decision.", href: "/project-head/projects?view=READY", action: "Review inspections", priority: 2, tone: "standard" },
-      { label: "Civic work ready for Engineer assignment", count: data.counts.worksReadyForAssignment, context: "Prepared work has no responsible Engineer yet.", href: "/project-head/projects?view=READY", action: "Assign Engineers", priority: 3, tone: "standard" },
+      { label: "Civic work ready for Engineer assignment", count: data.counts.worksReadyForAssignment, context: "Prepared work has no responsible Engineer yet.", href: "/project-head/projects?view=READY", action: "Assign engineers", priority: 3, tone: "standard" },
       { label: "Incoming coordination requests", count: data.counts.incomingCoordination, context: "Partner agencies are waiting for a response from your agency.", href: "/project-head/dependencies", action: "Open coordination", priority: 4, tone: "warning" },
       { label: "Conflicts without coordination", count: data.counts.conflictsWithoutCoordination, context: "Advisory conflict records have no linked coordination request.", href: "/project-head/conflicts", action: "Review conflicts", priority: 5, tone: "warning" },
       { label: "Approaching or overdue deadlines", count: data.counts.attentionActions, context: "Open workflow actions are due within the next 24 hours.", href: "/project-head/notifications", action: "Review deadlines", priority: 6, tone: "danger" },
@@ -122,40 +122,44 @@ export default function ProjectHeadCommandCentrePage() {
       id: ticket.id, kind: "ticket" as const, reference: ticket.referenceNumber, title: ticket.title,
       origin: "Citizen reported", location: `${ticket.ward.name} · ${ticket.category.name}`,
       age: relativeDate(ticket.createdAt), owner: ticket.action?.responsibleUser.displayName ?? ticket.action?.responsibleUser.email ?? ticket.assignedAgency?.name,
-      state: workStateLabel(ticket.state), action: ["ROUTED_TO_AGENCY", "INSPECTION_DUE"].includes(ticket.state) ? "Assign Inspection" : "Review Inspection",
+      state: workStateLabel(ticket.state), action: ["ROUTED_TO_AGENCY", "INSPECTION_DUE"].includes(ticket.state) ? "Assign inspection" : "Review inspection",
       rank: ticket.state === "INSPECTION_COMPLETE" ? 1 : 0,
     }));
     const projectItems = projects.filter((project) => ["CREATED", "COMPLETED", "AWAITING_VERIFICATION"].includes(project.state) || project.conflictCount + project.roadConflictCount > project.coordinationCount).map((project) => ({
       id: project.id, kind: "project" as const, reference: project.referenceNumber, title: project.title,
       origin: project.origin === "CITIZEN_REPORTED" ? "Citizen reported" : "Agency planned", location: project.locationLabel ?? project.ticket?.ward.name ?? "Location pending",
       age: relativeDate(project.updatedAt), owner: project.engineer?.displayName ?? project.engineer?.email ?? "Unassigned",
-      state: workStateLabel(project.state), action: project.state === "CREATED" ? "Assign Engineer" : ["COMPLETED", "AWAITING_VERIFICATION"].includes(project.state) ? "Review Completion" : "Open Coordination",
+      state: workStateLabel(project.state), action: project.state === "CREATED" ? "Assign engineer" : ["COMPLETED", "AWAITING_VERIFICATION"].includes(project.state) ? "Review completion" : "Coordinate",
       rank: project.state === "CREATED" ? 2 : project.state === "COMPLETED" ? 3 : 4,
     }));
     return [...ticketItems, ...projectItems].sort((left, right) => left.rank - right.rank).slice(0, 6);
   }, [projects, tickets]);
 
+  const activeWork = useMemo(() => projects
+    .filter((project) => ["UPTAKEN", "TIMELINE_SET", "CONFLICT_CHECKED", "READY_TO_START", "ACTIVE", "MODIFIED"].includes(project.state))
+    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
+    .slice(0, 6), [projects]);
+
   const selected = works.find(({ id }) => id === selectedId);
   return <div className="ph-command-page">
-    <PageHeader title="Command Centre" description={data ? `${data.agency.name} · What requires my decision today?` : "What requires my decision today?"} action={<Link className="portal-primary-button" href="/project-head/projects/new">+ Register Planned Work</Link>} />
+    <PageHeader title="Today" description={data ? `${data.agency.name} · Decisions and work that need attention now.` : "Decisions and work that need attention now."} action={<Link className="portal-primary-button" href="/project-head/projects/new">Register planned work</Link>} />
     {error ? <p className="error" role="alert">{error}</p> : null}
     {!data && !error ? <p className="portal-muted" role="status">Loading current operations…</p> : null}
     {data ? <>
       <div className="ph-command-primary-grid">
         <section className="ph-decision-register" aria-labelledby="decision-title">
-          <header><div><p className="ph-operational-label">Needs decision</p><h2 id="decision-title">Priority actions</h2></div><strong>{attention.reduce((sum, item) => sum + item.count, 0)} open</strong></header>
-          {quickActions.length ? <div className="ph-action-card-list">{quickActions.map((item) => <ActionCard actionLabel={item.action} age={item.age} key={`${item.kind}:${item.id}`} location={item.location} onOpen={() => setQuickRecord({ id: item.id, kind: item.kind })} origin={item.origin} owner={item.owner} reference={item.reference} state={item.state} title={item.title} tone={item.action === "Open Coordination" ? "warning" : item.action === "Review Completion" ? "success" : "info"} />)}</div> : attention.length ? <ol>{attention.slice(0, 6).map((item) => <li data-tone={item.tone} key={item.label}><span className="ph-decision-count">{item.count}</span><div><strong>{item.label}</strong><p>{item.context}</p></div><Link href={item.href}>{item.action} →</Link></li>)}</ol> : <EmptyState title="No immediate decisions" description="New inspection, coordination, conflict, and closure decisions will appear here." />}
+          <header><div><h2 id="decision-title">Needs your attention</h2><p>Items that require a Project Head decision.</p></div><strong>{attention.reduce((sum, item) => sum + item.count, 0)} open</strong></header>
+          {quickActions.length ? <div className="ph-action-card-list">{quickActions.map((item) => <ActionCard actionLabel={item.action} age={item.age} key={`${item.kind}:${item.id}`} location={item.location} onOpen={() => setQuickRecord({ id: item.id, kind: item.kind })} origin={item.origin} owner={item.owner} reference={item.reference} state={item.state} title={item.title} tone={item.action === "Coordinate" ? "warning" : item.action === "Review completion" ? "success" : "info"} />)}</div> : attention.length ? <ol>{attention.slice(0, 6).map((item) => <li data-tone={item.tone} key={item.label}><span className="ph-decision-count">{item.count}</span><div><strong>{item.label}</strong><p>{item.context}</p></div><Link href={item.href}>{item.action} →</Link></li>)}</ol> : <EmptyState title="No immediate decisions" description="New inspection, coordination, conflict, and closure decisions will appear here." />}
         </section>
 
-        <section className="ph-command-map" aria-labelledby="map-title">
-          <header><div><p className="ph-operational-label">Live operations</p><h2 id="map-title">Work map overview</h2></div><Link href="/project-head/work-calendar">Open full map ↗</Link></header>
-          <WorkMap bounds={mapBounds} onBoundsChange={setMapBounds} onSelect={setSelectedId} selectedId={selectedId} works={works} />
-          {selected ? <div className="ph-command-map-selection"><span><strong>{selected.title}</strong><small>{selected.agency.name} · {selected.locationLabel ?? selected.ward?.name ?? "Mapped work"}</small></span><Link href={selected.agency.id === data.agency.id ? `/project-head/projects/${selected.id}` : "/project-head/work-calendar"}>{selected.agency.id === data.agency.id ? "Open work" : "View read-only"} →</Link></div> : <p className="ph-command-map-caption">Select a mapped work to see the responsible agency and open the record.</p>}
+        <section className="ph-active-work" aria-labelledby="active-work-title">
+          <header><div><h2 id="active-work-title">Active work</h2><p>Current delivery and near-term starts for your agency.</p></div><Link href="/project-head/projects?view=ACTIVE">Open work →</Link></header>
+          {activeWork.length ? <ol>{activeWork.map((project) => <li key={project.id}><span className="ph-work-identity"><code>{project.referenceNumber}</code><strong>{project.ticket?.title ?? project.title}</strong><small>{project.locationLabel ?? project.ticket?.ward.name ?? "Location pending"}</small></span><WorkStatus state={project.state} /><span className="ph-work-owner">{project.engineer?.email ?? "Unassigned"}<small>{project.plannedEnd ? `Due ${new Date(project.plannedEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : "Dates not set"}</small></span><Link className="ph-row-action" href={`/project-head/projects/${project.id}`}>Open work →</Link></li>)}</ol> : <EmptyState title="No active work" description="Assigned and scheduled work will appear here." />}
         </section>
       </div>
 
       <section className="ph-live-operations" aria-labelledby="live-title">
-        <header><p className="ph-operational-label" id="live-title">Live operations</p><span>Agency-scoped operational status</span></header>
+        <header><h2 id="live-title">This week</h2><span>Agency workload at a glance</span></header>
         <dl>
           <div><dt>Active civic works</dt><dd>{data.counts.activeProjects}</dd></div>
           <div><dt>Starting soon</dt><dd>{data.counts.startingSoon}</dd><small>Next 7 days</small></div>
@@ -163,6 +167,12 @@ export default function ProjectHeadCommandCentrePage() {
           <div><dt>Active Engineers</dt><dd>{data.counts.activeEngineers}</dd></div>
           <div data-tone={data.counts.currentConflicts ? "warning" : "standard"}><dt>Current conflicts</dt><dd>{data.counts.currentConflicts}</dd><small>Advisory</small></div>
         </dl>
+      </section>
+
+      <section className="ph-command-map" aria-labelledby="map-title">
+        <header><div><h2 id="map-title">Work map overview</h2><p>Current and upcoming work across municipal agencies.</p></div><Link href="/project-head/work-calendar">Open Schedule →</Link></header>
+        <WorkMap bounds={mapBounds} onBoundsChange={setMapBounds} onSelect={setSelectedId} selectedId={selectedId} works={works} />
+        {selected ? <div className="ph-command-map-selection"><span><strong>{selected.title}</strong><small>{selected.agency.name} · {selected.locationLabel ?? selected.ward?.name ?? "Mapped work"}</small></span><Link href={selected.agency.id === data.agency.id ? `/project-head/projects/${selected.id}` : "/project-head/work-calendar"}>{selected.agency.id === data.agency.id ? "Open work" : "View read-only"} →</Link></div> : <p className="ph-command-map-caption">Select mapped work for responsibility and timing. Open Schedule for the full operational view.</p>}
       </section>
 
       <section className="ph-automation-feed" aria-labelledby="automation-title">

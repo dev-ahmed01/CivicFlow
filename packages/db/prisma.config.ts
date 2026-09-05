@@ -1,8 +1,13 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, env } from "prisma/config";
 
-if (!process.env.DATABASE_URL) {
-  process.loadEnvFile(resolve(__dirname, "../../.env"));
+const localEnvPath = resolve(__dirname, "../../.env");
+
+// Local development may use the repository-root .env.
+// Production/Docker should receive DATABASE_URL from the environment.
+if (!process.env.DATABASE_URL && existsSync(localEnvPath)) {
+  process.loadEnvFile(localEnvPath);
 }
 
 export default defineConfig({

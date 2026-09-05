@@ -41,7 +41,7 @@ export default function TeamsPage() {
   }, { available: 0, atCapacity: 0 }), [engineers, workload]);
 
   return <>
-    <PageHeader title="Team & Capacity" description="Engineer capacity, current civic work, reassignment decisions, blockers, and next deadlines." />
+    <PageHeader title="Team" description="Engineer capacity, current work, assignment pressure, and next deadlines." />
     {error ? <p className="error" role="alert">{error}</p> : null}
     <p className="ph-team-summary">{engineers.length} engineer{engineers.length === 1 ? "" : "s"} · {capacity.available} available · {capacity.atCapacity} at capacity</p>
     <section className="ph-work-toolbar ph-team-toolbar"><label><span>Search engineers</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name or email" /></label></section>
