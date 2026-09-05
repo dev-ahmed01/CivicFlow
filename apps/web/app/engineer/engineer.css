@@ -146,7 +146,7 @@
 /* Fixed navigation: the same sidebar is used inside the mobile drawer. */
 .engineer-shell .portal-sidebar { background: var(--engineer-sidebar); position: fixed; inset: 0 auto 0 0; width: var(--engineer-sidebar-width); height: 100dvh; min-height: 0; padding: 30px 19px 28px; z-index: 50; overflow-y: auto; }
 .engineer-shell .portal-product-mark { position: relative; padding-left: 20px; gap: 0; flex-shrink: 0; text-decoration: none; }
-.engineer-shell .portal-product-mark > span:last-child { display: grid; gap: 1px; }
+.engineer-shell .portal-product-mark > span:last-child { display: grid; gap: 1px; width: auto; height: auto; background: transparent; border-radius: 0; justify-items: start; }
 .engineer-shell .portal-logo-mark { position: absolute; left: 0; top: 0; width: 35px; height: 39px; border: 1px solid #729d89; border-radius: 6px; background: transparent; }
 .engineer-shell .portal-product-mark strong, .engineer-shell .portal-product-mark b { color: white; font-size: 22px; font-weight: 750; line-height: 1; letter-spacing: -.7px; }
 .engineer-shell .portal-role { display: block; color: #e4efe8; font-size: 13px; letter-spacing: .4px; margin: 14px 0 42px 29px; white-space: nowrap; }
@@ -326,6 +326,8 @@
   .engineer-drawer-backdrop { position: fixed; inset: 0; background: #10251ac0; z-index: 60; border: 0; padding: 0; }
   .engineer-drawer-close { display: flex; position: absolute; top: 10px; right: 13px; justify-content: center; align-items: center; background: transparent; color: white; border: 0; width: 44px; height: 44px; }
   .engineer-shell .portal-product-mark, .engineer-shell .portal-role, .engineer-shell .portal-nav-group > p, .engineer-shell .portal-logout { display: flex; }
+  /* Override the shared compact-navigation rule for the Engineer drawer. */
+  .engineer-shell .portal-sidebar .portal-logout { display: flex !important; }
   .engineer-shell .portal-sidebar nav, .engineer-shell .portal-nav-group:first-child, .engineer-shell .portal-nav-group:nth-child(2) { display: grid; grid-template-columns: 1fr; width: auto; }
   .engineer-shell .portal-sidebar nav a { flex-direction: row; min-width: 0; min-height: 45px; font-size: 14px; padding: 11px 12px; border-radius: 7px; }
   .engineer-shell .portal-sidebar .nav-notification-bell > strong { position: static; }
