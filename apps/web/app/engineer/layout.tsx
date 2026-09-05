@@ -1,3 +1,4 @@
+import "./engineer.css";
 import type { ReactNode } from "react";
 import { EngineerShell } from "./_components/engineer-shell";
 

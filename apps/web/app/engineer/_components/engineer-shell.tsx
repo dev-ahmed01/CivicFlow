@@ -34,15 +34,15 @@ export function EngineerShell({ children }: { children: ReactNode }) {
   if (!ready) return <main className="portal-loading">Opening field operations…</main>;
 
   return <div className="portal-shell engineer-shell">
-    <aside className="portal-sidebar">
+    <a className="engineer-skip" href="#engineer-main">Skip to content</a><aside className="portal-sidebar">
       <Link className="portal-brand portal-product-mark" href="/engineer"><span className="portal-logo-mark">C</span><span><strong>CITY</strong><b>CONNECT</b></span></Link>
       <p className="portal-role">Executive Engineer</p>
       <nav aria-label="Engineer navigation">
-        <div className="portal-nav-group"><p>Work</p>{workLinks.map((item) => <Link className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
+        <div className="portal-nav-group"><p>Work</p>{workLinks.map((item) => <Link aria-current={item.active(pathname) ? "page" : undefined} className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
         <div className="portal-nav-group"><p>Account</p><NotificationBell active={pathname === "/engineer/notifications"} apiFetch={apiFetch} href="/engineer/notifications" label="Notifications" />{accountLinks.map((item) => <Link className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
       </nav>
       <button className="portal-logout" type="button" onClick={() => void logout().finally(() => router.replace("/login"))}><CitizenIcon name="logout" size={19} />Sign out</button>
     </aside>
-    <main className="portal-content">{children}</main>
+    <main className="portal-content" id="engineer-main">{children}</main>
   </div>;
 }

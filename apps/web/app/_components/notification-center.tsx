@@ -88,6 +88,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
   showFilters: boolean;
   variant?: NotificationVariant;
 }) {
+  const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<ClientNotification[]>([]);
   const [filter, setFilter] = useState<NotificationFilter>("all");
   const [loading, setLoading] = useState(true);
@@ -102,6 +103,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
     try {
       const result = await apiFetch<{ notifications: ClientNotification[]; unreadCount: number; pagination: PaginationMeta }>(`/notifications?page=${page}&limit=20`);
       setNotifications(result.notifications.map((item) => ({ ...item, read: true })));
+      setUnreadCount(result.unreadCount);
       setPagination(result.pagination);
       const unread = result.notifications.filter((item) => !item.read);
       if (unread.length > 0) await apiFetch("/notifications/read", { method: "PATCH", body: JSON.stringify({ ids: unread.map(({ id }) => id) }) });
@@ -123,7 +125,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
   }, [filter, notifications]);
 
   return <section className={`notification-page ${variant === "citizen" ? "cf-notification-page" : ""} ${variant === "portal-inline" ? "portal-notification-page" : ""}`}>
-    <div className="portal-heading"><div><p className="eyebrow">Updates</p><h1>Notifications</h1><p>Everything that needs your attention, newest first.</p></div></div>
+    <div className="portal-heading"><div><p className="eyebrow">Updates</p><h1>Notifications</h1><p>Everything that needs your attention, newest first.</p></div>{role === "ENGINEER" ? <div className="engineer-dependency-summary"><strong>{unreadCount}</strong><span>unread on arrival</span></div> : null}</div>
     {showFilters ? <div aria-label="Notification filters" className="notification-filters" role="tablist">
       {filters.map((item) => <button aria-selected={filter === item.id} className={filter === item.id ? "active" : ""} key={item.id} onClick={() => setFilter(item.id)} role="tab" type="button">{item.label}</button>)}
     </div> : null}
@@ -139,7 +141,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
             return <div className="cf-notification-row notification-cluster" key={run.id}>
               <span aria-hidden="true" className={`cv-notification-icon ${display.tone}`}>{display.icon}</span>
               <span className="cv-notification-copy"><strong>{groupMessage(run.type, run.items.length, display.message)}</strong><small>{relativeNotificationTime(run.items[0]!.createdAt)} · {run.items.length} individual updates</small></span>
-              <ActionButton expanded={expanded} onClick={() => setExpandedRunId(expanded ? undefined : run.id)}>{expanded ? "Collapse" : "Expand"}</ActionButton>
+              <ActionButton expanded={expanded} onClick={() => setExpandedRunId(expanded ? undefined : run.id)}>{expanded ? "Collapse" : role === "ENGINEER" ? "View details" : "Expand"}</ActionButton>
               {expanded ? <div className="notification-cluster-details">{run.items.map((item) => {
                 const href = contextDestination(notificationDestination(item, role), variant);
                 return <article key={item.id}><div><strong>{payloadContext(item.payload)}</strong><small>{new Date(item.createdAt).toLocaleString("en-IN")}</small></div>{href ? <ActionButton href={href}>Open update</ActionButton> : null}</article>;
