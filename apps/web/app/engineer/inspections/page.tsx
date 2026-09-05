@@ -1,41 +1,45 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import type { InspectionDetail } from "@civicos/shared";
 import { usePortalPolling } from "../../_lib/portal-refresh";
+import { PortalStatePill } from "../../_components/ui";
+import { EngineerHeader, EngineerLoading, EngineerTip, engineerDate } from "../_components/engineer-ui";
+import { inspectionFilters, matchesInspectionFilter, isInspectionOpen, inspectionAction, type InspectionFilter } from "../_lib/presentation";
 import { apiFetch } from "../_lib/api";
-
-const states = ["ALL", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "SUBMITTED"] as const;
-
-function dateLabel(value: string | Date): string {
-  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-}
 
 export default function EngineerInspectionsPage() {
   const [items, setItems] = useState<InspectionDetail[]>([]);
-  const [filter, setFilter] = useState<(typeof states)[number]>("ALL");
+  const [filter, setFilter] = useState<InspectionFilter>("All");
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const load = useCallback(async () => {
     try {
-      const result = await apiFetch<{ inspections: InspectionDetail[] }>("/inspections");
-      setItems(result.inspections);
+      setItems((await apiFetch<{ inspections: InspectionDetail[] }>("/inspections")).inspections);
       setError(undefined);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load inspections"); }
+    finally { setLoading(false); }
   }, []);
   usePortalPolling(load);
-  const visible = useMemo(() => items.filter((item) => filter === "ALL" || item.status === filter), [filter, items]);
+  const now = Date.now();
+  const visible = items.filter((item) => matchesInspectionFilter(item, filter, now));
+  const due = items.filter((item) => isInspectionOpen(item) && new Date(item.deadline).getTime() <= new Date().setHours(23, 59, 59, 999)).length;
 
-  return <div className="field-module">
-    <header className="portal-heading"><div><p className="eyebrow">Field assessment</p><h1>Inspections</h1><p>Confirm the issue on site, capture structured evidence, and return a recommendation to your Project Head.</p></div></header>
-    <div className="engineer-work-tabs" role="tablist" aria-label="Inspection states">{states.map((state) => <button aria-selected={filter === state} className={filter === state ? "active" : ""} key={state} onClick={() => setFilter(state)} role="tab" type="button">{state === "ALL" ? "All" : state.replaceAll("_", " ")}</button>)}</div>
+  return <div className="field-module engineer-inspections">
+    <EngineerHeader eyebrow="Field inspections" title="Inspections" description="Review assigned site inspections and submit field evidence." count={loading ? undefined : due} countLabel="due" />
+    <div className="engineer-work-tabs" role="group" aria-label="Inspection filters">{inspectionFilters.map((item) => <button aria-pressed={filter === item} className={filter === item ? "active" : ""} key={item} onClick={() => setFilter(item)} type="button">{item}</button>)}</div>
     {error ? <p className="error" role="alert">{error}</p> : null}
-    <section className="field-record-list" aria-live="polite">{visible.map((inspection) => <Link className="field-record-row" href={`/engineer/inspections/${inspection.id}`} key={inspection.id}>
-      <span className={`field-state state-${inspection.status.toLowerCase()}`}>{inspection.status.replaceAll("_", " ")}</span>
-      <span><strong>{inspection.ticket.title}</strong><small>{inspection.ticket.referenceNumber} · {inspection.ticket.category.name}</small></span>
-      <span><strong>{inspection.ticket.ward.name}</strong><small>{inspection.ticket.address}</small></span>
-      <span><small>Deadline</small><strong>{dateLabel(inspection.deadline)}</strong></span>
-      <b aria-hidden="true">→</b>
-    </Link>)}{visible.length === 0 ? <div className="empty-state"><strong>No inspections in this state.</strong><span>Assignments from your agency appear here automatically.</span></div> : null}</section>
+    <section className="engineer-register" aria-label="Assigned inspections" aria-live="polite" aria-busy={loading}>
+      <header className="engineer-register-title"><h2>Site inspections</h2><span>{visible.length} records</span></header>
+      {loading ? <EngineerLoading label="Loading inspections" /> : visible.map((inspection) => <article className="engineer-inspection-record" key={inspection.id}>
+        <div className="engineer-record-state"><PortalStatePill state={inspection.status} />{matchesInspectionFilter(inspection, "Overdue", now) ? <small className="engineer-overdue">Overdue</small> : null}</div>
+        <div className="engineer-record-main"><h2>{inspection.ticket.title}</h2><p>{inspection.ticket.referenceNumber} &middot; {inspection.ticket.category.name}</p><span>{inspection.ticket.address}, {inspection.ticket.ward.name}</span><details className="engineer-row-disclosure"><summary>Assignment details</summary><dl><div><dt>Assigned on</dt><dd>{engineerDate(inspection.createdAt)}</dd></div><div><dt>Assigned by</dt><dd>{inspection.assignedBy.email}</dd></div><div><dt>Assigned engineer</dt><dd>{inspection.assignedEngineer.email}</dd></div></dl></details></div>
+        <div className="engineer-row-meta"><small>Deadline</small><strong>{engineerDate(inspection.deadline)}</strong><small>{new Date(inspection.deadline).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</small></div>
+        <Link className="engineer-action secondary" href={"/engineer/inspections/" + inspection.id}>{inspectionAction(inspection.status)} <span aria-hidden="true">&rsaquo;</span></Link>
+      </article>)}
+      {!loading && visible.length === 0 ? <p className="engineer-empty">No inspections match this filter. Agency assignments appear here automatically.</p> : null}
+    </section>
+    <EngineerTip>Confirm the reported issue on site and attach clear evidence before submitting your assessment.</EngineerTip>
   </div>;
 }

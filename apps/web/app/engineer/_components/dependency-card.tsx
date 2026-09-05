@@ -15,13 +15,14 @@ export function EngineerDependencyCard({ dependency, direction, projectHref, chi
   return <article className="engineer-connected-card">
     <aside className="engineer-connected-state"><PortalStatePill state={dependency.state} /></aside>
     <div className="engineer-connected-body">
-      <h2>{dependency.project.ticket?.title ?? "Agency coordination"}</h2>
+      <header><h2>{dependency.project.ticket?.title ?? "Agency coordination"}</h2><Link className="engineer-record-arrow" href={projectHref} aria-label={`Open ${dependency.project.ticket?.title ?? "connected project"}`}>&rarr;</Link></header>
       <div className="engineer-connected-agencies">
         <div><small>Primary agency</small><strong>{dependency.requestingAgency.name}</strong></div>
         <span aria-hidden="true">⇄</span>
         <div><small>Dependency agency</small><strong>{dependency.respondingAgency.name}</strong></div>
         <div><small>Connected on</small><strong>{date(dependency.createdAt)}</strong></div>
         <div><small>Last response</small><strong>{dependency.respondedAt ? date(dependency.respondedAt) : "Awaiting response"}</strong></div>
+        <div className="engineer-connected-status"><small>Status</small><PortalStatePill state={dependency.state} /></div>
       </div>
       <p className="engineer-connected-requirement"><small>Requirement</small>{dependency.requirement}</p>
       <dl className="engineer-connected-meta">

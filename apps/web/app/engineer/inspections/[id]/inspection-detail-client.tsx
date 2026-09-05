@@ -46,6 +46,7 @@ export function InspectionDetailClient({ inspectionId }: { inspectionId: string 
     finally { setBusy(false); }
   };
 
+  if (!inspection && error) return <div><Link className="back-link" href="/engineer/inspections">Back to inspections</Link><p className="error" role="alert">{error}</p></div>;
   if (!inspection) return <main className="portal-loading">Opening inspection…</main>;
   const editable = ["ACCEPTED", "IN_PROGRESS"].includes(inspection.status);
   return <div className="field-module inspection-detail">

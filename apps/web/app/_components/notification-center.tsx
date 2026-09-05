@@ -125,7 +125,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
   }, [filter, notifications]);
 
   return <section className={`notification-page ${variant === "citizen" ? "cf-notification-page" : ""} ${variant === "portal-inline" ? "portal-notification-page" : ""}`}>
-    <div className="portal-heading"><div><p className="eyebrow">Updates</p><h1>Notifications</h1><p>Everything that needs your attention, newest first.</p></div>{role === "ENGINEER" ? <div className="engineer-dependency-summary"><strong>{unreadCount}</strong><span>unread on arrival</span></div> : null}</div>
+    <div className="portal-heading"><div><p className="eyebrow">Updates</p><h1>Notifications</h1><p>Everything that needs your attention, newest first.</p></div>{role === "ENGINEER" ? <div className="engineer-dependency-summary" title="Unread notifications when this page was opened"><strong>{loading ? "—" : unreadCount}</strong><span>unread</span></div> : null}</div>
     {showFilters ? <div aria-label="Notification filters" className="notification-filters" role="tablist">
       {filters.map((item) => <button aria-selected={filter === item.id} className={filter === item.id ? "active" : ""} key={item.id} onClick={() => setFilter(item.id)} role="tab" type="button">{item.label}</button>)}
     </div> : null}
