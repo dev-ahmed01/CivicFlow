@@ -8,6 +8,8 @@ import { usePortalPolling } from "../../_lib/portal-refresh";
 import { apiFetch } from "../_lib/api";
 import { loadAllAgencyProjects } from "../_lib/paginated-projects";
 import { ProjectHeadRecordQuickView, type QuickRecord } from "../_components/record-quick-view";
+import { getShortWorkLocation } from "../_lib/work-summary";
+import { WorkSummary } from "../_components/work-summary";
 import { WorkStatus } from "../_components/work-ui";
 
 export default function TeamsPage() {
@@ -30,7 +32,7 @@ export default function TeamsPage() {
         apiFetch<{ requests: typeof reassignments }>("/project-reassignment-requests"),
         apiFetch<{ blockers: typeof blockers }>("/project-blockers"),
       ]);
-      setEngineers(team.engineers); setProjects(work); setReassignments(reassignmentResult.requests); setBlockers(blockerResult.blockers); setError(undefined);
+      setEngineers([...team.engineers].sort((a, b) => (a.displayName ?? a.email ?? "").localeCompare(b.displayName ?? b.email ?? "", undefined, { numeric: true }))); setProjects(work); setReassignments(reassignmentResult.requests); setBlockers(blockerResult.blockers); setError(undefined);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load the agency team"); }
     finally { setLoading(false); }
   }, []);
@@ -56,8 +58,8 @@ export default function TeamsPage() {
       </section>
       <section className="ph-surface ph-engineer-detail" aria-label="Selected engineer">{selected ? <><header><span className="ph-avatar">{initials(selected)}</span><div><h2>{selected.displayName ?? selected.email ?? "Engineer"}</h2><p>Engineer</p></div><span className="ph-engineer-availability">{selected.loadLabel}</span></header>
         <div className="ph-engineer-metrics"><div><strong>{assigned.length}</strong><span>Current works</span></div><div><strong>{selected.activeWorks}</strong><span>Active works</span></div><div><strong>{selected.pendingAssignments}</strong><span>Pending assignments</span></div><div><strong className="ph-deadline-value">{selected.nextDeadline ? new Date(selected.nextDeadline).toLocaleDateString("en-IN", {day:"numeric", month:"short",year:"numeric"}) : "None due"}</strong><span>Next deadline</span></div></div>
-        <div className="ph-engineer-work-actions"><section><h3>Current assigned works ({assigned.length})</h3>{assigned.map((project) => <button className="ph-engineer-work" key={project.id} onClick={() => setQuickRecord({id: project.id, kind:"project"})} type="button"><span><strong>{project.title}</strong><small>{project.referenceNumber} · {project.locationLabel ?? project.ticket?.ward.name ?? "Location pending"}</small></span><WorkStatus state={project.state} /></button>)}{!assigned.length ? <EmptyState title="No current assigned work" description="New assignments will appear here." /> : null}</section><aside><h3>Quick actions</h3><button className="portal-primary-button" onClick={() => setAssignOpen((open) => !open)} type="button">Assign work</button><Link className="ph-secondary-button" href="/project-head/work-calendar">View schedule</Link></aside></div>
-        {assignOpen ? <section className="ph-team-assignment"><h3>Choose work to assign</h3><p>Select a work to open its existing assignment review.</p>{projects.filter((project) => project.state === "CREATED").map((project) => <button className="ph-engineer-work" type="button" key={project.id} onClick={() => setQuickRecord({id:project.id,kind:"project"})}>{project.referenceNumber} · {project.title} →</button>)}{!projects.some((project) => project.state === "CREATED") ? <EmptyState title="No work awaiting assignment" description="Register planned work or review a completed inspection to prepare new work." /> : null}</section> : null}
+        <div className="ph-engineer-work-actions"><section><h3>Current assigned works ({assigned.length})</h3>{assigned.map((project) => <button className="ph-engineer-work" key={project.id} onClick={() => setQuickRecord({id: project.id, kind:"project"})} type="button"><WorkSummary reference={project.referenceNumber} title={project.title} location={getShortWorkLocation(project)} /><WorkStatus state={project.state} /></button>)}{!assigned.length ? <EmptyState title="No current assigned work" description="New assignments will appear here." /> : null}</section><aside><h3>Quick actions</h3><button className="portal-primary-button" onClick={() => setAssignOpen((open) => !open)} type="button">Assign work</button><Link className="ph-secondary-button" href="/project-head/work-calendar">View schedule</Link></aside></div>
+        {assignOpen ? <section className="ph-team-assignment"><h3>Choose work to assign</h3><p>Select a work to open its existing assignment review.</p>{projects.filter((project) => project.state === "CREATED").map((project) => <button className="ph-engineer-work" type="button" key={project.id} onClick={() => setQuickRecord({id:project.id,kind:"project"})}><WorkSummary reference={project.referenceNumber} title={project.title} location={getShortWorkLocation(project)} /><span aria-hidden="true">&rarr;</span></button>)}{!projects.some((project) => project.state === "CREATED") ? <EmptyState title="No work awaiting assignment" description="Register planned work or review a completed inspection to prepare new work." /> : null}</section> : null}
         {selected.email ? <footer className="ph-engineer-contact"><h3>Contact</h3><a href={"mailto:" + selected.email}>{selected.email}</a></footer> : null}
       </> : <EmptyState title="Select an engineer" description="Their current work and assignment details will appear here." />}</section>
     </div>

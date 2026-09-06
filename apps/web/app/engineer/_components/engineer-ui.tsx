@@ -12,6 +12,15 @@ export function EngineerTip({ children }: { children: ReactNode }) {
   return <aside className="engineer-tip"><span className="engineer-symbol green"><EngineerSymbol name="tip" /></span><p><strong>Tip: </strong>{children}</p></aside>;
 }
 
+export function EngineerStatCard({ count, label, note, icon, tone, selected, onClick, href }: {
+  count: number | undefined; label: string; note: string; icon: string; tone: string;
+  selected?: boolean; onClick?: () => void; href?: string;
+}) {
+  const content = <><span className={`engineer-symbol ${tone}`}><EngineerSymbol name={icon} /></span><div><strong>{count ?? "—"}</strong><span>{label}</span><small>{note}</small></div></>;
+  const className = `engineer-stat engineer-stat-control${selected ? " selected" : ""}`;
+  return href ? <Link className={className} href={href}>{content}</Link> : <button className={className} aria-pressed={selected} type="button" onClick={onClick}>{content}</button>;
+}
+
 export function EngineerSummary({ count, label }: { count: number | undefined; label: string }) {
   return <div className="engineer-dependency-summary"><strong>{count ?? "—"}</strong><span>{label}</span></div>;
 }

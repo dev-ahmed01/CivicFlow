@@ -24,8 +24,8 @@ const prisma = new PrismaClient();
 const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
 const demoSeedMode = process.env.DEMO_SEED_MODE ?? "reset";
 
-if (demoSeedMode !== "reset" && demoSeedMode !== "if_empty") {
-  throw new Error("DEMO_SEED_MODE must be reset or if_empty");
+if (demoSeedMode !== "reset" && demoSeedMode !== "if_empty" && demoSeedMode !== "team_only") {
+  throw new Error("DEMO_SEED_MODE must be reset, if_empty, or team_only");
 }
 
 if (process.env.NODE_ENV === "production" && demoInternalPassword === "CivicOS@123") {
@@ -819,7 +819,36 @@ async function seedPlannedCivicWorks(): Promise<void> {
   }
 }
 
+// Preserve existing IDs and login emails because assignments and demo scripts use them.
+const pwdDemoEngineers = [
+  { id: "40000000-0000-4000-8000-000000000201", displayName: "Engineer - 01", email: "engineer.pwd@civicos.local" },
+  { id: "40000000-0000-4000-8000-000000000204", displayName: "Engineer - 02", email: "engineer.bbmp@civicos.local" },
+  { id: "40000000-0000-4000-8000-000000000205", displayName: "Engineer - 03", email: "engineer03.pwd@civicos.local" },
+];
+
+async function seedPwdDemoEngineers(passwordHash: string): Promise<void> {
+  await prisma.$transaction(async (transaction) => {
+    for (const engineer of pwdDemoEngineers) {
+      await transaction.user.upsert({
+        where: { id: engineer.id },
+        update: { displayName: engineer.displayName },
+        create: { ...engineer, role: UserRole.ENGINEER, agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
+      });
+    }
+    // Retire only the unused fourth fixture from earlier seeds; never remove its history.
+    const retiredId = "40000000-0000-4000-8000-000000000206";
+    const retired = await transaction.user.findUnique({ where: { id: retiredId }, select: { _count: { select: { engineeringProjects: true, assignedInspections: true, assignedDependencies: true, coordinationAssignments: true, responsibleActions: true } } } });
+    if (retired && Object.values(retired._count).some((count) => count > 0)) throw new Error("The retired fourth demo engineer has assignments; preserve them and reconcile before seeding the three-person team.");
+    await transaction.user.updateMany({ where: { id: retiredId, agencyId: ids.agencies.pwd, role: UserRole.ENGINEER, deactivatedAt: null }, data: { deactivatedAt: new Date() } });
+  });
+}
+
 async function main(): Promise<void> {
+  if (demoSeedMode === "team_only") {
+    await seedPwdDemoEngineers(await bcrypt.hash(demoInternalPassword, 12));
+    console.log("Seeded Engineer - 01, Engineer - 02, Engineer - 03 without resetting work or coordination.");
+    return;
+  }
   // Ward defaults must still be reconciled when startup seeding skips the
   // destructive demo-fixture reset on an already populated database.
   await seedWards();
@@ -882,12 +911,8 @@ async function main(): Promise<void> {
     { id: "40000000-0000-4000-8000-000000000102", role: UserRole.PROJECT_HEAD, displayName: "Farah Khan", email: "head.bwssb@civicos.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000103", role: UserRole.PROJECT_HEAD, displayName: "Ananya Rao", email: "head.bescom@civicos.local", agencyId: ids.agencies.bescom, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000104", role: UserRole.PROJECT_HEAD, displayName: "Prakash Menon", email: "head.bbmp@civicos.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
-    { id: "40000000-0000-4000-8000-000000000201", role: UserRole.ENGINEER, displayName: "Arjun Rao", email: "engineer.pwd@civicos.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000202", role: UserRole.ENGINEER, displayName: "Neha Kulkarni", email: "engineer.bwssb@civicos.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000203", role: UserRole.ENGINEER, displayName: "Sanjay Prasad", email: "engineer.bescom@civicos.local", agencyId: ids.agencies.bescom, passwordHash, mustResetPassword: false },
-    { id: "40000000-0000-4000-8000-000000000204", role: UserRole.ENGINEER, displayName: "Rohan Srinivas", email: "engineer.bbmp@civicos.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
-    { id: "40000000-0000-4000-8000-000000000205", role: UserRole.ENGINEER, displayName: "Kavya Nair", email: "kavya.nair@bbmp.cityconnect.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
-    { id: "40000000-0000-4000-8000-000000000206", role: UserRole.ENGINEER, displayName: "Imran Ahmed", email: "imran.ahmed@bbmp.cityconnect.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000207", role: UserRole.ENGINEER, displayName: "Deepa Shetty", email: "deepa.shetty@bwssb.cityconnect.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000208", role: UserRole.ENGINEER, displayName: "Nikhil Gowda", email: "nikhil.gowda@bwssb.cityconnect.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: false },
   ];
@@ -908,6 +933,7 @@ async function main(): Promise<void> {
     }
   }
 
+  await seedPwdDemoEngineers(passwordHash);
   await seedEngineerWorkflowDemo();
   await seedGeneralEndToEndDemo();
   await seedRoadCuttingDemo();

@@ -1,7 +1,7 @@
 import "./engineer.css";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { EngineerShell } from "./_components/engineer-shell";
 
 export default function EngineerLayout({ children }: { children: ReactNode }) {
-  return <EngineerShell>{children}</EngineerShell>;
+  return <Suspense fallback={<main className="portal-loading">Opening field operations…</main>}><EngineerShell>{children}</EngineerShell></Suspense>;
 }

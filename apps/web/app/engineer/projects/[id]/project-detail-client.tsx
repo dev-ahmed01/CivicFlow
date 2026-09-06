@@ -1,5 +1,7 @@
 "use client";
 
+import { EngineerBackButton } from "../../_components/back-button";
+
 import type { EngineerProjectDetail, ProjectConflict } from "@civicos/shared";
 import Link from "next/link";
 import { useCallback, useRef, useState, type FormEvent } from "react";
@@ -111,7 +113,7 @@ export function EngineerProjectDetailClient({ projectId }: { projectId: string }
   const canEditTimeline = project.editable && ["UPTAKEN", "READY_TO_START", "ACTIVE", "MODIFIED"].includes(project.state);
 
   return <>
-    <header className="portal-heading detail-heading"><div><Link className="back-link" href="/engineer/projects">← My Work</Link><p className="eyebrow">{project.editable ? "Owned project" : "Geographic project · Read-only"}</p><h1>{project.title}</h1><p>{project.agency.name} · {project.ticket?.ward.name ?? "Ward unavailable"}</p></div><PortalStatePill state={project.state} /></header>
+    <header className="portal-heading detail-heading"><div><EngineerBackButton fallback="/engineer/projects" /><p className="eyebrow">{project.editable ? "Owned project" : "Geographic project · Read-only"}</p><h1>{project.title}</h1><p>{project.agency.name} · {project.ticket?.ward.name ?? "Ward unavailable"}</p></div><PortalStatePill state={project.state} /></header>
     {error ? <p className="error" role="alert">{error}</p> : null}
     {!project.editable ? <p className="read-only-banner">You may view this project for area coordination. Only its assigned Engineer can edit it.</p> : null}
     {project.grievance ? <section className="portal-panel grievance-card-escalated"><p className="eyebrow">Linked grievance · {project.grievance.status.replaceAll("_", " ")}</p><h2>{project.grievance.reason.replaceAll("_", " ")}</h2><p>The responsible Project Head is reviewing this tracked escalation.</p></section> : null}

@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import { EngineerBackButton } from "../../_components/back-button";
+
 import Image from "next/image";
 import { useCallback, useState, type FormEvent } from "react";
 import type { InspectionDetail } from "@civicos/shared";
@@ -46,11 +47,11 @@ export function InspectionDetailClient({ inspectionId }: { inspectionId: string 
     finally { setBusy(false); }
   };
 
-  if (!inspection && error) return <div><Link className="back-link" href="/engineer/inspections">Back to inspections</Link><p className="error" role="alert">{error}</p></div>;
+  if (!inspection && error) return <div><EngineerBackButton fallback="/engineer/inspections" /><p className="error" role="alert">{error}</p></div>;
   if (!inspection) return <main className="portal-loading">Opening inspection…</main>;
   const editable = ["ACCEPTED", "IN_PROGRESS"].includes(inspection.status);
   return <div className="field-module inspection-detail">
-    <header className="portal-heading"><div><Link className="back-link" href="/engineer/inspections">← Inspections</Link><p className="eyebrow">{inspection.ticket.referenceNumber}</p><h1>{inspection.ticket.title}</h1><p>{inspection.ticket.address}</p></div><span className={`field-state state-${inspection.status.toLowerCase()}`}>{inspection.status.replaceAll("_", " ")}</span></header>
+    <header className="portal-heading"><div><EngineerBackButton fallback="/engineer/inspections" /><p className="eyebrow">{inspection.ticket.referenceNumber}</p><h1>{inspection.ticket.title}</h1><p>{inspection.ticket.address}</p></div><span className={`field-state state-${inspection.status.toLowerCase()}`}>{inspection.status.replaceAll("_", " ")}</span></header>
     {error ? <p className="error" role="alert">{error}</p> : null}
     <section className="inspection-context"><header><p className="eyebrow">Citizen issue context</p><h2>What was reported</h2></header><dl><div><dt>Category</dt><dd>{inspection.ticket.category.name}</dd></div><div><dt>Ward</dt><dd>{inspection.ticket.ward.name}</dd></div><div><dt>Road</dt><dd>{inspection.ticket.roadSegment?.roadName ?? "Not linked"}</dd></div><div><dt>Deadline</dt><dd>{new Date(inspection.deadline).toLocaleString("en-IN")}</dd></div></dl><div className="inspection-observations">{inspection.ticket.observations.map((item) => <figure key={item.id}><Image alt="Reported site evidence" height={320} src={item.imageUrl} unoptimized width={480} /><figcaption>{item.note ?? item.address ?? "Citizen evidence"}</figcaption></figure>)}</div></section>
     {inspection.status === "ASSIGNED" ? <section className="field-primary-action"><div><p className="eyebrow">Next action</p><h2>Accept the site inspection</h2><p>Accepting confirms that this inspection is assigned to you. It does not start civic work.</p></div><button className="primary-button" disabled={busy} onClick={() => void action("accept")} type="button">Accept Inspection</button></section> : null}

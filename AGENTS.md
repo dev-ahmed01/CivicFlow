@@ -52,3 +52,5 @@ _(Update this section as phases complete — Codex should read it to know what a
 - [x] SIH Role Redesign Phase 9 — Deterministic SIH demo and end-to-end validation
 
 - [x] Project Head approved-reference UI redesign — shared shell and all seven workspaces; web build/lint/typecheck, 20 web tests and 120 API tests pass. Manual data-dependent verification limits: `docs/project-head-redesign/README.md`.
+
+- [x] Project Head targeted UI/demo correction - lifecycle overflow removed; shared compact summaries and collision-free attention cards; three Roads demo engineers seeded without resetting work. Web typecheck/lint/build, 27 web tests, 120 API tests and 17 DB tests pass. Evidence and limits: docs/project-head-redesign/corrections.md.

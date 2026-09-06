@@ -7,6 +7,7 @@ import { apiFetch, getSession, logout } from "../_lib/api";
 import { NotificationBell } from "../../_components/notification-center";
 import { CitizenIcon, type CitizenIconName } from "../../_components/ui";
 import { EngineerSymbol } from "./engineer-ui";
+import { trackEngineerHistory } from "../_lib/navigation";
 
 const workLinks: Array<{ href: string; label: string; icon: CitizenIconName; active: (path: string) => boolean }> = [
   { href: "/engineer", label: "Today", icon: "clock", active: (path) => path === "/engineer" },
@@ -29,6 +30,8 @@ export function EngineerShell({ children }: { children: ReactNode }) {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const loginPage = pathname === "/engineer/login";
+
+  useEffect(() => trackEngineerHistory(), []);
 
   useEffect(() => {
     if (!loginPage && !getSession()) { router.replace("/engineer/login"); return; }

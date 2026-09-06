@@ -7,8 +7,9 @@ import {
   type ProjectHeadDashboardCounts,
   type ProjectListItem,
 } from "@civicos/shared";
-import { ActionCard } from "../_components/operational-ui";
-import { EmptyState, PageHeader, relativeDate } from "../_components/ui";
+import { AttentionCard } from "./_components/attention-card";
+import { getShortWorkLocation } from "./_lib/work-summary";
+import { EmptyState, PageHeader } from "../_components/ui";
 import { usePortalPolling } from "../_lib/portal-refresh";
 import { apiFetch } from "./_lib/api";
 import { loadAllAgencyProjects } from "./_lib/paginated-projects";
@@ -63,15 +64,13 @@ export default function ProjectHeadCommandCentrePage() {
   const quickActions = useMemo(() => {
     const ticketItems = tickets.filter((ticket) => ["ROUTED_TO_AGENCY", "INSPECTION_DUE", "INSPECTION_COMPLETE"].includes(ticket.state)).map((ticket) => ({
       id: ticket.id, kind: "ticket" as const, reference: ticket.referenceNumber, title: ticket.title,
-      origin: "Citizen reported", location: `${ticket.ward.name} · ${ticket.category.name}`,
-      age: relativeDate(ticket.createdAt), owner: ticket.action?.responsibleUser.displayName ?? ticket.action?.responsibleUser.email ?? ticket.assignedAgency?.name,
+      location: getShortWorkLocation(ticket),
       state: workStateLabel(ticket.state), action: ["ROUTED_TO_AGENCY", "INSPECTION_DUE"].includes(ticket.state) ? "Assign inspection" : "Review inspection",
       rank: ticket.state === "INSPECTION_COMPLETE" ? 1 : 0,
     }));
     const projectItems = projects.filter((project) => ["CREATED", "COMPLETED", "AWAITING_VERIFICATION"].includes(project.state) || project.conflictCount + project.roadConflictCount > project.coordinationCount).map((project) => ({
       id: project.id, kind: "project" as const, reference: project.referenceNumber, title: project.title,
-      origin: project.origin === "CITIZEN_REPORTED" ? "Citizen reported" : "Agency planned", location: project.locationLabel ?? project.ticket?.ward.name ?? "Location pending",
-      age: relativeDate(project.updatedAt), owner: project.engineer?.displayName ?? project.engineer?.email ?? "Unassigned",
+      location: getShortWorkLocation(project),
       state: workStateLabel(project.state), action: project.state === "CREATED" ? "Assign engineer" : ["COMPLETED", "AWAITING_VERIFICATION"].includes(project.state) ? "Review completion" : "Coordinate",
       rank: project.state === "CREATED" ? 2 : project.state === "COMPLETED" ? 3 : 4,
     }));
@@ -86,7 +85,7 @@ export default function ProjectHeadCommandCentrePage() {
       <div className="ph-command-primary-grid">
         <section className="ph-decision-register" aria-labelledby="decision-title">
           <header><div><h2 id="decision-title">Needs your attention</h2></div><Link href="/project-head/projects">{attention.reduce((sum, item) => sum + item.count, 0)} open &rarr;</Link></header>
-          {quickActions.length ? <div className="ph-action-card-list">{quickActions.map((item) => <ActionCard actionLabel={item.action} age={item.age} key={`${item.kind}:${item.id}`} location={item.location} onOpen={() => setQuickRecord({ id: item.id, kind: item.kind })} origin={item.origin} owner={item.owner} reference={item.reference} state={item.state} title={item.title} tone={item.action === "Coordinate" ? "warning" : item.action === "Review completion" ? "success" : "info"} />)}</div> : attention.length ? <ol>{attention.slice(0, 6).map((item) => <li data-tone={item.tone} key={item.label}><span className="ph-decision-count">{item.count}</span><div><strong>{item.label}</strong><p>{item.context}</p></div><Link href={item.href}>{item.action} →</Link></li>)}</ol> : <EmptyState title="No immediate decisions" description="New inspection, coordination, conflict, and closure decisions will appear here." />}
+          {quickActions.length ? <div className="ph-action-card-list">{quickActions.map((item) => <AttentionCard actionLabel={item.action} key={`${item.kind}:${item.id}`} location={item.location} onOpen={() => setQuickRecord({ id: item.id, kind: item.kind })} reference={item.reference} state={item.state} title={item.title} tone={item.action === "Coordinate" ? "warning" : item.action === "Review completion" ? "success" : "info"} />)}</div> : attention.length ? <ol>{attention.slice(0, 6).map((item) => <li data-tone={item.tone} key={item.label}><span className="ph-decision-count">{item.count}</span><div><strong>{item.label}</strong><p>{item.context}</p></div><Link href={item.href}>{item.action} →</Link></li>)}</ol> : <EmptyState title="No immediate decisions" description="New inspection, coordination, conflict, and closure decisions will appear here." />}
         </section>
 
         <section className="ph-surface ph-command-centre" aria-labelledby="command-centre-title">

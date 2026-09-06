@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CivicWorkOrigin, PaginationMeta, ProjectHeadTicketSummary, ProjectListItem, ProjectState, TicketState } from "@civicos/shared";
 import { EmptyState, PageHeader, PaginationControls } from "../../_components/ui";
 import { usePortalPolling } from "../../_lib/portal-refresh";
+import { getShortWorkLocation } from "../_lib/work-summary";
+import { WorkSummary } from "../_components/work-summary";
 import { WorkStatus } from "../_components/work-ui";
 import { apiFetch } from "../_lib/api";
 import { loadAllAgencyProjects } from "../_lib/paginated-projects";
@@ -112,7 +114,7 @@ export default function WorkPipelinePage() {
       title: ticket.title,
       reference: ticket.referenceNumber,
       origin: "CITIZEN_REPORTED",
-      location: ticket.ward.name,
+      location: getShortWorkLocation(ticket),
       category: ticket.category.name,
       state: ticket.inspectionDue ? "INSPECTION_DUE" : ticket.state,
       agency: ticket.assignedAgency?.name,
@@ -128,10 +130,10 @@ export default function WorkPipelinePage() {
     const projectRows = projects.map((project): WorkRow => ({
       id: project.id,
       kind: "project",
-      title: project.ticket?.title ?? project.title,
+      title: project.title,
       reference: project.referenceNumber,
       origin: project.origin,
-      location: project.locationLabel ?? project.ticket?.ward.name ?? "Location pending",
+      location: getShortWorkLocation(project),
       state: project.state,
       owner: project.engineer?.displayName ?? project.engineer?.email ?? "Unassigned",
       agency: project.agency.name,
@@ -181,7 +183,7 @@ export default function WorkPipelinePage() {
 
     <section className="ph-work-rows" aria-live="polite" aria-label="Agency works">
       {visible.map((row) => { const due = deadline(row); const group = lifecycleGroup(row.kind, row.state); return <article className="ph-registry-row" key={row.kind + row.id}>
-        <div className="ph-registry-identity"><code>{row.reference}</code><button className="ph-text-action" onClick={() => setQuickRecord({id: row.id, kind: row.kind})} type="button">{row.title}</button><span>{row.location}</span><div className="ph-work-tags">{row.category ? <span>{row.category}</span> : null}<span>{originLabel(row.origin)}</span></div></div>
+        <div className="ph-registry-identity"><button className="ph-text-action" onClick={() => setQuickRecord({id: row.id, kind: row.kind})} type="button"><WorkSummary reference={row.reference} title={row.title} location={row.location} /></button><div className="ph-work-tags">{row.category ? <span>{row.category}</span> : null}<span>{originLabel(row.origin)}</span></div></div>
         <div className="ph-registry-state"><span className={"ph-lifecycle-badge " + group.toLowerCase()}>{row.state === "CANCELLED" ? "Cancelled" : views.find((item) => item.id === group)?.label}</span><small>{row.state.replaceAll("_", " ").toLowerCase()}</small></div>
         <div className="ph-registry-owner"><span>{row.agency}</span><strong>{row.owner}</strong><small>Responsible engineer / agency</small></div>
         <div className="ph-registry-dates">{row.plannedStart && row.plannedEnd ? <span>{new Date(row.plannedStart).toLocaleDateString("en-IN")} – {new Date(row.plannedEnd).toLocaleDateString("en-IN")}</span> : <span>{due.label === "Not set" ? "Dates not set" : due.label}</span>}{row.dependencyCount ? <Link href="/project-head/dependencies">{row.dependencyCount} dependencies</Link> : null}{row.conflictCount ? <Link href="/project-head/conflicts">{row.conflictCount} advisory conflicts</Link> : null}</div>
