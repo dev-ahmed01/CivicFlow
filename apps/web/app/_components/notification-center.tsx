@@ -56,6 +56,15 @@ function groupMessage(type: string, count: number, fallback: string): string {
   return `${count} updates · ${fallback}`;
 }
 
+function categoryLabel(type: string): string {
+  return filters.find((filter) => filter.id !== "all" && notificationMatchesFilter(type, filter.id))?.label ?? "Updates";
+}
+
+function feedContext(item: ClientNotification): string | undefined {
+  const value = item.payload.subject ?? item.payload.projectTitle ?? item.payload.ticketTitle ?? item.payload.locationLabel;
+  return typeof value === "string" ? value : undefined;
+}
+
 function contextDestination(href: string | undefined, variant: NotificationVariant): string | undefined {
   if (!href || variant === "portal") return href;
   return href;
@@ -140,7 +149,8 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
             const expanded = expandedRunId === run.id;
             return <div className="cf-notification-row notification-cluster" key={run.id}>
               <span aria-hidden="true" className={`cv-notification-icon ${display.tone}`}>{display.icon}</span>
-              <span className="cv-notification-copy"><strong>{groupMessage(run.type, run.items.length, display.message)}</strong><small>{relativeNotificationTime(run.items[0]!.createdAt)} · {run.items.length} individual updates</small></span>
+              <span className="cv-notification-copy"><strong>{groupMessage(run.type, run.items.length, display.message)}</strong>{role === "PROJECT_HEAD" && feedContext(run.items[0]!) ? <span>{feedContext(run.items[0]!)}</span> : null}<small>{relativeNotificationTime(run.items[0]!.createdAt)} · {run.items.length} individual updates</small></span>
+              {role === "PROJECT_HEAD" ? <span className={`ph-notification-category ${display.tone}`}>{categoryLabel(run.type)}</span> : null}
               <ActionButton expanded={expanded} onClick={() => setExpandedRunId(expanded ? undefined : run.id)}>{expanded ? "Collapse" : role === "ENGINEER" ? "View details" : "Expand"}</ActionButton>
               {expanded ? <div className="notification-cluster-details">{run.items.map((item) => {
                 const href = contextDestination(notificationDestination(item, role), variant);
@@ -156,7 +166,8 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
           const contextHref = contextDestination(href, variant);
           return <div className="cf-notification-row" key={item.id}>
             <span aria-hidden="true" className={`cv-notification-icon ${display.tone}`}>{display.icon}</span>
-            <span className="cv-notification-copy"><strong>{display.message}</strong><small>{relativeNotificationTime(item.createdAt)}</small></span>
+            <span className="cv-notification-copy"><strong>{display.message}</strong>{role === "PROJECT_HEAD" && feedContext(item) ? <span>{feedContext(item)}</span> : null}<small>{relativeNotificationTime(item.createdAt)}</small></span>
+            {role === "PROJECT_HEAD" ? <span className={`ph-notification-category ${display.tone}`}>{categoryLabel(item.type)}</span> : null}
             <ActionButton expanded={expanded} onClick={() => setExpandedId(expanded ? undefined : item.id)}>{expanded ? "Close" : "Inspect"}</ActionButton>
             {expanded ? <div className="cf-notification-detail"><p>{payloadContext(item.payload)}</p><small>This update was recorded {new Date(item.createdAt).toLocaleString("en-IN")}.</small>{contextHref ? <ActionButton href={contextHref}>Open related item</ActionButton> : null}</div> : null}
           </div>;

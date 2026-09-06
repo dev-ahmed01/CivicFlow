@@ -4,6 +4,7 @@ import { APP_NAME } from "@civicos/shared";
 import "./design-tokens.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
+import "./project-head/project-head.css";
 
 export const metadata: Metadata = {
   title: APP_NAME,

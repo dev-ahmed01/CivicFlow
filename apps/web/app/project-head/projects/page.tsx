@@ -10,10 +10,10 @@ import { WorkStatus } from "../_components/work-ui";
 import { apiFetch } from "../_lib/api";
 import { loadAllAgencyProjects } from "../_lib/paginated-projects";
 import { ProjectCreateClient } from "./new/project-create-client";
-import { pipelineStage, type WorkView } from "./pipeline";
+import { lifecycleGroup, pipelineStage, type WorkLifecycle, type WorkView } from "./pipeline";
 import { ProjectHeadRecordQuickView, type QuickRecord } from "../_components/record-quick-view";
 
-type OriginFilter = "ALL" | "CITIZEN_REPORTED" | "AGENCY_PLANNED";
+
 type WorkRow = {
   id: string;
   kind: "ticket" | "project";
@@ -24,6 +24,9 @@ type WorkRow = {
   category?: string;
   state: TicketState | ProjectState;
   owner: string;
+  agency?: string;
+  plannedStart?: Date | string | null;
+  plannedEnd?: Date | string | null;
   deadline?: Date | string | null;
   updatedAt: Date | string;
   grievanceId?: string;
@@ -34,15 +37,9 @@ type WorkRow = {
   coordinationCount: number;
 };
 
-const views: Array<{ id: WorkView; label: string }> = [
-  { id: "ALL", label: "All" },
-  { id: "INTAKE", label: "Intake" },
-  { id: "INSPECTION", label: "Inspection" },
-  { id: "READY", label: "Ready" },
-  { id: "SCHEDULED", label: "Scheduled" },
-  { id: "ACTIVE", label: "Active" },
-  { id: "CLOSURE", label: "Closure" },
-  { id: "CLOSED", label: "Closed" },
+const views: Array<{ id: WorkLifecycle; label: string }> = [
+  { id: "ALL", label: "All" }, { id: "UPCOMING", label: "Upcoming" },
+  { id: "ONGOING", label: "Ongoing" }, { id: "REVIEW", label: "Review" }, { id: "COMPLETED", label: "Completed" },
 ];
 
 async function loadAllTickets(): Promise<ProjectHeadTicketSummary[]> {
@@ -50,16 +47,6 @@ async function loadAllTickets(): Promise<ProjectHeadTicketSummary[]> {
   if (first.pagination.totalPages <= 1) return first.tickets;
   const remaining = await Promise.all(Array.from({ length: first.pagination.totalPages - 1 }, (_, index) => apiFetch<{ tickets: ProjectHeadTicketSummary[] }>(`/tickets?page=${index + 2}&limit=50`)));
   return [first.tickets, ...remaining.map((result) => result.tickets)].flat();
-}
-
-function rowAction(row: WorkRow): { label: string; href: string } {
-  if (row.grievanceId) return { label: "Review issue", href: `/project-head/grievances?grievance=${row.grievanceId}` };
-  if (row.kind === "ticket" && ["ROUTED_TO_AGENCY", "INSPECTION_DUE"].includes(row.state)) return { label: "Assign inspection", href: `/project-head/tickets/${row.id}` };
-  if (row.kind === "ticket") return { label: "Review inspection", href: `/project-head/tickets/${row.id}` };
-  if (row.state === "CREATED") return { label: "Assign engineer", href: `/project-head/projects/${row.id}` };
-  if (row.state === "CONFLICT_CHECKED" && row.conflictCount > row.coordinationCount) return { label: "Open coordination", href: "/project-head/conflicts" };
-  if (["COMPLETED", "AWAITING_VERIFICATION"].includes(row.state)) return { label: "Review completion", href: `/project-head/projects/${row.id}` };
-  return { label: "Open work", href: `/project-head/projects/${row.id}` };
 }
 
 function deadline(row: WorkRow): { label: string; overdue: boolean } {
@@ -79,9 +66,11 @@ export default function WorkPipelinePage() {
   const router = useRouter();
   const [tickets, setTickets] = useState<ProjectHeadTicketSummary[]>([]);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
-  const [view, setView] = useState<WorkView>("ALL");
-  const [origin, setOrigin] = useState<OriginFilter>("ALL");
-  const [search, setSearch] = useState("");
+  const [view, setView] = useState<WorkLifecycle>("ALL");
+  const [legacyView, setLegacyView] = useState<WorkView>();
+  const [dueFilter, setDueFilter] = useState<string>();
+  const [sort, setSort] = useState("updated");
+  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string>();
   const [createOpen, setCreateOpen] = useState(false);
@@ -96,7 +85,7 @@ export default function WorkPipelinePage() {
       setError(undefined);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load the work pipeline");
-    }
+    } finally { setLoading(false); }
   }, []);
   usePortalPolling(load);
 
@@ -106,7 +95,12 @@ export default function WorkPipelinePage() {
     const requestedTicket = query.get("ticketId");
     const requestedProject = query.get("project");
     if (requestedProject) { router.replace(`/project-head/projects/${requestedProject}`); return; }
-    if (requestedView && views.some(({ id }) => id === requestedView)) setView(requestedView as WorkView);
+    if (requestedView && views.some(({ id }) => id === requestedView)) setView(requestedView as WorkLifecycle);
+    else if (requestedView && ["INTAKE", "INSPECTION", "READY", "SCHEDULED", "ACTIVE", "CLOSURE", "CLOSED"].includes(requestedView)) {
+      setLegacyView(requestedView as WorkView);
+      setView(requestedView === "ACTIVE" ? "ONGOING" : requestedView === "CLOSURE" ? "REVIEW" : requestedView === "CLOSED" ? "COMPLETED" : "UPCOMING");
+    }
+    setDueFilter(query.get("due") ?? undefined);
     if (requestedTicket) { setTicketId(requestedTicket); setCreateOpen(true); }
   }, [router]);
 
@@ -121,6 +115,7 @@ export default function WorkPipelinePage() {
       location: ticket.ward.name,
       category: ticket.category.name,
       state: ticket.inspectionDue ? "INSPECTION_DUE" : ticket.state,
+      agency: ticket.assignedAgency?.name,
       owner: ticket.action?.responsibleUser.email ?? ticket.assignedAgency?.name ?? "Agency queue",
       deadline: ticket.action?.deadline,
       updatedAt: ticket.validatedAt ?? ticket.createdAt,
@@ -138,7 +133,10 @@ export default function WorkPipelinePage() {
       origin: project.origin,
       location: project.locationLabel ?? project.ticket?.ward.name ?? "Location pending",
       state: project.state,
-      owner: project.engineer?.email ?? "Unassigned",
+      owner: project.engineer?.displayName ?? project.engineer?.email ?? "Unassigned",
+      agency: project.agency.name,
+      plannedStart: project.plannedStart,
+      plannedEnd: project.plannedEnd,
       deadline: project.action?.deadline ?? project.plannedEnd,
       updatedAt: project.updatedAt,
       grievanceId: project.grievance?.id,
@@ -151,50 +149,45 @@ export default function WorkPipelinePage() {
     return [...ticketRows, ...projectRows].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
   }, [projects, tickets]);
 
-  const counts = useMemo(() => new Map(views.map(({ id }) => [id, id === "ALL" ? rows.length : rows.filter((row) => pipelineStage(row.kind, row.state) === id).length])), [rows]);
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return rows.filter((row) =>
-      (view === "ALL" || pipelineStage(row.kind, row.state) === view)
-      && (origin === "ALL" || row.origin === origin)
-      && (!query || [row.title, row.reference, row.location, row.category, row.owner].some((value) => value?.toLowerCase().includes(query))),
-    );
-  }, [origin, rows, search, view]);
+  const counts = useMemo(() => new Map(views.map(({ id }) => [id, id === "ALL" ? rows.length : rows.filter((row) => lifecycleGroup(row.kind, row.state) === id).length])), [rows]);
+  const filtered = useMemo(() => rows.filter((row) => {
+    if (view !== "ALL" && lifecycleGroup(row.kind, row.state) !== view) return false;
+    if (legacyView && pipelineStage(row.kind, row.state) !== legacyView) return false;
+    // Same planned-date eligibility as the agency dashboard; excludes closure and cancelled work.
+    if (dueFilter) {
+      if (row.kind !== "project" || ["COMPLETED", "AWAITING_VERIFICATION", "CLOSED", "CANCELLED"].includes(row.state)) return false;
+      if (dueFilter === "overdue") return Boolean(row.plannedEnd && new Date(row.plannedEnd).getTime() < Date.now());
+      if (dueFilter === "upcoming") return row.state !== "ACTIVE" && Boolean(row.plannedStart && new Date(row.plannedStart).getTime() >= Date.now() && new Date(row.plannedStart).getTime() <= Date.now() + 7 * 86400000);
+    }
+    return true;
+  }).sort((a, b) => sort === "title" ? a.title.localeCompare(b.title) : sort === "deadline" ? (a.deadline ? new Date(a.deadline).getTime() : Infinity) - (b.deadline ? new Date(b.deadline).getTime() : Infinity) : new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()), [rows, view, legacyView, dueFilter, sort]);
   const pageSize = 20;
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const effectivePage = Math.min(page, totalPages);
   const visible = filtered.slice((effectivePage - 1) * pageSize, effectivePage * pageSize);
   const eligibleTickets = tickets.filter((ticket) => ["INSPECTION_COMPLETE", "PROJECT_CREATED"].includes(ticket.state));
 
-  const changeView = (next: WorkView) => { setView(next); setPage(1); };
+  const changeView = (next: WorkLifecycle) => { setView(next); setLegacyView(undefined); setDueFilter(undefined); setPage(1); };
 
   return <div className="ph-work-page">
-    <PageHeader title="Work" description="Citizen issues and agency-planned work, from intake to verified closure." action={<Link className="portal-primary-button" href="/project-head/projects/new">Register planned work</Link>} />
+    <PageHeader title="Work" description="All agency works from planning to verified closure." action={<Link className="portal-primary-button" href="/project-head/projects/new">Register planned work</Link>} />
     <div aria-label="Work lifecycle stages" className="portal-tabs ph-work-tabs" role="tablist">{views.map((item) => <button aria-selected={view === item.id} key={item.id} onClick={() => changeView(item.id)} role="tab" type="button">{item.label}<span>{counts.get(item.id) ?? 0}</span></button>)}</div>
 
     {createOpen ? <section className="portal-inline-drawer project-ready-drawer" aria-label="Create civic work from inspection"><div className="drawer-heading"><div><h2>Create civic work from an inspection</h2><p>Choose a reviewed citizen issue, then assign an Executive Engineer and any formal agency dependencies.</p></div><button className="secondary" onClick={() => setCreateOpen(false)} type="button">Close</button></div><div className="eligible-ticket-list">{eligibleTickets.map((ticket) => <button aria-pressed={ticketId === ticket.id} className={ticketId === ticket.id ? "eligible-ticket selected" : "eligible-ticket"} key={ticket.id} onClick={() => setTicketId(ticket.id)} type="button"><span><code>{ticket.referenceNumber}</code><WorkStatus state={ticket.state} /></span><strong>{ticket.title}</strong><small>{ticket.category.name} · {ticket.ward.name}</small></button>)}{eligibleTickets.length === 0 ? <EmptyState title="No reviewed inspections are ready" description="Submitted inspection results will appear here when they are ready for a Project Head decision." /> : null}</div>{ticketId ? <ProjectCreateClient onCreated={() => void load()} ticketId={ticketId} /> : null}</section> : null}
 
-    <section aria-label="Work filters" className="ph-work-toolbar"><label><span>Search work</span><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Reference, title, location or responsible person" /></label><label><span>Origin</span><select value={origin} onChange={(event) => { setOrigin(event.target.value as OriginFilter); setPage(1); }}><option value="ALL">All origins</option><option value="CITIZEN_REPORTED">Citizen issues</option><option value="AGENCY_PLANNED">Agency planned</option></select></label><button className="ph-secondary-button" onClick={() => setCreateOpen((open) => !open)} type="button">Create from inspection</button></section>
+    <div className="ph-registry-controls"><span>{dueFilter ? (dueFilter === "overdue" ? "Past planned end date" : "Starting in the next 7 days") : legacyView ? "Filtered from Today" : "Agency work registry"}{dueFilter || legacyView ? <button className="ph-text-action" onClick={() => changeView("ALL")} type="button">Clear filter</button> : null}</span><label>Sort by <select value={sort} onChange={(event) => setSort(event.target.value)}><option value="updated">Recently updated</option><option value="deadline">Next deadline</option><option value="title">Name (A–Z)</option></select></label></div>
+    {loading ? <p role="status">Loading agency works…</p> : null}
     {error ? <p className="error" role="alert">{error}</p> : null}
 
-    <section className="ph-pipeline-register" aria-live="polite">
-      <div className="table-scroll"><table><thead><tr><th>Reference / work</th><th>Origin / location</th><th>Stage</th><th>Responsible</th><th>Deadline</th><th>Dependencies</th><th>Conflict</th><th><span className="sr-only">Next action</span></th></tr></thead><tbody>{visible.map((row) => {
-        const action = rowAction(row);
-        const due = deadline(row);
-        const stage = pipelineStage(row.kind, row.state);
-        const conflictOpen = Math.max(0, row.conflictCount - row.coordinationCount);
-        return <tr data-risk={due.overdue ? "danger" : conflictOpen ? "warning" : "standard"} key={`${row.kind}:${row.id}`}>
-          <td data-label="Work"><button className="ph-work-title-link" onClick={() => setQuickRecord({ id: row.id, kind: row.kind })} type="button"><code>{row.reference}</code><strong>{row.title}</strong><small className="ph-work-context">{originLabel(row.origin)} · {row.location}{row.category ? ` · ${row.category}` : ""}</small><small className="ph-quick-view-label">Quick view</small></button></td>
-          <td className="ph-pipeline-origin" data-label="Origin / location"><strong>{originLabel(row.origin)}</strong><small>{row.location}{row.category ? ` · ${row.category}` : ""}</small></td>
-          <td data-label="Stage"><span className={`ph-stage-label stage-${stage.toLowerCase()}`}>{stage[0]}{stage.slice(1).toLowerCase()}</span><small>{row.state.replaceAll("_", " ").toLowerCase()}</small></td>
-          <td data-label="Responsible">{row.owner}</td>
-          <td className={due.overdue ? "deadline-overdue" : ""} data-label="Deadline">{due.label}</td>
-          <td className="ph-pipeline-dependency" data-label="Dependencies">{row.dependencyCount ? <Link href="/project-head/dependencies">{row.dependencyCount} linked →</Link> : <span>None</span>}</td>
-          <td className={row.conflictCount ? "ph-pipeline-conflict" : "ph-pipeline-conflict ph-cell-empty"} data-label="Conflict">{row.conflictCount ? <span className="ph-conflict-indicator"><strong>{row.conflictCount} warning{row.conflictCount === 1 ? "" : "s"}</strong><small>{conflictOpen ? `${conflictOpen} needs coordination` : "Coordination linked"}</small></span> : <span className="ph-no-conflict">None</span>}</td>
-          <td data-label="Next action"><button className="ph-pipeline-action" onClick={() => setQuickRecord({ id: row.id, kind: row.kind })} type="button">{action.label}<span aria-hidden="true">→</span></button></td>
-        </tr>;
-      })}</tbody></table></div>
-      {visible.length === 0 ? <EmptyState title="No work matches this stage" description="Change the lifecycle stage, origin, or search term. Persisted work appears automatically." /> : null}
+    <section className="ph-work-rows" aria-live="polite" aria-label="Agency works">
+      {visible.map((row) => { const due = deadline(row); const group = lifecycleGroup(row.kind, row.state); return <article className="ph-registry-row" key={row.kind + row.id}>
+        <div className="ph-registry-identity"><code>{row.reference}</code><button className="ph-text-action" onClick={() => setQuickRecord({id: row.id, kind: row.kind})} type="button">{row.title}</button><span>{row.location}</span><div className="ph-work-tags">{row.category ? <span>{row.category}</span> : null}<span>{originLabel(row.origin)}</span></div></div>
+        <div className="ph-registry-state"><span className={"ph-lifecycle-badge " + group.toLowerCase()}>{row.state === "CANCELLED" ? "Cancelled" : views.find((item) => item.id === group)?.label}</span><small>{row.state.replaceAll("_", " ").toLowerCase()}</small></div>
+        <div className="ph-registry-owner"><span>{row.agency}</span><strong>{row.owner}</strong><small>Responsible engineer / agency</small></div>
+        <div className="ph-registry-dates">{row.plannedStart && row.plannedEnd ? <span>{new Date(row.plannedStart).toLocaleDateString("en-IN")} – {new Date(row.plannedEnd).toLocaleDateString("en-IN")}</span> : <span>{due.label === "Not set" ? "Dates not set" : due.label}</span>}{row.dependencyCount ? <Link href="/project-head/dependencies">{row.dependencyCount} dependencies</Link> : null}{row.conflictCount ? <Link href="/project-head/conflicts">{row.conflictCount} advisory conflicts</Link> : null}</div>
+        <button className="ph-text-action" onClick={() => setQuickRecord({id: row.id, kind: row.kind})} type="button">View work <span aria-hidden="true">&rarr;</span></button>
+      </article>; })}
+      {!loading && !visible.length ? <EmptyState title="No work in this lifecycle" description="Choose another lifecycle tab to browse agency work." /> : null}
     </section>
     <div className="ph-pipeline-footer"><span>Showing {visible.length ? (effectivePage - 1) * pageSize + 1 : 0}–{Math.min(effectivePage * pageSize, filtered.length)} of {filtered.length} records</span><PaginationControls page={effectivePage} totalPages={totalPages} onPageChange={setPage} /></div>
     <ProjectHeadRecordQuickView onChanged={() => void load()} onClose={() => setQuickRecord(undefined)} record={quickRecord} />

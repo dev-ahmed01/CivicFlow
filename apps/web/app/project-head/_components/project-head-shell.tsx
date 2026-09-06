@@ -42,6 +42,7 @@ export function ProjectHeadShell({ children }: { children: ReactNode }) {
   const session = getSession();
   return (
     <div className="portal-shell project-head-shell">
+      <a className="ph-skip-link" href="#project-head-content">Skip to workspace</a>
       <aside className={mobileOpen ? "portal-sidebar mobile-open" : "portal-sidebar"}>
         <Link className="portal-brand portal-product-mark" href="/project-head"><span className="portal-logo-mark">CC</span><span><strong>City Connect</strong><small>Operations</small></span></Link>
         <p className="portal-role">Project Head</p>
@@ -52,8 +53,8 @@ export function ProjectHeadShell({ children }: { children: ReactNode }) {
         <details className="ph-user-control"><summary><span className="ph-user-avatar" aria-hidden="true">PH</span><span><strong>{session?.user.email ?? "Project Head"}</strong><small>Project Head</small></span></summary><div><Link href="/project-head/profile">Profile</Link><button type="button" onClick={() => void signOut()}>Sign out</button></div></details>
       </aside>
       <div className="ph-workspace">
-        <header className="ph-topbar"><button aria-expanded={mobileOpen} aria-label="Toggle navigation" className="ph-menu-button" onClick={() => setMobileOpen((open) => !open)} type="button"><span /><span /><span /></button><NotificationBell active={pathname === "/project-head/notifications"} apiFetch={apiFetch} href="/project-head/notifications" /></header>
-        <main className="portal-content">{children}</main>
+        <header className="ph-topbar"><button aria-expanded={mobileOpen} aria-label="Toggle navigation" className="ph-menu-button" onClick={() => setMobileOpen((open) => !open)} type="button"><span /><span /><span /></button><NotificationBell active={pathname === "/project-head/notifications"} apiFetch={apiFetch} href="/project-head/notifications" /><Link className="ph-topbar-identity" href="/project-head/profile"><span className="ph-user-avatar" aria-hidden="true">PH</span><span>Project Head</span><span aria-hidden="true">⌄</span></Link></header>
+        <main className="portal-content" id="project-head-content">{children}</main>
       </div>
     </div>
   );

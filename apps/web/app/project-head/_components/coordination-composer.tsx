@@ -55,6 +55,7 @@ export function CoordinationComposer({ projectId, agencies, requestTypes, onCanc
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    const saveDraft = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "draft";
     setBusy(true);
     setError(undefined);
     try {
@@ -83,7 +84,7 @@ export function CoordinationComposer({ projectId, agencies, requestTypes, onCanc
           body: JSON.stringify({ action: "complete", attachmentId: target.attachmentId }),
         });
       }
-      await apiFetch(`/coordination-requests/${draft.request.id}/actions`, { method: "POST", body: JSON.stringify({ action: "SEND" }) });
+      if (!saveDraft) await apiFetch(`/coordination-requests/${draft.request.id}/actions`, { method: "POST", body: JSON.stringify({ action: "SEND" }) });
       router.push(`/project-head/coordination/${draft.request.id}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not send the coordination request");
@@ -105,6 +106,6 @@ export function CoordinationComposer({ projectId, agencies, requestTypes, onCanc
     </div>
     <div className="coordination-checks"><label><input checked={inspectionNeeded} onChange={(event) => setInspectionNeeded(event.target.checked)} type="checkbox" /> Inspection is needed</label><label><input checked={engineerRequired} onChange={(event) => setEngineerRequired(event.target.checked)} type="checkbox" /> Engineer is required</label></div>
     {error ? <p className="error" role="alert">{error}</p> : null}
-    <button className="portal-primary-button" disabled={busy || !respondingAgencyId || !requestTypeKey || subject.trim().length < 5 || details.trim().length < 10 || initialMessage.trim().length < 2} type="submit">{busy ? "Sending request…" : "Send coordination request"}</button>
+    <div className="ph-composer-actions"><button className="portal-primary-button" disabled={busy || !respondingAgencyId || !requestTypeKey || subject.trim().length < 5 || details.trim().length < 10 || initialMessage.trim().length < 2} type="submit">{busy ? "Saving request…" : "Send coordination request"}</button><button className="ph-secondary-button" disabled={busy} name="intent" value="draft" type="submit">Save draft</button></div>
   </form>;
 }

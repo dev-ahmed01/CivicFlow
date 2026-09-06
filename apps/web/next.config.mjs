@@ -16,6 +16,8 @@ if (process.env.DEPLOYMENT_PROFILE === "production") {
 }
 
 const nextConfig = {
+  // Keep local visual verification isolated from production build artifacts.
+  distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   reactStrictMode: true,
   transpilePackages: ["@civicos/shared"],
 };

@@ -29,6 +29,7 @@ logs/
 
 # Node
 node_modules/
+**/.next-dev/
 .turbo/
 .next/
 .expo/

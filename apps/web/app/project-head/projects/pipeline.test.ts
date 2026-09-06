@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { pipelineStage } from "./pipeline";
+import { lifecycleGroup, pipelineStage } from "./pipeline";
 
 describe("Project Head work pipeline", () => {
+  it("groups the display lifecycle without promoting planning to execution", () => {
+    expect(lifecycleGroup("ticket", "INSPECTION_COMPLETE")).toBe("UPCOMING");
+    expect(lifecycleGroup("project", "UPTAKEN")).toBe("UPCOMING");
+    expect(lifecycleGroup("project", "MODIFIED")).toBe("UPCOMING");
+    expect(lifecycleGroup("project", "ACTIVE")).toBe("ONGOING");
+    expect(lifecycleGroup("project", "COMPLETED")).toBe("REVIEW");
+    expect(lifecycleGroup("project", "CLOSED")).toBe("COMPLETED");
+    expect(lifecycleGroup("project", "CANCELLED")).toBe("COMPLETED");
+  });
   it("keeps intake and inspection decisions distinct", () => {
     expect(pipelineStage("ticket", "ROUTED_TO_AGENCY")).toBe("INTAKE");
     expect(pipelineStage("ticket", "INSPECTION_DUE")).toBe("INSPECTION");
