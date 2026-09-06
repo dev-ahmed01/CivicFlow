@@ -91,18 +91,24 @@ export function NotificationBell({ apiFetch, href, label, active = false }: { ap
   </Link>;
 }
 
-export function NotificationCenter({ apiFetch, role, showFilters, variant = "portal" }: {
+export function NotificationCenter({ apiFetch, role, showFilters, variant = "portal", navigation }: {
   apiFetch: ApiFetch;
   role: UserRole;
   showFilters: boolean;
   variant?: NotificationVariant;
+  navigation?: { filter: NotificationFilter; page: number; onFilter: (filter: NotificationFilter) => void; onPage: (page: number) => void };
 }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<ClientNotification[]>([]);
-  const [filter, setFilter] = useState<NotificationFilter>("all");
+  const [localFilter, setLocalFilter] = useState<NotificationFilter>("all");
+  const filter = navigation?.filter ?? localFilter;
+  const setFilter = navigation?.onFilter ?? setLocalFilter;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
-  const [page, setPage] = useState(1);
+  const [localPage, setLocalPage] = useState(1);
+  const page = navigation?.page ?? localPage;
+  const setPage = navigation?.onPage ?? setLocalPage;
+  const engineerFilter = role === "ENGINEER" ? filter : "all";
   const [pagination, setPagination] = useState<PaginationMeta>({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [expandedId, setExpandedId] = useState<string>();
   const [expandedRunId, setExpandedRunId] = useState<string>();
@@ -110,33 +116,41 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
   const load = useCallback(async () => {
     setError(undefined);
     try {
-      const result = await apiFetch<{ notifications: ClientNotification[]; unreadCount: number; pagination: PaginationMeta }>(`/notifications?page=${page}&limit=20`);
+      const result = await apiFetch<{ notifications: ClientNotification[]; unreadCount: number; pagination: PaginationMeta }>(`/notifications?page=${role === "ENGINEER" ? 1 : page}&limit=20`);
+      if (role === "ENGINEER") {
+        for (let next = 2; next <= result.pagination.totalPages; next++) {
+          const more = await apiFetch<{ notifications: ClientNotification[] }>(`/notifications?page=${next}&limit=20`);
+          result.notifications.push(...more.notifications);
+        }
+      }
       setNotifications(result.notifications.map((item) => ({ ...item, read: true })));
       setUnreadCount(result.unreadCount);
       setPagination(result.pagination);
-      const unread = result.notifications.filter((item) => !item.read);
+      const visible = role === "ENGINEER" ? result.notifications.filter((item) => notificationMatchesFilter(item.type, engineerFilter)).slice((page - 1) * 20, page * 20) : result.notifications;
+      const unread = visible.filter((item) => !item.read);
       if (unread.length > 0) await apiFetch("/notifications/read", { method: "PATCH", body: JSON.stringify({ ids: unread.map(({ id }) => id) }) });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load notifications");
     } finally {
       setLoading(false);
     }
-  }, [apiFetch, page]);
+  }, [apiFetch, page, role, engineerFilter]);
 
   useEffect(() => { void load(); }, [load]);
 
   const grouped = useMemo(() => {
-    const visible = notifications.filter((item) => notificationMatchesFilter(item.type, filter));
+    const matching = notifications.filter((item) => notificationMatchesFilter(item.type, filter));
+    const visible = role === "ENGINEER" ? matching.slice((page - 1) * 20, page * 20) : matching;
     return (["Today", "Yesterday", "Earlier"] as const).map((label) => ({
       label,
       runs: consecutiveRuns(visible.filter((item) => notificationDayGroup(item.createdAt) === label)),
     })).filter((group) => group.runs.length > 0);
-  }, [filter, notifications]);
+  }, [filter, notifications, page, role]);
 
   return <section className={`notification-page ${variant === "citizen" ? "cf-notification-page" : ""} ${variant === "portal-inline" ? "portal-notification-page" : ""}`}>
     <div className="portal-heading"><div><p className="eyebrow">Updates</p><h1>Notifications</h1><p>Everything that needs your attention, newest first.</p></div>{role === "ENGINEER" ? <div className="engineer-dependency-summary" title="Unread notifications when this page was opened"><strong>{loading ? "—" : unreadCount}</strong><span>unread</span></div> : null}</div>
     {showFilters ? <div aria-label="Notification filters" className="notification-filters" role="tablist">
-      {filters.map((item) => <button aria-selected={filter === item.id} className={filter === item.id ? "active" : ""} key={item.id} onClick={() => setFilter(item.id)} role="tab" type="button">{item.label}</button>)}
+      {(role === "ENGINEER" ? filters.filter((item) => item.id === "all" || notifications.some((notification) => notificationMatchesFilter(notification.type, item.id))) : filters).map((item) => <button aria-selected={filter === item.id} className={filter === item.id ? "active" : ""} key={item.id} onClick={() => setFilter(item.id)} role="tab" type="button">{item.label}</button>)}
     </div> : null}
     {error ? <p className="error" role="alert">{error}</p> : null}
     {loading ? <p className="portal-muted">Loading notifications…</p> : null}
@@ -149,9 +163,9 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
             const expanded = expandedRunId === run.id;
             return <div className="cf-notification-row notification-cluster" key={run.id}>
               <span aria-hidden="true" className={`cv-notification-icon ${display.tone}`}>{display.icon}</span>
-              <span className="cv-notification-copy"><strong>{groupMessage(run.type, run.items.length, display.message)}</strong>{role === "PROJECT_HEAD" && feedContext(run.items[0]!) ? <span>{feedContext(run.items[0]!)}</span> : null}<small>{relativeNotificationTime(run.items[0]!.createdAt)} · {run.items.length} individual updates</small></span>
-              {role === "PROJECT_HEAD" ? <span className={`ph-notification-category ${display.tone}`}>{categoryLabel(run.type)}</span> : null}
-              <ActionButton expanded={expanded} onClick={() => setExpandedRunId(expanded ? undefined : run.id)}>{expanded ? "Collapse" : role === "ENGINEER" ? "View details" : "Expand"}</ActionButton>
+              <span className="cv-notification-copy"><strong>{groupMessage(run.type, run.items.length, display.message)}</strong>{(role === "PROJECT_HEAD" || role === "ENGINEER") && feedContext(run.items[0]!) ? <span>{feedContext(run.items[0]!)}</span> : null}<small>{relativeNotificationTime(run.items[0]!.createdAt)} · {run.items.length} individual updates</small></span>
+              {role !== "CITIZEN" ? <span className={`ph-notification-category ${display.tone}`}>{categoryLabel(run.type)}</span> : null}
+              <ActionButton expanded={expanded} onClick={() => setExpandedRunId(expanded ? undefined : run.id)}>{expanded ? "Collapse" : "Expand"}</ActionButton>
               {expanded ? <div className="notification-cluster-details">{run.items.map((item) => {
                 const href = contextDestination(notificationDestination(item, role), variant);
                 return <article key={item.id}><div><strong>{payloadContext(item.payload)}</strong><small>{new Date(item.createdAt).toLocaleString("en-IN")}</small></div>{href ? <ActionButton href={href}>Open update</ActionButton> : null}</article>;
@@ -166,14 +180,14 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
           const contextHref = contextDestination(href, variant);
           return <div className="cf-notification-row" key={item.id}>
             <span aria-hidden="true" className={`cv-notification-icon ${display.tone}`}>{display.icon}</span>
-            <span className="cv-notification-copy"><strong>{display.message}</strong>{role === "PROJECT_HEAD" && feedContext(item) ? <span>{feedContext(item)}</span> : null}<small>{relativeNotificationTime(item.createdAt)}</small></span>
-            {role === "PROJECT_HEAD" ? <span className={`ph-notification-category ${display.tone}`}>{categoryLabel(item.type)}</span> : null}
-            <ActionButton expanded={expanded} onClick={() => setExpandedId(expanded ? undefined : item.id)}>{expanded ? "Close" : "Inspect"}</ActionButton>
+            <span className="cv-notification-copy"><strong>{display.message}</strong>{(role === "PROJECT_HEAD" || role === "ENGINEER") && feedContext(item) ? <span>{feedContext(item)}</span> : null}<small>{relativeNotificationTime(item.createdAt)}</small></span>
+            {role !== "CITIZEN" ? <span className={`ph-notification-category ${display.tone}`}>{categoryLabel(item.type)}</span> : null}
+            {role === "ENGINEER" && contextHref ? <ActionButton href={contextHref}>{contextHref.includes("/inspections/") ? "Inspect" : contextHref.includes("/dependencies") ? "View dependency" : contextHref.includes("/projects/") ? (notificationMatchesFilter(item.type, "assignments") ? "View assignment" : "Open work") : "View details"}</ActionButton> : <ActionButton expanded={expanded} onClick={() => setExpandedId(expanded ? undefined : item.id)}>{expanded ? "Close" : "Inspect"}</ActionButton>}
             {expanded ? <div className="cf-notification-detail"><p>{payloadContext(item.payload)}</p><small>This update was recorded {new Date(item.createdAt).toLocaleString("en-IN")}.</small>{contextHref ? <ActionButton href={contextHref}>Open related item</ActionButton> : null}</div> : null}
           </div>;
         })}
       </div></section>)}
     </div>
-    <PaginationControls page={pagination.page} totalPages={pagination.totalPages} onPageChange={setPage} />
+    <PaginationControls page={role === "ENGINEER" ? page : pagination.page} totalPages={role === "ENGINEER" ? Math.max(1, Math.ceil(notifications.filter((item) => notificationMatchesFilter(item.type, filter)).length / 20)) : pagination.totalPages} onPageChange={setPage} />
   </section>;
 }

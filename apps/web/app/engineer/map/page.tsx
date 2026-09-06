@@ -3,9 +3,11 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { EngineerTip, EngineerSymbol, EngineerHeader, engineerDate } from "../_components/engineer-ui";
+import { EngineerSymbol, EngineerHeader, engineerDate } from "../_components/engineer-ui";
 import type { CivicWorkCalendarItem } from "@civicos/shared";
 import { apiFetch, getSession } from "../_lib/api";
+
+import { useEngineerQuery } from "../_lib/navigation";
 
 const WorkMap = dynamic(() => import("../../project-head/work-calendar/work-map").then((module) => module.WorkMap), { ssr: false, loading: () => <div className="work-map-loading">Preparing field map…</div> });
 type Bounds = { minLongitude: number; minLatitude: number; maxLongitude: number; maxLatitude: number };
@@ -20,6 +22,10 @@ const categories = [
   ];
 
 export default function EngineerMapPage() {
+  const { params, update } = useEngineerQuery();
+  const listOpen = params.get("list") === "open";
+  const selectedId = params.get("work") ?? undefined;
+  const setSelectedId = (id: string | undefined) => update({ work: id }, true);
   const [loading, setLoading] = useState(true);
   const [onlyMine, setOnlyMine] = useState(false);
   const [agency, setAgency] = useState("");
@@ -29,7 +35,6 @@ export default function EngineerMapPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [bounds, setBounds] = useState(initialBounds);
   const [works, setWorks] = useState<CivicWorkCalendarItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string>();
   const [error, setError] = useState<string>();
   const load = useCallback(async () => {
     const from = new Date(); from.setMonth(from.getMonth() - 3);
@@ -77,7 +82,9 @@ export default function EngineerMapPage() {
       </aside>
     </div>
     {loading ? <p className="engineer-map-status" role="status">Loading mapped work...</p> : filteredWorks.length === 0 && !error ? <p className="engineer-map-status" role="status">No mapped work matches this view. Try another period or clear the filters.</p> : null}
-    <EngineerTip>Click on any map marker to view details, assigned agency, status, and dependencies.<br />Use filters to focus on specific types of work.</EngineerTip>
-    {filteredWorks.length > 0 ? <details className="engineer-map-list"><summary>Mapped work list ({filteredWorks.length})</summary><ul>{filteredWorks.map((work) => <li key={work.id}><button aria-pressed={selectedId === work.id} onClick={() => { setSelectedId(work.id); document.querySelector(".work-detail-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }} type="button"><strong>{work.title}</strong><span>{work.agency.name} &middot; {work.locationLabel ?? "Mapped location"}</span></button></li>)}</ul></details> : null}
+    <section className="engineer-map-list">
+      <button className="engineer-map-disclosure" type="button" aria-expanded={listOpen} aria-controls="mapped-works" onClick={() => update({ list: listOpen ? undefined : "open" }, true)}><svg className={listOpen ? "expanded" : ""} aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 5 7 7-7 7" /></svg><span>Mapped works</span><span className="engineer-map-count">{filteredWorks.length}</span></button>
+      {listOpen ? <ul id="mapped-works">{filteredWorks.map((work) => <li key={work.id}><button aria-pressed={selectedId === work.id} onClick={() => { setSelectedId(work.id); document.querySelector(".work-detail-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }} type="button"><strong>{work.title}</strong><span>{work.agency.name} &middot; {work.locationLabel ?? "Mapped location"}</span></button></li>)}{!filteredWorks.length ? <li className="engineer-empty">No mapped works in this view.</li> : null}</ul> : null}
+    </section>
   </div>;
 }
