@@ -334,3 +334,18 @@
   .project-head-shell .ph-attention-card > .cv-status-chip { justify-self: start; }
   .project-head-shell .ph-attention-action { justify-self: end; }
 }
+
+/* Shared final-pass scale: dense operational records, one control rhythm. */
+.project-head-shell .ph-topbar { height: var(--cv-topbar-height); min-height: var(--cv-topbar-height); padding-inline: var(--cv-page-gutter); }
+.project-head-shell .portal-content { padding-inline: var(--cv-page-gutter) !important; }
+.project-head-shell :where(.portal-primary-button, .ph-secondary-button, .ph-tertiary-button, .cf-action-button) { min-height: var(--cv-control-height); }
+.project-head-shell .ph-surface { padding: 20px; }
+.project-head-shell .ph-registry-row { gap: 16px; padding: 16px; }
+.project-head-shell .ph-registry-row > div { gap: 4px; }
+.project-head-shell .ph-command-cards { gap: 12px; }
+.project-head-shell .ph-command-cards a { padding: 16px; }
+.project-head-shell .ph-command-cards strong { font-size: 46px; }
+.project-head-shell .ph-command-cards h3 { font-size: 19px; margin: 6px 0; }
+.project-head-shell .ph-decision-register { padding: 20px 18px; }
+.project-head-shell .ph-decision-register > header { margin-bottom: 18px; }
+.project-head-shell .ph-attention-card { padding: 14px 16px; }

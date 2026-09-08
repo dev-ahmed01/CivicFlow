@@ -27,7 +27,7 @@ function inspectionEvidence(project: EngineerProjectDetail): EvidenceItem[] {
   return project.ticket?.inspectionReports.flatMap((report) => report.evidence.map((item) => ({ id: item.id, url: item.fileUrl, kind: "Inspection" as const, caption: report.observations, timestamp: item.uploadedAt ?? item.createdAt, uploadedBy: report.assignedEngineer.displayName ?? report.assignedEngineer.email, role: "Engineer", contentType: item.contentType }))) ?? [];
 }
 
-export function ProjectHeadRecordQuickView({ record, onClose, onChanged }: { record?: QuickRecord; onClose: () => void; onChanged?: () => void }) {
+export function ProjectHeadRecordQuickView({ record, onClose, onChanged, returnTo }: { record?: QuickRecord; onClose: () => void; onChanged?: () => void; returnTo?: string }) {
   const [ticket, setTicket] = useState<ProjectHeadTicketDetail>();
   const [project, setProject] = useState<EngineerProjectDetail>();
   const [work, setWork] = useState<CivicWork>();
@@ -90,7 +90,8 @@ export function ProjectHeadRecordQuickView({ record, onClose, onChanged }: { rec
   const reference = ticket?.referenceNumber ?? project?.referenceNumber ?? "City Connect";
   const state = ticket?.internalState ?? project?.state;
   const primaryLabel = canAssignInspection ? "Assign Inspection" : canAssignWork ? "Assign Engineer" : project && conflicts.some((item) => !item.coordination) ? "Open Coordination" : project && ["COMPLETED", "AWAITING_VERIFICATION"].includes(project.state) ? "Review Completion" : "Open Full Record";
-  const deepHref = record ? record.kind === "ticket" ? `/project-head/tickets/${record.id}` : `/project-head/projects/${record.id}` : "/project-head/projects";
+  const baseDeepHref = record ? record.kind === "ticket" ? `/project-head/tickets/${record.id}` : `/project-head/projects/${record.id}` : "/project-head/projects";
+  const deepHref = returnTo ? `${baseDeepHref}?from=${encodeURIComponent(returnTo)}` : baseDeepHref;
 
   const footer = record ? <>
     {assignmentOpen ? <button className="drawer-primary-action" disabled={busy || !engineerId || (record.kind === "ticket" && !deadline)} onClick={() => void assign()} type="button">{busy ? "Assigning…" : record.kind === "ticket" ? "Confirm Inspection Assignment" : "Confirm Engineer Assignment"}</button> : <button className="drawer-primary-action" onClick={() => {

@@ -65,8 +65,9 @@ function feedContext(item: ClientNotification): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function contextDestination(href: string | undefined, variant: NotificationVariant): string | undefined {
+function contextDestination(href: string | undefined, variant: NotificationVariant, returnTo?: string): string | undefined {
   if (!href || variant === "portal") return href;
+  if (returnTo && /^\/project-head\/(projects|tickets)\//.test(href)) return `${href}${href.includes("?") ? "&" : "?"}from=${encodeURIComponent(returnTo)}`;
   return href;
 }
 
@@ -112,6 +113,10 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
   const [pagination, setPagination] = useState<PaginationMeta>({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [expandedId, setExpandedId] = useState<string>();
   const [expandedRunId, setExpandedRunId] = useState<string>();
+  const [returnTo, setReturnTo] = useState<string>();
+  useEffect(() => {
+    if (role === "PROJECT_HEAD") setReturnTo(`${window.location.pathname}${window.location.search}`);
+  }, [role]);
 
   const load = useCallback(async () => {
     setError(undefined);
@@ -167,7 +172,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
               {role !== "CITIZEN" ? <span className={`ph-notification-category ${display.tone}`}>{categoryLabel(run.type)}</span> : null}
               <ActionButton expanded={expanded} onClick={() => setExpandedRunId(expanded ? undefined : run.id)}>{expanded ? "Collapse" : "Expand"}</ActionButton>
               {expanded ? <div className="notification-cluster-details">{run.items.map((item) => {
-                const href = contextDestination(notificationDestination(item, role), variant);
+                const href = contextDestination(notificationDestination(item, role), variant, returnTo);
                 return <article key={item.id}><div><strong>{payloadContext(item.payload)}</strong><small>{new Date(item.createdAt).toLocaleString("en-IN")}</small></div>{href ? <ActionButton href={href}>Open update</ActionButton> : null}</article>;
               })}</div> : null}
             </div>;
@@ -177,7 +182,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
           const href = notificationDestination(item, role);
           if (variant === "portal") return <NotificationRow href={href ?? undefined} icon={display.icon} key={item.id} message={display.message} time={relativeNotificationTime(item.createdAt)} tone={display.tone} />;
           const expanded = expandedId === item.id;
-          const contextHref = contextDestination(href, variant);
+          const contextHref = contextDestination(href, variant, returnTo);
           return <div className="cf-notification-row" key={item.id}>
             <span aria-hidden="true" className={`cv-notification-icon ${display.tone}`}>{display.icon}</span>
             <span className="cv-notification-copy"><strong>{display.message}</strong>{(role === "PROJECT_HEAD" || role === "ENGINEER") && feedContext(item) ? <span>{feedContext(item)}</span> : null}<small>{relativeNotificationTime(item.createdAt)}</small></span>

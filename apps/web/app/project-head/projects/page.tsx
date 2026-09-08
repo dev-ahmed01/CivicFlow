@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CivicWorkOrigin, PaginationMeta, ProjectHeadTicketSummary, ProjectListItem, ProjectState, TicketState } from "@civicos/shared";
 import { EmptyState, PageHeader, PaginationControls } from "../../_components/ui";
@@ -66,6 +66,7 @@ function originLabel(origin: CivicWorkOrigin): string {
 
 export default function WorkPipelinePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [tickets, setTickets] = useState<ProjectHeadTicketSummary[]>([]);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [view, setView] = useState<WorkLifecycle>("ALL");
@@ -92,19 +93,28 @@ export default function WorkPipelinePage() {
   usePortalPolling(load);
 
   useEffect(() => {
-    const query = new URLSearchParams(window.location.search);
+    const query = new URLSearchParams(searchParams.toString());
     const requestedView = query.get("view")?.toUpperCase();
     const requestedTicket = query.get("ticketId");
     const requestedProject = query.get("project");
-    if (requestedProject) { router.replace(`/project-head/projects/${requestedProject}`); return; }
+    const requestedPage = Number(query.get("page"));
+    const requestedSort = query.get("sort");
+    if (requestedProject) {
+      const returnQuery = new URLSearchParams(query);
+      returnQuery.delete("project");
+      router.push(`/project-head/projects/${requestedProject}?from=${encodeURIComponent(`/project-head/projects${returnQuery.size ? `?${returnQuery}` : ""}`)}`);
+      return;
+    }
     if (requestedView && views.some(({ id }) => id === requestedView)) setView(requestedView as WorkLifecycle);
     else if (requestedView && ["INTAKE", "INSPECTION", "READY", "SCHEDULED", "ACTIVE", "CLOSURE", "CLOSED"].includes(requestedView)) {
       setLegacyView(requestedView as WorkView);
       setView(requestedView === "ACTIVE" ? "ONGOING" : requestedView === "CLOSURE" ? "REVIEW" : requestedView === "CLOSED" ? "COMPLETED" : "UPCOMING");
-    }
+    } else { setView("ALL"); setLegacyView(undefined); }
     setDueFilter(query.get("due") ?? undefined);
+    setPage(Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1);
+    setSort(requestedSort === "deadline" || requestedSort === "title" ? requestedSort : "updated");
     if (requestedTicket) { setTicketId(requestedTicket); setCreateOpen(true); }
-  }, [router]);
+  }, [router, searchParams]);
 
   const rows = useMemo<WorkRow[]>(() => {
     const intakeStates: TicketState[] = ["ROUTED_TO_AGENCY", "INSPECTION_DUE", "INSPECTION_COMPLETE"];
@@ -169,7 +179,18 @@ export default function WorkPipelinePage() {
   const visible = filtered.slice((effectivePage - 1) * pageSize, effectivePage * pageSize);
   const eligibleTickets = tickets.filter((ticket) => ["INSPECTION_COMPLETE", "PROJECT_CREATED"].includes(ticket.state));
 
-  const changeView = (next: WorkLifecycle) => { setView(next); setLegacyView(undefined); setDueFilter(undefined); setPage(1); };
+  const updateQuery = (changes: Record<string, string | undefined>) => {
+    const query = new URLSearchParams(searchParams.toString());
+    Object.entries(changes).forEach(([key, value]) => value ? query.set(key, value) : query.delete(key));
+    router.push(`/project-head/projects${query.size ? `?${query}` : ""}`, { scroll: false });
+  };
+  const changeView = (next: WorkLifecycle) => {
+    setView(next); setLegacyView(undefined); setDueFilter(undefined); setPage(1);
+    updateQuery({ view: next === "ALL" ? undefined : next, due: undefined, page: undefined });
+  };
+  const changeSort = (next: string) => { setSort(next); setPage(1); updateQuery({ sort: next === "updated" ? undefined : next, page: undefined }); };
+  const changePage = (next: number) => { setPage(next); updateQuery({ page: next === 1 ? undefined : String(next) }); };
+  const returnTo = `/project-head/projects${searchParams.size ? `?${searchParams.toString()}` : ""}`;
 
   return <div className="ph-work-page">
     <PageHeader title="Work" description="All agency works from planning to verified closure." action={<Link className="portal-primary-button" href="/project-head/projects/new">Register planned work</Link>} />
@@ -177,7 +198,7 @@ export default function WorkPipelinePage() {
 
     {createOpen ? <section className="portal-inline-drawer project-ready-drawer" aria-label="Create civic work from inspection"><div className="drawer-heading"><div><h2>Create civic work from an inspection</h2><p>Choose a reviewed citizen issue, then assign an Executive Engineer and any formal agency dependencies.</p></div><button className="secondary" onClick={() => setCreateOpen(false)} type="button">Close</button></div><div className="eligible-ticket-list">{eligibleTickets.map((ticket) => <button aria-pressed={ticketId === ticket.id} className={ticketId === ticket.id ? "eligible-ticket selected" : "eligible-ticket"} key={ticket.id} onClick={() => setTicketId(ticket.id)} type="button"><span><code>{ticket.referenceNumber}</code><WorkStatus state={ticket.state} /></span><strong>{ticket.title}</strong><small>{ticket.category.name} · {ticket.ward.name}</small></button>)}{eligibleTickets.length === 0 ? <EmptyState title="No reviewed inspections are ready" description="Submitted inspection results will appear here when they are ready for a Project Head decision." /> : null}</div>{ticketId ? <ProjectCreateClient onCreated={() => void load()} ticketId={ticketId} /> : null}</section> : null}
 
-    <div className="ph-registry-controls"><span>{dueFilter ? (dueFilter === "overdue" ? "Past planned end date" : "Starting in the next 7 days") : legacyView ? "Filtered from Today" : "Agency work registry"}{dueFilter || legacyView ? <button className="ph-text-action" onClick={() => changeView("ALL")} type="button">Clear filter</button> : null}</span><label>Sort by <select value={sort} onChange={(event) => setSort(event.target.value)}><option value="updated">Recently updated</option><option value="deadline">Next deadline</option><option value="title">Name (A–Z)</option></select></label></div>
+    <div className="ph-registry-controls"><span>{dueFilter ? (dueFilter === "overdue" ? "Past planned end date" : "Starting in the next 7 days") : legacyView ? "Filtered from Today" : "Agency work registry"}{dueFilter || legacyView ? <button className="ph-text-action" onClick={() => changeView("ALL")} type="button">Clear filter</button> : null}</span><label>Sort by <select value={sort} onChange={(event) => changeSort(event.target.value)}><option value="updated">Recently updated</option><option value="deadline">Next deadline</option><option value="title">Name (A–Z)</option></select></label></div>
     {loading ? <p role="status">Loading agency works…</p> : null}
     {error ? <p className="error" role="alert">{error}</p> : null}
 
@@ -191,7 +212,7 @@ export default function WorkPipelinePage() {
       </article>; })}
       {!loading && !visible.length ? <EmptyState title="No work in this lifecycle" description="Choose another lifecycle tab to browse agency work." /> : null}
     </section>
-    <div className="ph-pipeline-footer"><span>Showing {visible.length ? (effectivePage - 1) * pageSize + 1 : 0}–{Math.min(effectivePage * pageSize, filtered.length)} of {filtered.length} records</span><PaginationControls page={effectivePage} totalPages={totalPages} onPageChange={setPage} /></div>
-    <ProjectHeadRecordQuickView onChanged={() => void load()} onClose={() => setQuickRecord(undefined)} record={quickRecord} />
+    <div className="ph-pipeline-footer"><span>Showing {visible.length ? (effectivePage - 1) * pageSize + 1 : 0}–{Math.min(effectivePage * pageSize, filtered.length)} of {filtered.length} records</span><PaginationControls page={effectivePage} totalPages={totalPages} onPageChange={changePage} /></div>
+    <ProjectHeadRecordQuickView onChanged={() => void load()} onClose={() => setQuickRecord(undefined)} record={quickRecord} returnTo={returnTo} />
   </div>;
 }

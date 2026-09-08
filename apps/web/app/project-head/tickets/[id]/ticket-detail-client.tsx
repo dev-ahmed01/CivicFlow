@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { CitizenTicketTimelineResponse, EngineerSummary, InspectionReviewDecision, ProjectHeadTicketDetail } from "@civicos/shared";
 import { NextActionButton } from "../../../_components/operations";
@@ -11,6 +12,9 @@ import { apiFetch } from "../../_lib/api";
 type RecordTab = "OVERVIEW" | "ACTIVITY" | "DOCUMENTS";
 
 export function TicketDetailClient({ ticketId }: { ticketId: string }) {
+  const searchParams = useSearchParams();
+  const requestedReturn = searchParams.get("from");
+  const backHref = requestedReturn?.startsWith("/project-head/projects") ? requestedReturn : "/project-head/projects";
   const [ticket, setTicket] = useState<ProjectHeadTicketDetail>();
   const [timeline, setTimeline] = useState<CitizenTicketTimelineResponse>();
   const [engineers, setEngineers] = useState<EngineerSummary[]>([]);
@@ -112,7 +116,7 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
   }
 
   return <div className="ph-record-page">
-    <header className="ph-record-header"><div><Link className="back-link" href="/project-head/projects">← Back to Work</Link><h1>{ticket.title}</h1><p><code>{ticket.referenceNumber}</code> · {ticket.ward.name} · {ticket.category.name}</p></div><div className="ph-record-header-actions"><WorkStatus state={ticket.internalState} />{primaryAction}</div></header>
+    <header className="ph-record-header"><div><Link className="back-link" href={backHref}>← Back to Work</Link><h1>{ticket.title}</h1><p><code>{ticket.referenceNumber}</code> · {ticket.ward.name} · {ticket.category.name}</p></div><div className="ph-record-header-actions"><WorkStatus state={ticket.internalState} />{primaryAction}</div></header>
     {error ? <p className="error" role="alert">{error}</p> : null}
     <RecordTabs active={tab} onChange={setTab} tabs={[{ id: "OVERVIEW", label: "Overview" }, { id: "ACTIVITY", label: "Activity", count: activity.length }, { id: "DOCUMENTS", label: "Documents", count: documents }]} />
 

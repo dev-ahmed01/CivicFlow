@@ -78,18 +78,19 @@ export function EngineerShell({ children }: { children: ReactNode }) {
 
   return <div className="portal-shell engineer-shell">
     <a className="engineer-skip" href="#engineer-main">Skip to content</a>
-    <header className="engineer-mobile-header"><button ref={menuButtonRef} aria-label="Open navigation" aria-controls="engineer-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} type="button"><EngineerSymbol name="menu" /></button><Link href="/engineer">CITY CONNECT<small>Executive Engineer</small></Link></header>
+    <header className="engineer-mobile-header"><button ref={menuButtonRef} aria-label="Open navigation" aria-controls="engineer-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} type="button"><EngineerSymbol name="menu" /></button><Link href="/engineer">City Connect<small>Operations</small></Link></header>
     {menuOpen ? <button className="engineer-drawer-backdrop" aria-label="Close navigation" onClick={() => setMenuOpen(false)} tabIndex={-1} type="button" /> : null}
     <aside className={`portal-sidebar ${menuOpen ? "engineer-drawer-open" : ""}`} id="engineer-sidebar" ref={sidebarRef} role={menuOpen ? "dialog" : undefined} aria-modal={menuOpen || undefined} aria-label="Executive Engineer navigation">
       <button className="engineer-drawer-close" aria-label="Close navigation" onClick={() => setMenuOpen(false)} type="button"><EngineerSymbol name="close" /></button>
-      <Link className="portal-brand portal-product-mark" href="/engineer" onClick={() => setMenuOpen(false)}><span className="portal-logo-mark" aria-hidden="true" /><span><strong>CITY</strong><b>CONNECT</b></span></Link>
-      <p className="portal-role">Executive Engineer</p>
+      <Link className="portal-brand portal-product-mark" href="/engineer" onClick={() => setMenuOpen(false)}><span className="portal-logo-mark" aria-hidden="true">CC</span><span><strong>City Connect</strong><small>Operations</small></span></Link>
+      <p className="portal-role">Engineer</p>
       <nav aria-label="Engineer navigation" onClick={(event) => { if ((event.target as HTMLElement).closest("a")) setMenuOpen(false); }}>
         <div className="portal-nav-group"><p>Work</p>{workLinks.map((item) => <Link aria-current={item.active(pathname) ? "page" : undefined} className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
         <div className="portal-nav-group"><p>Account</p><NotificationBell active={pathname === "/engineer/notifications"} apiFetch={apiFetch} href="/engineer/notifications" label="Notifications" />{accountLinks.map((item) => <Link aria-current={item.active(pathname) ? "page" : undefined} className={item.active(pathname) ? "active" : ""} href={item.href} key={item.href}><CitizenIcon name={item.icon} size={18} /><span>{item.label}</span></Link>)}</div>
       </nav>
       <button className="portal-logout" type="button" onClick={() => void logout().finally(() => router.replace("/login"))}><CitizenIcon name="logout" size={19} />Sign out</button>
     </aside>
+    <header className="engineer-topbar"><NotificationBell active={pathname === "/engineer/notifications"} apiFetch={apiFetch} href="/engineer/notifications" /><Link className="engineer-topbar-identity" href="/engineer/profile"><span aria-hidden="true">EE</span><span>Engineer</span></Link></header>
     <main className="portal-content" id="engineer-main" ref={mainRef} tabIndex={-1}>{children}</main>
   </div>;
 }

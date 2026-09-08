@@ -3,9 +3,9 @@
   --cv-bg: #f7f8f6;
   --cv-surface: #fff;
   --cv-surface-alt: #f3f5f3;
-  --cv-accent: #105e43;
-  --cv-accent-strong: #105e43;
-  --cv-border: #e1e5e1;
+  --cv-accent: #07583f;
+  --cv-accent-strong: #07583f;
+  --cv-border: #e0e6e9;
   --cv-text: #151a17;
   --cv-text-secondary: #626b65;
   --cv-success-bg: #edf5ef;
@@ -16,10 +16,10 @@
   --cv-danger-text: #bd2639;
   --cv-info-bg: #edf3fd;
   --cv-info-text: #2565bc;
-  --engineer-sidebar: #0c3d30;
+  --engineer-sidebar: #0d382d;
   --engineer-nav-active: #205641;
   --engineer-tip: #eff5f0;
-  --engineer-sidebar-width: 230px;
+  --engineer-sidebar-width: var(--cv-sidebar-width);
   --primary: var(--cv-accent);
   --cf-accent-green: var(--cv-accent);
   --cf-border: var(--cv-border);
@@ -560,3 +560,31 @@
 .engineer-map-list .engineer-map-disclosure:hover { background: #e7efe9; }
 .engineer-map-disclosure > span { color: var(--cv-text); font-size: 15px; }
 .engineer-map-disclosure > .engineer-map-count { color: var(--cv-accent); margin-left: auto; font-size: 14px; }
+
+/* Final cross-portal alignment: the Engineer keeps its field context inside the
+   same City Connect Operations shell used by the Project Head workspace. */
+.engineer-shell .portal-product-mark { padding-left: 54px; gap: 0; }
+.engineer-shell .portal-logo-mark { left: 0; display: inline-flex; color: white; font-size: 12px; font-weight: 600; }
+.engineer-shell .portal-product-mark strong { font-size: 20px; font-weight: 600; letter-spacing: -.35px; }
+.engineer-shell .portal-product-mark small { display: block; color: #cfe2d6; font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+.engineer-shell .portal-role { margin: 14px 0 32px 54px; }
+.engineer-shell .portal-sidebar nav a { min-height: 48px; }
+.engineer-topbar { align-items: center; background: var(--cv-surface); border-bottom: 1px solid var(--cv-border); display: flex; gap: 18px; height: var(--cv-topbar-height); justify-content: flex-end; padding: 0 var(--cv-page-gutter); }
+.engineer-topbar .notification-bell { background: transparent; border: 0; color: var(--cv-accent); height: 42px; margin: 0; width: 42px; }
+.engineer-topbar .notification-bell > strong { border-color: var(--cv-surface); color: white; }
+.engineer-topbar-identity { align-items: center; border-left: 1px solid var(--cv-border); color: var(--cv-text); display: inline-flex; font-size: 14px; gap: 10px; padding-left: 18px; text-decoration: none; }
+.engineer-topbar-identity > span:first-child { align-items: center; background: var(--cv-success-bg); border-radius: 50%; color: var(--cv-accent); display: inline-flex; font-size: 11px; font-weight: 600; height: 32px; justify-content: center; width: 32px; }
+.engineer-shell .portal-sidebar .nav-notification-bell { display: none; }
+.engineer-shell .portal-heading h1 { font-size: clamp(38px, 3vw, 42px) !important; font-weight: 700; letter-spacing: -.035em; line-height: 1.15; }
+.engineer-shell .engineer-stat { gap: 14px; padding: 18px 16px; }
+.engineer-shell .engineer-stat .engineer-symbol { height: 50px; width: 50px; }
+.engineer-shell .engineer-today .engineer-stat { min-height: 112px; }
+.engineer-shell .engineer-action, .engineer-shell .next-action-button, .engineer-shell .engineer-primary, .engineer-shell .primary-button { min-height: var(--cv-control-height); font-size: 14px; font-weight: 600; }
+.engineer-shell .engineer-tip { margin-top: 20px; padding: 14px 16px; }
+
+@media (max-width: 780px) {
+  .engineer-topbar { display: none; }
+  .engineer-shell .portal-sidebar .nav-notification-bell { display: flex; }
+  .engineer-shell .portal-product-mark { padding-left: 54px; }
+  .engineer-shell .portal-heading h1 { font-size: 34px !important; }
+}

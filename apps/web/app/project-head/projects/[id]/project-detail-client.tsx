@@ -2,6 +2,7 @@
 
 import type { Agency, CoordinationConflict, CoordinationRequest, DependencyListItem, EngineerProjectDetail, SequencingRecommendationOutcome } from "@civicos/shared";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { NextActionButton } from "../../../_components/operations";
 import { RoadIntelligencePanel, type RoadIntelligenceData } from "../../../_components/road-intelligence-panel";
@@ -50,6 +51,9 @@ function deadlineText(value: Date | string): string {
 }
 
 export function ProjectDetailClient({ projectId }: { projectId: string }) {
+  const searchParams = useSearchParams();
+  const requestedReturn = searchParams.get("from");
+  const backHref = requestedReturn?.startsWith("/project-head/projects") ? requestedReturn : "/project-head/projects";
   const [project, setProject] = useState<EngineerProjectDetail>();
   const [conflicts, setConflicts] = useState<CoordinationConflict[]>([]);
   const [roadData, setRoadData] = useState<RoadIntelligenceData>(emptyRoadData);
@@ -158,7 +162,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
   }
 
   return <div className="ph-record-page">
-    <header className="ph-record-header"><div><Link className="back-link" href="/project-head/projects">← Back to Work</Link><h1>{project.ticket?.title ?? project.title}</h1><p><code>{project.referenceNumber}</code> · {project.ticket?.ward.name ?? project.locationLabel ?? "Location pending"} · {project.agency.name}</p><span className="ph-record-assignee">Responsible: {project.engineer?.email ?? "Unassigned"}</span></div><div className="ph-record-header-actions"><WorkStatus state={project.state} />{conflictGroups.length ? <button className="ph-warning-link" onClick={() => setTab("COORDINATION")} type="button">{conflictGroups.length} coordination issue{conflictGroups.length === 1 ? "" : "s"}</button> : null}{primaryAction}</div></header>
+    <header className="ph-record-header"><div><Link className="back-link" href={backHref}>← Back to Work</Link><h1>{project.ticket?.title ?? project.title}</h1><p><code>{project.referenceNumber}</code> · {project.ticket?.ward.name ?? project.locationLabel ?? "Location pending"} · {project.agency.name}</p><span className="ph-record-assignee">Responsible: {project.engineer?.email ?? "Unassigned"}</span></div><div className="ph-record-header-actions"><WorkStatus state={project.state} />{conflictGroups.length ? <button className="ph-warning-link" onClick={() => setTab("COORDINATION")} type="button">{conflictGroups.length} coordination issue{conflictGroups.length === 1 ? "" : "s"}</button> : null}{primaryAction}</div></header>
     {error ? <p className="error" role="alert">{error}</p> : null}
     <RecordTabs active={tab} onChange={setTab} tabs={[{ id: "OVERVIEW", label: "Overview" }, { id: "ACTIVITY", label: "Activity", count: activity.length }, { id: "COORDINATION", label: "Coordination", count: conflictGroups.length + dependencies.length + requests.length }, { id: "DOCUMENTS", label: "Documents", count: documentCount }]} />
 
