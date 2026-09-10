@@ -56,3 +56,5 @@ _(Update this section as phases complete — Codex should read it to know what a
 - [x] Project Head targeted UI/demo correction - lifecycle overflow removed; shared compact summaries and collision-free attention cards; three Roads demo engineers seeded without resetting work. Web typecheck/lint/build, 27 web tests, 120 API tests and 17 DB tests pass. Evidence and limits: docs/project-head-redesign/corrections.md.
 
 - [x] Engineer Portal UX/navigation correction - interactive lifecycle cards, shared notifications, map disclosure, and contextual Back; web typecheck/lint/build and 33 tests pass. Browser evidence and data-dependent limits: `docs/engineer-ux-correction/README.md`.
+
+- [x] Mobile Expo QR launch configuration repair - SDK-compatible development client/font dependencies; explicit development-build QR using the existing scheme. Mobile build/lint and 37 tests pass; Metro QR, Android bundle, config and autolinking verified locally. Native APK/device acceptance remains pending; Expo Doctor retains the existing native/config-sync warning. Evidence: `docs/mobile-expo-qr-audit.md`.

@@ -89,6 +89,10 @@ pnpm dev
 
 The compose service maps PostgreSQL to host port `5433` to avoid common conflicts with an existing local PostgreSQL installation. Seeded account identifiers and roles are documented in the SIH runbook; credentials come from operator-controlled environment variables and are never published. Accounts marked for first-login reset can only reach the password-reset flow until they change it.
 
+## Mobile development QR
+
+Use the City Connect development build to scan Expo's terminal QR. The app includes native MapLibre modules and cannot run in Expo Go. Build/install the existing EAS `development` profile once, then run `corepack pnpm --filter mobile start` with a phone-reachable `EXPO_PUBLIC_API_URL`. See the [Expo QR launch audit and setup](docs/mobile-expo-qr-audit.md) for exact commands, native rebuild requirements, and verification limits.
+
 ## Notifications
 
 Notification rows act as a transactional outbox. Citizen and Engineer devices register an Expo token with `POST /notifications/push-tokens`; committed notification batches wake the Expo delivery worker immediately, while `PUSH_DELIVERY_POLL_SECONDS` (15 seconds by default) remains a safety sweep. Delivery records cover every active token for the recipient, retry transient failures up to five times, and disable tokens Expo reports as unregistered. Set `EXPO_ACCESS_TOKEN` only when Expo push access-token security is enabled. A physical-device EAS development or preview build with a configured EAS project ID is required for remote push; Expo Go is not used for production push verification.

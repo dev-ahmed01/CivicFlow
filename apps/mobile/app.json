@@ -30,6 +30,12 @@
     },
     "plugins": [
       [
+        "expo-dev-client",
+        {
+          "addGeneratedScheme": false
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "City Connect uses your photos as evidence for civic reports.",
@@ -43,6 +49,7 @@
           "locationWhenInUsePermission": "City Connect uses your location to route civic reports to the right ward."
         }
       ],
+      "expo-font",
       "expo-notifications",
       "expo-secure-store",
       "@maplibre/maplibre-react-native"
