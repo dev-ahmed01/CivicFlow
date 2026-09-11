@@ -13,7 +13,7 @@ const route = (fn: (request: Request, response: Response) => Promise<void>) => (
     response.status(error instanceof ScanError ? error.status : error instanceof z.ZodError ? 400 : 500).json({ error: error instanceof ScanError ? error.message : error instanceof z.ZodError ? "Check the submitted scan details." : "The scan request could not be completed." });
   });
 };
-export function createRoadScansRouter() {
+export function createRoadScansRouter(): Router {
   const router = Router();
   router.use(requireAuth, requirePasswordResetComplete, requireRole("PROJECT_HEAD"));
   router.get("/road-scans/options", route(async (req, res) => { res.json(await scanOptions(req.auth!)); }));
