@@ -56,7 +56,7 @@ async function configNumber(client: DatabaseClient, key: string): Promise<number
   return positiveConfigNumber(config.value, key);
 }
 
-async function validationQuorum(client: DatabaseClient): Promise<number> {
+export async function validationQuorum(client: DatabaseClient): Promise<number> {
   const notifyAllCitizens = notifyAllCitizensEnabled();
   if (notifyAllCitizens) return effectiveValidationQuorum(demoValidationQuorum, true);
   return effectiveValidationQuorum(await configNumber(client, "verification.quorum"), false);
@@ -98,6 +98,7 @@ async function createBatch(
     WHERE u."role" = ${UserRole.CITIZEN}::"UserRole"
       AND u."lastKnownCoordinates" IS NOT NULL
       AND u."phoneVerifiedAt" IS NOT NULL
+      AND u."deactivatedAt" IS NULL
       AND u."id" <> COALESCE(t."reporterId", '00000000-0000-0000-0000-000000000000'::uuid)
       AND ST_DWithin(u."lastKnownCoordinates"::geography, t."coordinates"::geography, ${radiusMeters})
       AND NOT EXISTS (
@@ -128,6 +129,7 @@ async function createBatch(
     JOIN "Ticket" t ON t."id" = ${ticketId}::uuid
     WHERE u."role" = ${UserRole.CITIZEN}::"UserRole"
       AND u."phoneVerifiedAt" IS NOT NULL
+      AND u."deactivatedAt" IS NULL
       AND u."id" <> COALESCE(t."reporterId", '00000000-0000-0000-0000-000000000000'::uuid)
       AND NOT EXISTS (
         SELECT 1 FROM "Validation" v
@@ -286,8 +288,8 @@ export async function runValidationRebatchJob(
     SELECT t."id"
     FROM "Ticket" t
     WHERE t."state" = ${TicketState.PENDING_VALIDATION}::"TicketState"
-      AND EXISTS (SELECT 1 FROM "ValidationRequest" vr WHERE vr."ticketId" = t."id")
-      AND (SELECT MAX(vr."expiresAt") FROM "ValidationRequest" vr WHERE vr."ticketId" = t."id") <= ${now}
+      AND (NOT EXISTS (SELECT 1 FROM "ValidationRequest" vr WHERE vr."ticketId" = t."id")
+        OR (SELECT MAX(vr."expiresAt") FROM "ValidationRequest" vr WHERE vr."ticketId" = t."id") <= ${now})
     ORDER BY t."createdAt" ASC
     LIMIT 50
   `;
@@ -300,7 +302,7 @@ export async function runValidationRebatchJob(
       `;
       if (locked[0]?.state !== TicketState.PENDING_VALIDATION) return 0;
       const latest = await transaction.validationRequest.aggregate({ where: { ticketId: ticket.id }, _max: { expiresAt: true } });
-      if (!latest._max.expiresAt || latest._max.expiresAt > now) return 0;
+      if (latest._max.expiresAt && latest._max.expiresAt > now) return 0;
       const quorum = await validationQuorum(transaction);
       const count = await transaction.validation.count({ where: { ticketId: ticket.id, counted: true, vote: "CONFIRM" } });
       if (count >= quorum) return 0;

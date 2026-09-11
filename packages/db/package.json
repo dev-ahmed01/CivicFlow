@@ -17,6 +17,7 @@
     "db:seed": "prisma db seed",
     "seed:run": "tsc -p tsconfig.seed.json && node .seed-dist/seed.js",
     "verify:wards": "tsc -p tsconfig.scripts.json && node .scripts-dist/scripts/verify-demo-wards.js",
+    "verify:campus-reference": "tsc -p tsconfig.scripts.json && node .scripts-dist/scripts/verify-campus-reference.js",
     "lint": "eslint src scripts seed.ts --max-warnings 0",
     "test": "vitest run",
     "demo:reset": "tsc -p tsconfig.seed.json && node .seed-dist/seed.js --reset",

@@ -662,3 +662,7 @@ export async function submitReport(
 }
 
 export type { LocalImage };
+
+export async function loadWorkflowOptions(): Promise<{ demoDefaults: boolean }> {
+  return apiFetch("/workflow-options");
+}

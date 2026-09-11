@@ -413,7 +413,7 @@ export const submitInspectionSchema = z.object({
 
 export const reviewInspectionSchema = z.object({
   decision: inspectionReviewDecisionSchema,
-  note: z.string().trim().min(3).max(3000),
+  note: z.string().trim().max(3000).default(""),
   engineerId: idSchema.optional(),
   deadline: z.string().datetime().optional(),
 });
@@ -449,6 +449,7 @@ export const createProjectSchema = z.object({
 });
 
 export const createPlannedCivicWorkSchema = z.object({
+  planningPhotoToken: z.string().min(1),
   title: z.string().trim().min(3).max(180),
   description: z.string().trim().min(10).max(5000),
   categoryId: idSchema,
@@ -632,7 +633,7 @@ export const completionEvidenceRequestSchema = z.discriminatedUnion("action", [
     action: z.literal("presign"),
     fileName: z.string().trim().min(1).max(200),
     contentType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic"]),
-    notes: z.string().trim().min(3).max(3000),
+    notes: z.string().trim().max(3000).default(""),
   }),
   z.object({ action: z.literal("complete"), evidenceId: idSchema }),
 ]);
@@ -982,6 +983,11 @@ export const civicWorkEvidenceRequestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("presign"), fileName: z.string().trim().min(1).max(200), label: z.string().trim().min(2).max(180), kind: z.enum(["PLANNING_DOCUMENT", "SITE_PHOTO", "PERMIT", "INSPECTION", "OTHER"]).default("PLANNING_DOCUMENT"), contentType: z.enum(["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"]), sizeBytes: z.number().int().positive().max(20 * 1024 * 1024) }),
   z.object({ action: z.literal("complete"), evidenceId: idSchema }),
 ]);
+
+export const planningPhotoUploadSchema = z.object({
+  fileName: z.string().trim().min(1).max(200),
+  contentType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic"]),
+});
 
 export const projectConflictSchema = z.object({
   id: idSchema,

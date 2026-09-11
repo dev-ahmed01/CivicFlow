@@ -85,6 +85,7 @@ describe("shared schemas", () => {
   it("validates planned-work dates and requires a spatial reference", () => {
     const input = {
       title: "BTM water-main replacement",
+      planningPhotoToken: "signed-upload-ownership-token",
       description: "Replace an aging distribution main and reinstate the affected public road.",
       categoryId: "30000000-0000-4000-8000-000000000003",
       wardId: "10000000-0000-4000-8000-000000000005",

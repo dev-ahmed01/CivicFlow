@@ -3,12 +3,14 @@
 import { EngineerBackButton } from "../../_components/back-button";
 
 import Image from "next/image";
+import { useDemoWorkflow } from "../../../_lib/demo-workflow";
 import { useCallback, useState, type FormEvent } from "react";
 import type { InspectionDetail } from "@civicos/shared";
 import { notifyPortalDataChanged, usePortalPolling } from "../../../_lib/portal-refresh";
 import { apiFetch, completionContentType, uploadFile } from "../../_lib/api";
 
 export function InspectionDetailClient({ inspectionId }: { inspectionId: string }) {
+  const demo = useDemoWorkflow();
   const [inspection, setInspection] = useState<InspectionDetail>();
   const [file, setFile] = useState<File>();
   const [busy, setBusy] = useState(false);
@@ -35,8 +37,8 @@ export function InspectionDetailClient({ inspectionId }: { inspectionId: string 
       const target = await apiFetch<{ evidenceId: string; upload: { uploadUrl: string; headers: Record<string, string> } }>(`/inspections/${inspectionId}/evidence`, { method: "POST", body: JSON.stringify({ action: "presign", fileName: file.name, contentType, sizeBytes: file.size }) });
       await uploadFile(target.upload, file);
       await apiFetch(`/inspections/${inspectionId}/evidence`, { method: "POST", body: JSON.stringify({ action: "complete", evidenceId: target.evidenceId }) });
-      const latitude = Number(form.get("latitude"));
-      const longitude = Number(form.get("longitude"));
+      const latitude = form.get("latitude") ? Number(form.get("latitude")) : undefined;
+      const longitude = form.get("longitude") ? Number(form.get("longitude")) : undefined;
       await apiFetch(`/inspections/${inspectionId}/submit`, { method: "POST", body: JSON.stringify({
         issueConfirmation: form.get("issueConfirmation"), severity: form.get("severity"), observations: form.get("observations"),
         recommendedWork: form.get("recommendedWork"), complexity: form.get("complexity"), coordinationRequired: form.get("coordinationRequired") === "on",
@@ -57,13 +59,13 @@ export function InspectionDetailClient({ inspectionId }: { inspectionId: string 
     {inspection.status === "ASSIGNED" ? <section className="field-primary-action"><div><p className="eyebrow">Next action</p><h2>Accept the site inspection</h2><p>Accepting confirms that this inspection is assigned to you. It does not start civic work.</p></div><button className="primary-button" disabled={busy} onClick={() => void action("accept")} type="button">Accept Inspection</button></section> : null}
     {inspection.status === "ACCEPTED" ? <section className="field-primary-action"><div><p className="eyebrow">At the site</p><h2>Begin evidence capture</h2><p>Start the inspection when you reach the reported location.</p></div><button className="primary-button" disabled={busy} onClick={() => void action("start")} type="button">Start Inspection</button></section> : null}
     {editable ? <form className="structured-inspection-form" onSubmit={(event) => void submit(event)}><header><p className="eyebrow">Structured assessment</p><h2>Submit inspection result</h2><p>Your Project Head will review this result and decide whether civic work should be created.</p></header><div className="form-grid">
-      <label>Issue confirmation<select name="issueConfirmation" required><option value="CONFIRMED">Confirmed</option><option value="PARTIALLY_CONFIRMED">Partially confirmed</option><option value="NOT_OBSERVED">Not observed</option></select></label>
-      <label>Severity<select name="severity" required><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="HIGH">High</option><option value="CRITICAL">Critical</option></select></label>
-      <label className="span-2">Observations<textarea name="observations" minLength={10} required rows={4} /></label>
-      <label className="span-2">Recommended work<textarea name="recommendedWork" minLength={5} required rows={3} /></label>
-      <label>Complexity<select name="complexity" required><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="HIGH">High</option></select></label>
-      <label>Recommendation<select name="recommendation" required><option value="PROCEED">Proceed</option><option value="COORDINATION_REQUIRED">Coordination required</option><option value="ADDITIONAL_INVESTIGATION">Additional investigation</option><option value="NO_WORK_REQUIRED">No work required</option></select></label>
-      <label>Latitude<input name="latitude" required step="any" type="number" /></label><label>Longitude<input name="longitude" required step="any" type="number" /></label>
+      <label>Issue confirmation<select name="issueConfirmation" required={!demo}><option value="CONFIRMED">Confirmed</option><option value="PARTIALLY_CONFIRMED">Partially confirmed</option><option value="NOT_OBSERVED">Not observed</option></select></label>
+      <label>Severity<select name="severity" required={!demo}><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="HIGH">High</option><option value="CRITICAL">Critical</option></select></label>
+      <label className="span-2">Observations<textarea name="observations" minLength={demo ? undefined : 10} required={!demo} rows={4} /></label>
+      <label className="span-2">Recommended work<textarea name="recommendedWork" minLength={demo ? undefined : 5} required={!demo} rows={3} /></label>
+      <label>Complexity<select name="complexity" required={!demo}><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="HIGH">High</option></select></label>
+      <label>Recommendation<select name="recommendation" required={!demo}><option value="PROCEED">Proceed</option><option value="COORDINATION_REQUIRED">Coordination required</option><option value="ADDITIONAL_INVESTIGATION">Additional investigation</option><option value="NO_WORK_REQUIRED">No work required</option></select></label>
+      <label>Latitude<input name="latitude" required={!demo} step="any" type="number" /></label><label>Longitude<input name="longitude" required={!demo} step="any" type="number" /></label>
       <label className="span-2"><input name="coordinationRequired" type="checkbox" /> Other-agency coordination is required</label><label className="span-2">Other agency involvement<input name="otherAgencyInvolvement" /></label>
       <label className="span-2">Site evidence image<input accept="image/*" onChange={(event) => setFile(event.target.files?.[0])} required type="file" /></label>
     </div><button className="primary-button" disabled={busy} type="submit">{busy ? "Submitting…" : "Submit Inspection"}</button></form> : null}

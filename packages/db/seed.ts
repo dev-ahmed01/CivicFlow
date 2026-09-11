@@ -135,7 +135,7 @@ const systemConfigs = [
   { key: "duplicate.visual_similarity_threshold", value: 0.75, description: "Advisory CLIP embedding similarity threshold" },
   { key: "ai_relevance.max_retries", value: 3, description: "Maximum relevance-check retries before manual-review recommendation" },
   { key: "ai_relevance.pass_threshold", value: 0.6, description: "Minimum hosted image/category relevance confidence" },
-  { key: "demo.web_auto_route_enabled", value: true, description: "Demo-only: route relevant web reports directly to the category's configured primary agency" },
+  { key: "demo.web_auto_route_enabled", value: false, description: "Demo-only optional direct routing; disabled for the complete community-validation demo" },
   { key: "conflict.radius_meters", value: 200, description: "Default generic project conflict radius" },
   { key: "road.category_id", value: categories[0].id, description: "System-configured category that enables Road-Cutting Intelligence" },
   { key: "road.repeated_excavation_days", value: 90, description: "Days after restoration during which a new excavation receives an advisory warning" },
@@ -1078,10 +1078,56 @@ async function reconcileDemoHistory(): Promise<void> {
   }
 }
 
+// Controlled reference synchronization, independent of destructive showcase reset.
+// Preserve existing credentials, phone verification, device location and work.
+async function syncCampusDemo(): Promise<void> {
+  const profile = process.env.DEPLOYMENT_PROFILE ?? (process.env.NODE_ENV === "production" ? "production" : "local");
+  if (profile !== "local" && profile !== "free_demo") return;
+  await prisma.$queryRaw`SELECT pg_advisory_xact_lock(7240912)::text`;
+  const ward = demoWards.find(({ id }) => id === demoWardIds.jakkasandra)!;
+  await prisma.$executeRaw`
+    INSERT INTO "Ward" ("id", "name", "boundary")
+    VALUES (${ward.id}::uuid, ${ward.name}, ST_GeomFromText(${demoWardBoundaryWkt(ward)},4326))
+    ON CONFLICT ("id") DO NOTHING
+  `;
+  await prisma.$executeRaw`
+    INSERT INTO "RoadSegment" ("id", "roadName", "geometry", "wardId", "surfaceType")
+    VALUES ('80000000-0000-4000-8000-000000000011', 'JAIN campus access road (demo segment)',
+      ST_GeomFromText('LINESTRING(77.4395 12.63865,77.4435 12.63865)',4326), ${ward.id}::uuid, 'Asphalt')
+    ON CONFLICT ("id") DO NOTHING
+  `;
+  const passwordHash = await bcrypt.hash(demoInternalPassword, 12);
+  for (let number = 1; number <= 5; number += 1) {
+    const id = `42000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
+    const email = `citizen.jain.${number}@cityconnect.local`;
+    const phone = `+91987652000${number}`;
+    const latitude = 12.63865 + (number - 1) * 0.00015;
+    await prisma.$executeRaw`
+      INSERT INTO "User" ("id", "role", "email", "phone", "passwordHash", "phoneVerifiedAt", "wardId", "lastKnownCoordinates")
+      VALUES (${id}::uuid, 'CITIZEN', ${email}, ${phone}, ${passwordHash}, NOW(), ${ward.id}::uuid,
+        ST_SetSRID(ST_MakePoint(77.44137, ${latitude}),4326)) ON CONFLICT DO NOTHING
+    `;
+  }
+  const marker = await prisma.systemConfig.findUnique({ where: { key: "demo.jain_reference_version" } });
+  if (!marker) {
+    for (const config of [
+      { key: "demo.web_auto_route_enabled", value: false, description: "Community validation precedes routing in the campus demo" },
+      { key: "demo.workflow_defaults_enabled", value: true, description: "Optional form defaults, allowed only in local/free_demo profiles" },
+      { key: "verification.quorum", value: 1, description: "Independent confirmations required in the campus demo" },
+      { key: "verification.initial_recipient_count", value: 15, description: "Nearest eligible citizens invited to community review" },
+      { key: "demo.jain_reference_version", value: 1, description: "Additive campus demo provisioning version" },
+    ]) await prisma.systemConfig.upsert({ where: { key: config.key }, create: config, update: { value: config.value } });
+  }
+}
+
 async function main(): Promise<void> {
   if (demoSeedMode === "if_empty") {
     const occupied = await client.user.count() + await client.agency.count() + await client.ticket.count() + await client.project.count();
-    if (occupied) { console.log("Database contains application data; startup seed skipped without mutations. Use demo:reset explicitly."); return; }
+    if (occupied) {
+      await client.$transaction(async (transaction) => { prisma = transaction; await syncCampusDemo(); }, { timeout: 30000 });
+      console.log("Application seed skipped; additive campus demo reference data synchronized. Existing work preserved.");
+      return;
+    }
   }
   const target = assertDemoResetAllowed(process.env);
   console.warn(`DEMO RESET: replacing all application records in ${target}; schema, migrations, configuration and reference counters are preserved.`);
@@ -1091,6 +1137,7 @@ async function main(): Promise<void> {
     if (demoSeedMode === "team_only") { await seedPwdDemoEngineers(await bcrypt.hash(demoInternalPassword, 12)); return; }
     await clearDemoDatabase(transaction);
     await seedDataset();
+    await syncCampusDemo();
   }, { timeout: 120000, maxWait: 10000 });
 }
 

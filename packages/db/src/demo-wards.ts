@@ -21,12 +21,19 @@ export const demoWardIds = {
   bellandur: "10000000-0000-4000-8000-000000000008",
   marathahalli: "10000000-0000-4000-8000-000000000009",
   electronicCity: "10000000-0000-4000-8000-000000000010",
+  jakkasandra: "10000000-0000-4000-8000-000000000011",
 } as const;
 
 // Part III §7.1/§20 — demo defaults only. Runtime ward boundaries remain
 // database-backed and system-configurable. Small gaps keep ST_Covers deterministic at
 // the edges instead of turning the demo into one city-wide reporting polygon.
 export const demoWards = [
+  {
+    id: demoWardIds.jakkasandra,
+    name: "Jakkasandra / JAIN Global Campus",
+    boundary: [[77.4250, 12.6250], [77.4580, 12.6250], [77.4580, 12.6550], [77.4250, 12.6550], [77.4250, 12.6250]],
+    representativeCoordinates: { latitude: 12.63865, longitude: 77.44137 },
+  },
   {
     id: demoWardIds.koramangala,
     name: "Koramangala",

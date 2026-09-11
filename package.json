@@ -14,6 +14,7 @@
     "dev:all": "turbo run dev --parallel",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "verify:jain-campus": "pnpm --filter api verify:jain-campus",
     "db:generate": "pnpm --filter db db:generate",
     "db:migrate": "pnpm --filter db exec prisma migrate dev",
     "db:seed": "pnpm --filter db exec prisma db seed",

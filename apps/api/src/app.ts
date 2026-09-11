@@ -26,6 +26,7 @@ import { createDeadlineJobsRouter, createGrievancesRouter } from "./grievances/r
 import { createCivicWorksRouter } from "./civic-works/router";
 import { createCoordinationRouter } from "./coordination/router";
 import { createInspectionsRouter } from "./inspections/router";
+import { demoWorkflowEnabled } from "./config/demo-workflow";
 
 export interface AppDependencies {
   otpProvider?: OtpProvider;
@@ -69,6 +70,9 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.use(createValidationJobsRouter(env.CRON_SECRET));
   app.use(createDependencyJobsRouter(env.CRON_SECRET));
   app.use(createDeadlineJobsRouter(env.CRON_SECRET));
+  app.get("/workflow-options", requireAuth, requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), (request, response, next) => {
+    void demoWorkflowEnabled().then((demoDefaults) => response.json({ demoDefaults })).catch(next);
+  });
   const imageStorage = resolvedDependencies.imageStorage ?? new S3CompatibleStorage(env);
   app.use(createTicketsRouter(
     resolvedDependencies.imageRelevance ?? createImageRelevanceService(env),

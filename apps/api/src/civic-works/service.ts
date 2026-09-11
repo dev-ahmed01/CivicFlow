@@ -24,6 +24,8 @@ import type {
   UserRole as SharedUserRole,
 } from "@civicos/shared";
 import { createNotification } from "../notifications/service";
+import { S3CompatibleStorage, storageReadUrl } from "../images/storage";
+import { getEnv } from "../config/env";
 import { createDependencyRequests, DependencyActionError } from "../dependencies/service";
 import { checkProjectConflicts } from "../conflicts/service";
 import { checkRoadConflicts, isRoadCategory } from "../road-intelligence/service";
@@ -332,6 +334,7 @@ async function civicWorkForResponse(client: CivicWorkClient, record: CivicWorkRe
   const geometry = geometries.get(record.id);
   return {
     ...record,
+    evidence: signedWorkEvidence(record),
     geometry: geometry ?? null,
     citizenTicketReference: record.ticket,
     roadSegment: record.intervention?.segment ?? null,
@@ -346,7 +349,12 @@ async function civicWorkForResponse(client: CivicWorkClient, record: CivicWorkRe
   };
 }
 
-export async function createPlannedCivicWork(actor: CivicWorkActor, input: CreatePlannedCivicWork) {
+function signedWorkEvidence(record: CivicWorkRecord) {
+  const storage = new S3CompatibleStorage(getEnv());
+  return record.evidence.map(({ objectKey, ...item }) => ({ ...item, url: objectKey ? storageReadUrl(storage, objectKey, item.url) : item.url }));
+}
+
+export async function createPlannedCivicWork(actor: CivicWorkActor, input: CreatePlannedCivicWork, photo: { objectKey: string; contentType: string; url: string }) {
   const agencyId = civicWorkManageAgency(actor);
   const plannedStart = new Date(input.proposedStart);
   const plannedEnd = new Date(input.proposedEnd);
@@ -385,6 +393,7 @@ export async function createPlannedCivicWork(actor: CivicWorkActor, input: Creat
         workDescription: input.description,
         engineerId: input.engineerId,
         state: nextState,
+        evidence: { create: { ...photo, kind: "SITE_PHOTO", label: "Site evidence", createdById: actor.userId, uploadedAt: new Date() } },
         stateTransitions: {
           create: [
             { fromState: null, toState: ProjectState.CREATED, reason: "PLANNED_WORK_REGISTERED", actedById: actor.userId },
@@ -460,6 +469,7 @@ export async function listCivicWorks(actor: CivicWorkActor, query: ListCivicWork
     const geometry = geometries.get(record.id);
     return {
       ...record,
+      evidence: signedWorkEvidence(record),
       geometry: geometry ?? null,
       citizenTicketReference: record.ticket,
       roadSegment: record.intervention?.segment ?? null,

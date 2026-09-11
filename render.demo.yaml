@@ -9,7 +9,7 @@ services:
     healthCheckPath: /health
     autoDeployTrigger: checksPass
     # Render pre-deploy commands require a paid instance. The seed is idempotent,
-    # so the free profile safely migrates and restores showcase data at startup.
+    # so the free profile migrates and adds campus reference data without resetting work.
     dockerCommand: sh -c "corepack pnpm --filter db exec prisma migrate deploy && corepack pnpm --filter db exec prisma db seed && exec pnpm --filter api start"
     envVars:
       - key: NODE_ENV
@@ -38,7 +38,7 @@ services:
       - key: DEMO_AUTH_CODE
         sync: false
       - key: DEMO_NOTIFY_ALL_CITIZENS
-        value: true
+        value: false
       # Cloudflare R2 uses the existing S3-compatible signer.
       - key: S3_ENDPOINT
         sync: false

@@ -22,7 +22,7 @@ describe("Bengaluru demo wards", () => {
   it("uses stable deterministic UUIDs and SRID 4326", () => {
     expect(DEMO_WARD_SRID).toBe(4326);
     expect(demoWardIds.btmLayout).toBe("10000000-0000-4000-8000-000000000005");
-    expect(new Set(demoWards.map((ward) => ward.id)).size).toBe(10);
+    expect(new Set(demoWards.map((ward) => ward.id)).size).toBe(11);
     for (const ward of demoWards) {
       expect(ward.id).toMatch(/^10000000-0000-4000-8000-\d{12}$/);
       expect(ward.boundary[0]).toEqual(ward.boundary.at(-1));
@@ -41,6 +41,10 @@ describe("Bengaluru demo wards", () => {
   it("resolves the BTM Layout GPS regression point to BTM Layout", () => {
     const matches = demoWards.filter((ward) => coversRepresentative(ward, 12.9166, 77.6101));
     expect(matches.map((ward) => ward.name)).toEqual(["BTM Layout"]);
+  });
+
+  it.each([[12.63865, 77.44137], [12.6375, 77.4405], [12.6400, 77.4430], [12.6420, 77.4380]])("covers campus GPS %s, %s", (latitude, longitude) => {
+    expect(demoWards.filter((ward) => coversRepresentative(ward, latitude, longitude)).map(({ id }) => id)).toEqual([demoWardIds.jakkasandra]);
   });
 
   it("keeps every demo polygon interior separate", () => {

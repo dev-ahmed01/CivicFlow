@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useDemoWorkflow } from "../../../_lib/demo-workflow";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { CitizenTicketTimelineResponse, EngineerSummary, InspectionReviewDecision, ProjectHeadTicketDetail } from "@civicos/shared";
@@ -12,6 +13,7 @@ import { apiFetch } from "../../_lib/api";
 type RecordTab = "OVERVIEW" | "ACTIVITY" | "DOCUMENTS";
 
 export function TicketDetailClient({ ticketId }: { ticketId: string }) {
+  const demo = useDemoWorkflow();
   const searchParams = useSearchParams();
   const requestedReturn = searchParams.get("from");
   const backHref = requestedReturn?.startsWith("/project-head/projects") ? requestedReturn : "/project-head/projects";
@@ -44,11 +46,11 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
 
   const assignInspection = async (event: FormEvent) => {
     event.preventDefault();
-    if (!engineerId || !deadline) return;
+    if (!demo && (!engineerId || !deadline)) return;
     setBusy(true);
     setError(undefined);
     try {
-      await apiFetch(`/tickets/${ticketId}/inspections`, { method: "POST", body: JSON.stringify({ engineerId, deadline: new Date(`${deadline}T17:00:00+05:30`).toISOString() }) });
+      await apiFetch(`/tickets/${ticketId}/inspections`, { method: "POST", body: JSON.stringify({ engineerId: engineerId || undefined, deadline: deadline ? new Date(`${deadline}T17:00:00+05:30`).toISOString() : undefined }) });
       setEngineerId("");
       setDeadline("");
       notifyPortalDataChanged();
@@ -61,11 +63,10 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
   };
 
   const reviewInspection = async (inspectionId: string, decision: InspectionReviewDecision) => {
-    if (!reviewNote.trim()) { setError("Add a review note before recording the decision"); return; }
     setBusy(true);
     setError(undefined);
     try {
-      await apiFetch(`/inspections/${inspectionId}/review`, { method: "POST", body: JSON.stringify({ decision, note: reviewNote, ...(decision === "ADDITIONAL_INSPECTION" ? { engineerId, deadline: new Date(`${deadline}T17:00:00+05:30`).toISOString() } : {}) }) });
+      await apiFetch(`/inspections/${inspectionId}/review`, { method: "POST", body: JSON.stringify({ decision, note: reviewNote, ...(decision === "ADDITIONAL_INSPECTION" ? { engineerId: engineerId || undefined, deadline: deadline ? new Date(`${deadline}T17:00:00+05:30`).toISOString() : undefined } : {}) }) });
       setReviewNote("");
       notifyPortalDataChanged();
       await load();
@@ -124,11 +125,11 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
       <CompactAlert title="Next decision" action={primaryAction}>{nextStep}</CompactAlert>
       <section className="ph-record-group"><SectionHeader title="Work progress" description="Project Head decides and coordinates; the assigned Engineer inspects and executes." /><WorkLifecycle current={ticketWorkStage(ticket.internalState)} /></section>
 
-      {canAssignInspection ? <form className="ph-inspection-form" id="inspection-assignment" onSubmit={(event) => void assignInspection(event)}><SectionHeader title="Assign Inspection" description="Choose an Engineer from your agency and set a traceable deadline." /><label>Executive Engineer<select required value={engineerId} onChange={(event) => setEngineerId(event.target.value)}><option value="">Choose from your agency</option>{engineers.map((engineer) => <option key={engineer.id} value={engineer.id}>{engineer.email}</option>)}</select></label><label>Assignment deadline<input required type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></label><button className="portal-primary-button" disabled={busy || !engineerId || !deadline} type="submit">{busy ? "Assigning…" : "Assign Inspection"}</button></form> : null}
+      {canAssignInspection ? <form className="ph-inspection-form" id="inspection-assignment" onSubmit={(event) => void assignInspection(event)}><SectionHeader title="Assign Inspection" description="Choose an Engineer from your agency and set a traceable deadline." /><label>Executive Engineer<select required={!demo} value={engineerId} onChange={(event) => setEngineerId(event.target.value)}><option value="">{demo ? "Automatic assignment within your agency" : "Choose from your agency"}</option>{engineers.map((engineer) => <option key={engineer.id} value={engineer.id}>{engineer.email}</option>)}</select></label><label>Assignment deadline<input required={!demo} type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></label><button className="portal-primary-button" disabled={busy || (!demo && (!engineerId || !deadline))} type="submit">{busy ? "Assigning…" : "Assign Inspection"}</button></form> : null}
 
       {activeInspection ? <section className="ph-record-group"><SectionHeader title="Assigned field inspection" description="Physical inspection remains with the assigned Engineer." /><dl className="ph-detail-grid"><div><dt>Engineer</dt><dd>{activeInspection.assignedEngineer.email}</dd></div><div><dt>Status</dt><dd>{activeInspection.status.replaceAll("_", " ").toLowerCase()}</dd></div><div><dt>Deadline</dt><dd>{new Date(activeInspection.deadline).toLocaleString("en-IN")}</dd></div><div><dt>Accepted</dt><dd>{activeInspection.acceptedAt ? new Date(activeInspection.acceptedAt).toLocaleString("en-IN") : "Awaiting acceptance"}</dd></div></dl></section> : null}
 
-      {submittedInspection ? <section className="ph-record-group ph-inspection-review" id="inspection-review"><SectionHeader title="Review submitted inspection" description="Engineer provides evidence and a recommendation; Project Head authorizes the next civic decision." /><dl className="ph-detail-grid"><div><dt>Issue confirmation</dt><dd>{submittedInspection.issueConfirmation?.replaceAll("_", " ")}</dd></div><div><dt>Severity</dt><dd>{submittedInspection.severity}</dd></div><div><dt>Complexity</dt><dd>{submittedInspection.complexity}</dd></div><div><dt>Recommendation</dt><dd>{submittedInspection.recommendation?.replaceAll("_", " ")}</dd></div><div><dt>Coordination</dt><dd>{submittedInspection.coordinationRequired ? "Required" : "Not required"}</dd></div><div><dt>GPS confirmation</dt><dd>{submittedInspection.latitude}, {submittedInspection.longitude}</dd></div></dl><div className="ph-scope"><h3>Observations</h3><p>{submittedInspection.observations}</p><h3>Recommended work</h3><p>{submittedInspection.recommendedWork}</p></div><div className="ph-document-list">{submittedInspection.evidence.map((item, index) => <a href={item.fileUrl} key={item.id} rel="noreferrer" target="_blank"><span><strong>Site evidence {index + 1}</strong><small>{item.contentType}</small></span><span>Open ↗</span></a>)}</div><label>Project Head review note<textarea required minLength={3} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} /></label><div className="ph-review-actions"><button className="portal-primary-button" disabled={busy} onClick={() => void reviewInspection(submittedInspection.id, "CREATE_WORK")} type="button">Create Civic Work</button><button className="ph-secondary-button" disabled={busy} onClick={() => void reviewInspection(submittedInspection.id, "NO_WORK_REQUIRED")} type="button">Close · No Work Required</button></div><p className="portal-muted">Additional investigation can be assigned from this ticket after review.</p></section> : null}
+      {submittedInspection ? <section className="ph-record-group ph-inspection-review" id="inspection-review"><SectionHeader title="Review submitted inspection" description="Engineer provides evidence and a recommendation; Project Head authorizes the next civic decision." /><dl className="ph-detail-grid"><div><dt>Issue confirmation</dt><dd>{submittedInspection.issueConfirmation?.replaceAll("_", " ")}</dd></div><div><dt>Severity</dt><dd>{submittedInspection.severity}</dd></div><div><dt>Complexity</dt><dd>{submittedInspection.complexity}</dd></div><div><dt>Recommendation</dt><dd>{submittedInspection.recommendation?.replaceAll("_", " ")}</dd></div><div><dt>Coordination</dt><dd>{submittedInspection.coordinationRequired ? "Required" : "Not required"}</dd></div><div><dt>GPS confirmation</dt><dd>{submittedInspection.latitude}, {submittedInspection.longitude}</dd></div></dl><div className="ph-scope"><h3>Observations</h3><p>{submittedInspection.observations}</p><h3>Recommended work</h3><p>{submittedInspection.recommendedWork}</p></div><div className="ph-document-list">{submittedInspection.evidence.map((item, index) => <a href={item.fileUrl} key={item.id} rel="noreferrer" target="_blank"><span><strong>Site evidence {index + 1}</strong><small>{item.contentType}</small></span><span>Open ↗</span></a>)}</div><label>Project Head review note (optional)<textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} /></label><div className="ph-review-actions"><button className="portal-primary-button" disabled={busy} onClick={() => void reviewInspection(submittedInspection.id, "CREATE_WORK")} type="button">Create Civic Work</button><button className="ph-secondary-button" disabled={busy} onClick={() => void reviewInspection(submittedInspection.id, "NO_WORK_REQUIRED")} type="button">Close · No Work Required</button></div><p className="portal-muted">Additional investigation can be assigned from this ticket after review.</p></section> : null}
 
       <section className="ph-record-group"><SectionHeader title="Issue context" /><dl className="ph-detail-grid"><div><dt>Location</dt><dd>{ticket.address}</dd></div><div><dt>Ward</dt><dd>{ticket.ward.name}</dd></div><div><dt>Origin</dt><dd>{ticket.reporterId ? "Citizen reported and validated" : "Agency originated"}</dd></div><div><dt>Observations</dt><dd>{ticket.observationCount}</dd></div><div><dt>Category</dt><dd>{ticket.category.name}</dd></div><div><dt>Responsible</dt><dd>{ticket.action?.responsibleUser.email ?? "Agency queue"}</dd></div></dl>{ticket.description ? <div className="ph-scope"><h3>Reported issue</h3><p>{ticket.description}</p></div> : null}</section>
       {ticket.routingSuggestions.length ? <section className="ph-record-group"><SectionHeader title="Coordination context" description="Configured suggestions are advisory; no dependency is created automatically." /><ul className="ph-simple-list">{ticket.routingSuggestions.map((agency) => <li key={agency.id}>{agency.name}<span>{agency.type}</span></li>)}</ul></section> : null}

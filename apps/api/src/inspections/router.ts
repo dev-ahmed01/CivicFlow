@@ -6,6 +6,7 @@ import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/
 import { completeWorkflowAction, createWorkflowAction } from "../deadlines/service";
 import { storageReadUrl, type ImageStorage } from "../images/storage";
 import { createNotifications, requestPushDelivery } from "../notifications/service";
+import { demoWorkflowEnabled, demoEngineerId, withDemoDefaults, demoDates } from "../config/demo-workflow";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => { void handler(request, response, next).catch(next); };
@@ -33,7 +34,7 @@ const inspectionInclude = {
       category: { select: { id: true, name: true } },
       ward: { select: { id: true, name: true } },
       roadSegment: { select: { id: true, roadName: true } },
-      observations: { orderBy: { createdAt: "asc" as const }, select: { id: true, imageUrl: true, note: true, latitude: true, longitude: true, address: true } },
+      observations: { orderBy: { createdAt: "asc" as const }, select: { id: true, imageUrl: true, note: true, latitude: true, longitude: true, address: true, images: { where: { uploadedAt: { not: null } }, orderBy: { isPrimary: "desc" as const }, take: 1, select: { objectKey: true, url: true } } } },
     },
   },
 } satisfies Prisma.InspectionReportInclude;
@@ -44,6 +45,7 @@ function responseInspection(storage: ImageStorage, inspection: InspectionRecord)
   const { objectKey, ...report } = inspection;
   return {
     ...report,
+    ticket: { ...report.ticket, observations: report.ticket.observations.map(({ images, ...observation }) => ({ ...observation, imageUrl: images[0] ? storageReadUrl(storage, images[0].objectKey, images[0].url) : observation.imageUrl })) },
     fileUrl: objectKey && inspection.fileUrl ? storageReadUrl(storage, objectKey, inspection.fileUrl) : null,
     evidence: inspection.evidence.map(({ objectKey, ...item }) => ({ ...item, fileUrl: storageReadUrl(storage, objectKey, item.fileUrl) })),
   };
@@ -79,7 +81,8 @@ export function createInspectionsRouter(storage: ImageStorage): Router {
   router.use(requireAuth, requirePasswordResetComplete);
 
   router.post("/tickets/:ticketId/inspections", requireRole(UserRole.PROJECT_HEAD), asyncRoute(async (request, response) => {
-    const parsed = assignInspectionSchema.safeParse(request.body);
+    const demo = await demoWorkflowEnabled();
+    const parsed = assignInspectionSchema.safeParse(demo ? withDemoDefaults(request.body, { engineerId: await demoEngineerId(actorAgency(request)), deadline: demoDates().plannedEnd }) : request.body);
     if (!parsed.success) { response.status(400).json({ error: "Invalid inspection assignment", details: parsed.error.flatten() }); return; }
     const ticketId = routeId(request, "ticketId");
     const agencyId = actorAgency(request);
@@ -175,7 +178,19 @@ export function createInspectionsRouter(storage: ImageStorage): Router {
   }));
 
   router.post("/inspections/:id/submit", requireRole(UserRole.ENGINEER), asyncRoute(async (request, response) => {
-    const parsed = submitInspectionSchema.safeParse(request.body);
+    const demo = await demoWorkflowEnabled();
+    const coordinates = demo ? await prisma.$queryRaw<Array<{ latitude: number; longitude: number }>>`
+      SELECT ST_Y(t."coordinates") AS "latitude", ST_X(t."coordinates") AS "longitude"
+      FROM "InspectionReport" i JOIN "Ticket" t ON t."id" = i."ticketId"
+      WHERE i."id" = ${routeId(request)}::uuid AND i."assignedEngineerId" = ${request.auth!.userId}::uuid
+        AND t."assignedAgencyId" = ${actorAgency(request)}::uuid
+    ` : [];
+    const parsed = submitInspectionSchema.safeParse(demo ? withDemoDefaults(request.body, {
+      issueConfirmation: "CONFIRMED", severity: "MEDIUM", complexity: "MEDIUM", recommendation: "PROCEED",
+      observations: "Demo assessment submitted with site evidence; no additional observations entered.",
+      recommendedWork: "Review the reported issue and site evidence for the repair scope.", coordinationRequired: false,
+      otherAgencyInvolvement: "Agency involvement to be reviewed by the Project Head.", ...coordinates[0],
+    }) : request.body);
     if (!parsed.success) { response.status(400).json({ error: "Invalid inspection assessment", details: parsed.error.flatten() }); return; }
     const agencyId = actorAgency(request);
     const result = await prisma.$transaction(async (transaction) => {
@@ -183,10 +198,10 @@ export function createInspectionsRouter(storage: ImageStorage): Router {
       if (!inspection) return { kind: "missing" as const };
       const submittableStates: ReadonlySet<InspectionStatus> = new Set([InspectionStatus.ACCEPTED, InspectionStatus.IN_PROGRESS]);
       if (!submittableStates.has(inspection.status)) return { kind: "state" as const, state: inspection.status };
-      const evidenceCount = await transaction.inspectionEvidence.count({ where: { inspectionId: inspection.id, uploadedAt: { not: null } } });
+      const evidenceCount = await transaction.inspectionEvidence.count({ where: { inspectionId: inspection.id, uploadedAt: { not: null }, contentType: { in: ["image/jpeg", "image/png", "image/webp", "image/heic"] } } });
       if (evidenceCount === 0) return { kind: "evidence" as const };
       const now = new Date();
-      await transaction.inspectionReport.update({ where: { id: inspection.id }, data: { ...parsed.data, status: InspectionStatus.SUBMITTED, submittedById: request.auth!.userId, submittedAt: now, locationConfirmedAt: now, notes: parsed.data.observations } });
+      await transaction.inspectionReport.update({ where: { id: inspection.id }, data: { ...parsed.data, status: InspectionStatus.SUBMITTED, submittedById: request.auth!.userId, submittedAt: now, locationConfirmedAt: typeof request.body?.latitude === "number" && typeof request.body?.longitude === "number" ? now : null, notes: parsed.data.observations } });
       const ticket = await transaction.ticket.findUniqueOrThrow({ where: { id: inspection.ticketId }, select: { id: true, state: true } });
       if (ticket.state !== TicketState.INSPECTION_COMPLETE) {
         await transaction.ticket.update({ where: { id: ticket.id }, data: { state: TicketState.INSPECTION_COMPLETE } });

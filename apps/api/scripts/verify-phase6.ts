@@ -59,6 +59,7 @@ async function createInspectedTicket(): Promise<string> {
       submittedById: bescomEngineerId,
       deadline: new Date("2026-10-10T12:00:00.000Z"),
       status: InspectionStatus.REVIEWED,
+      reviewDecision: "CREATE_WORK",
       recommendation: InspectionRecommendation.PROCEED,
       observations: "The failed luminaire and feeder require replacement.",
       submittedAt: new Date(),

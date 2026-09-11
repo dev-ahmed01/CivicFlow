@@ -9,6 +9,7 @@
     "start": "node dist/src/server.js",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
+    "verify:jain-campus": "tsc -p tsconfig.json && node dist/scripts/verify-jain-campus.js",
     "diagnose:s3-put": "node dist/scripts/diagnose-s3-put.js",
     "verify:upload": "tsc -p tsconfig.json && node dist/scripts/diagnose-s3-put.js",
     "verify:auth": "tsc -p tsconfig.json && node dist/scripts/verify-auth.js",

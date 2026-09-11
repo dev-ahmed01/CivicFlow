@@ -59,7 +59,7 @@ export function ReportForm() {
         void apiFetch<{ area: ReportingArea }>("/reporting-areas/resolve", { method: "POST", body: JSON.stringify(coordinates) })
           .then(({ area }) => {
             setAreaId(area.id);
-            setLocation({ ...coordinates, address: `${area.name}, Bengaluru` });
+            setLocation({ ...coordinates, address: area.name });
           })
           .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not verify your location"))
           .finally(() => setLocating(false));
@@ -75,7 +75,7 @@ export function ReportForm() {
   const chooseArea = (nextAreaId: string) => {
     setAreaId(nextAreaId);
     const area = areas.find((item) => item.id === nextAreaId);
-    setLocation(area ? { latitude: area.latitude, longitude: area.longitude, address: `${area.name}, Bengaluru` } : undefined);
+    setLocation(area ? { latitude: area.latitude, longitude: area.longitude, address: area.name } : undefined);
     setError(undefined);
   };
 
@@ -121,7 +121,7 @@ export function ReportForm() {
             await uploadImage(target.upload, file, "Supporting");
             await apiFetch(`/tickets/${completed.ticket.id}/images`, { method: "POST", body: JSON.stringify({ action: "complete", imageId: target.imageId }) });
           } catch {
-            setConfirmationNotice("Your report reached the agency, but one supporting photo could not be attached.");
+            setConfirmationNotice("Your report was saved, but one supporting photo could not be attached.");
             break;
           }
         }
@@ -140,7 +140,7 @@ export function ReportForm() {
     <header className="cf-form-heading"><span><CitizenIcon name="file" size={28} /></span><div><h2>Report an Issue</h2><p>Help us understand what’s happening.</p></div></header>
     <section className="cf-form-step"><span className="cf-step-number">1</span><div><h3>What’s the issue?</h3><small>Select an issue and its configured agency</small><label className="sr-only" htmlFor="issue-category">Choose an issue category</label><select id="issue-category" required value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Choose an issue category</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.primaryAgency ? ` — ${category.primaryAgency.name}` : ""}</option>)}</select></div></section>
     <section className="cf-form-step"><span className="cf-step-number">2</span><div><h3>Show us the issue</h3><small>Add up to 3 photos to help city teams verify and understand the issue.</small>
-      <label className="cf-upload-zone"><input accept="image/jpeg,image/png" multiple onChange={(event) => chooseFiles(Array.from(event.target.files ?? []))} type="file" /><span><CitizenIcon name="camera" />Add Photos</span><small>Up to 3 photos&nbsp; • &nbsp;JPG, PNG</small></label>
+      <label className="cf-upload-zone"><input accept="image/jpeg,image/png,image/webp,image/heic" multiple onChange={(event) => chooseFiles(Array.from(event.target.files ?? []))} type="file" /><span><CitizenIcon name="camera" />Add Photos</span><small>Up to 3 photos&nbsp; • &nbsp;JPG, PNG, WebP, HEIC</small></label>
       {previews.length ? <div className="cf-photo-previews">{previews.map(({ file, url }, index) => <div key={`${file.name}-${file.lastModified}`}><Image alt={`Selected evidence ${index + 1}`} height={72} src={url} unoptimized width={108} /><button aria-label={`Remove ${file.name}`} onClick={() => removeFile(index)} type="button">×</button></div>)}</div> : null}
       <div className="cf-location-card"><CitizenIcon name="location" /><div className="cf-location-fields"><label><span>Reporting area</span><select required value={areaId} onChange={(event) => chooseArea(event.target.value)}><option value="">Choose an area</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label><label><span>Address or landmark</span><input disabled={!location} required value={location?.address ?? ""} onChange={(event) => setLocation((current) => current ? { ...current, address: event.target.value } : current)} /></label></div><button disabled={locating} onClick={locate} type="button">{locating ? "Checking…" : "Use my location"}</button></div>
     </div></section>

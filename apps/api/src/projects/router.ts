@@ -23,6 +23,8 @@ import { createNotification, createNotifications, requestPushDelivery } from "..
 import { paginationMeta, parsePagination } from "../http/pagination";
 import { completeWorkflowAction, createWorkflowAction } from "../deadlines/service";
 import { canSaveTimeline, canStartWork, stateAfterTimelineCheck } from "./lifecycle";
+import { demoWorkflowEnabled, demoEngineerId, demoIntervention, demoDates, withDemoDefaults } from "../config/demo-workflow";
+import { completionRecipients } from "../validations/completion-recipients";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -143,13 +145,14 @@ export function createProjectsRouter(storage: ImageStorage): Router {
     requireRole(UserRole.PROJECT_HEAD),
     requirePasswordResetComplete,
     asyncRoute(async (request, response) => {
-      const parsed = createProjectSchema.safeParse(request.body);
+      const demo = await demoWorkflowEnabled();
+      const parsed = createProjectSchema.safeParse(demo ? withDemoDefaults(request.body, { engineerId: await demoEngineerId(actorAgency(request)) }) : request.body);
       if (!parsed.success) {
         response.status(400).json({ error: "Invalid project", details: parsed.error.flatten() });
         return;
       }
       const agencyId = actorAgency(request);
-      const engineer = await prisma.user.findFirst({ where: { id: parsed.data.engineerId, agencyId, role: UserRole.ENGINEER }, select: { id: true } });
+      const engineer = await prisma.user.findFirst({ where: { id: parsed.data.engineerId, agencyId, role: UserRole.ENGINEER, deactivatedAt: null }, select: { id: true } });
       if (!engineer) {
         response.status(422).json({ error: "Choose an Executive Engineer from your agency roster" });
         return;
@@ -165,8 +168,13 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         if (!ticket || ticket.assignedAgencyId !== agencyId) return { kind: "missing" as const };
         const roadCategory = await isRoadCategory(transaction, ticket.categoryId);
         const existing = await transaction.project.findUnique({ where: { ticketId: ticket.id }, include: { intervention: true } });
+        if (demo && roadCategory && !parsed.data.intervention && !existing?.intervention) parsed.data.intervention = await demoIntervention(transaction, ticket.wardId, ticket.id);
         if (ticket.state !== TicketState.INSPECTION_COMPLETE && !(ticket.state === TicketState.PROJECT_CREATED && existing?.state === ProjectState.CREATED)) {
           return { kind: "state" as const, state: ticket.state };
+        }
+        if (!existing) {
+          const review = await transaction.inspectionReport.findFirst({ where: { ticketId: ticket.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { status: true, reviewDecision: true } });
+          if (review?.status !== "REVIEWED" || review.reviewDecision !== "CREATE_WORK") return { kind: "review" as const };
         }
         if (roadCategory && !parsed.data.intervention && !existing?.intervention) return { kind: "road-input" as const };
         if (!roadCategory && parsed.data.intervention) return { kind: "not-road" as const };
@@ -280,6 +288,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       });
 
       if (result.kind === "missing") response.status(404).json({ error: "Ticket not found" });
+      else if (result.kind === "review") response.status(409).json({ error: "Review the submitted inspection and choose Create Civic Work before assigning execution" });
       else if (result.kind === "state") response.status(409).json({ error: `Project cannot be created from ${result.state}` });
       else if (result.kind === "dependency") response.status(result.status).json({ error: result.error });
       else if (result.kind === "road-input") response.status(422).json({ error: "Road Damage projects require road-segment intervention details" });
@@ -413,7 +422,8 @@ export function createProjectsRouter(storage: ImageStorage): Router {
     requireRole(UserRole.ENGINEER),
     requirePasswordResetComplete,
     asyncRoute(async (request, response) => {
-      const parsed = updateProjectTimelineSchema.safeParse(request.body);
+      const demo = await demoWorkflowEnabled();
+      const parsed = updateProjectTimelineSchema.safeParse(demo ? withDemoDefaults(request.body, { ...demoDates(), workDescription: "Execute the reviewed inspection scope and record completion evidence." }) : request.body);
       if (!parsed.success) {
         response.status(400).json({ error: "Invalid execution details", details: parsed.error.flatten() });
         return;
@@ -574,6 +584,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         await notifyProjectStakeholders(transaction, { ...project, agencyId: actorAgency(request) }, "WORK_COMPLETED", {});
         if (project.ticketId) {
           await completeWorkflowAction(transaction, `project:${project.id}:complete-work`);
+          await transaction.workflowAction.updateMany({ where: { projectId: project.id, type: WorkflowActionType.COMPLETE_WORK, respondedAt: null }, data: { respondedAt: new Date() } });
           await createWorkflowAction(transaction, {
             dedupeKey: `project:${project.id}:submit-completion`, type: WorkflowActionType.SUBMIT_COMPLETION,
             ticketId: project.ticketId, projectId: project.id, responsibleUserId: request.auth!.userId, responsibleAgencyId: actorAgency(request),
@@ -639,6 +650,8 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         return;
       }
       const result = await prisma.$transaction(async (transaction) => {
+        await transaction.$queryRaw`SELECT "id" FROM "Ticket" WHERE "id" = ${project.ticketId}::uuid FOR UPDATE`;
+        await transaction.$queryRaw`SELECT "id" FROM "Project" WHERE "id" = ${project.id}::uuid FOR UPDATE`;
         const evidence = await transaction.completionEvidence.findFirst({ where: { id: evidenceId, projectId: project.id, submittedById: request.auth!.userId, uploadedAt: null }, select: { id: true, ticketId: true } });
         if (!evidence) return { kind: "missing" as const };
         const lockedProject = await transaction.project.findUniqueOrThrow({ where: { id: project.id }, select: { state: true } });
@@ -646,20 +659,23 @@ export function createProjectsRouter(storage: ImageStorage): Router {
         if (lockedProject.state !== ProjectState.COMPLETED || ticket.state !== TicketState.WORK_COMPLETED) return { kind: "state" as const, projectState: lockedProject.state, ticketState: ticket.state };
 
         // Part III §11 / Part II M-C13 — reuse the citizens who validated this ticket.
-        const validators = await transaction.validation.findMany({ where: { ticketId: evidence.ticketId, counted: true }, distinct: ["validatorId"], select: { validatorId: true } });
+        const recipients = await completionRecipients(transaction, evidence.ticketId);
+        if (recipients.ids.length < recipients.quorum) return { kind: "recipients" as const, quorum: recipients.quorum, available: recipients.ids.length };
+        const validators = recipients.ids.map((validatorId) => ({ validatorId }));
         await transaction.completionEvidence.update({ where: { id: evidence.id }, data: { uploadedAt: new Date() } });
         await transaction.project.update({ where: { id: project.id }, data: { state: ProjectState.AWAITING_VERIFICATION } });
         await transaction.projectStateTransition.create({ data: { projectId: project.id, fromState: ProjectState.COMPLETED, toState: ProjectState.AWAITING_VERIFICATION, reason: "COMPLETION_EVIDENCE_SUBMITTED", actedById: request.auth!.userId } });
         await transaction.ticket.update({ where: { id: evidence.ticketId }, data: { state: TicketState.AWAITING_CITIZEN_VERIFICATION } });
         await transaction.ticketStateTransition.create({ data: { ticketId: evidence.ticketId, fromState: TicketState.WORK_COMPLETED, toState: TicketState.AWAITING_CITIZEN_VERIFICATION, reason: "COMPLETION_EVIDENCE_SUBMITTED", actedById: request.auth!.userId } });
         if (validators.length > 0) {
-          await transaction.completionVerificationRequest.createMany({ data: validators.map(({ validatorId }) => ({ completionEvidenceId: evidence.id, citizenId: validatorId })) });
+          await transaction.completionVerificationRequest.createMany({ data: validators.map(({ validatorId }) => ({ completionEvidenceId: evidence.id, citizenId: validatorId })), skipDuplicates: true });
           await createNotifications(transaction, validators.map(({ validatorId }) => ({ userId: validatorId, type: "COMPLETION_VERIFICATION_REQUEST", payload: { projectId: project.id, ticketId: evidence.ticketId, evidenceId: evidence.id } })));
         }
         await completeWorkflowAction(transaction, `project:${project.id}:submit-completion`);
         return { kind: "completed" as const, notified: validators.length };
       });
       if (result.kind === "missing") response.status(404).json({ error: "Completion evidence not found" });
+      else if (result.kind === "recipients") response.status(422).json({ code: "NO_COMPLETION_VERIFIERS", error: `Completion needs ${result.quorum} independent eligible citizen(s); ${result.available} available. Ask a verified citizen other than the reporter to update their location near this issue, then retry Submit Evidence. Work remains completed.` });
       else if (result.kind === "state") response.status(409).json({ error: `Completion handoff requires COMPLETED/WORK_COMPLETED, found ${result.projectState}/${result.ticketState}` });
       else {
         requestPushDelivery();

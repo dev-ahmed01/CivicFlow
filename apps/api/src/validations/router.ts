@@ -9,7 +9,8 @@ import {
   type TicketState as SharedTicketState,
 } from "@civicos/shared";
 import { requireAuth, requireRole } from "../auth/middleware";
-import { effectiveValidationQuorum, runValidationRebatchJob, submitValidation, ValidationDailyCapError } from "./service";
+import { effectiveValidationQuorum, runValidationRebatchJob, submitValidation, validationQuorum, ValidationDailyCapError } from "./service";
+import { createWorkflowAction } from "../deadlines/service";
 import { createNotifications } from "../notifications/service";
 import { storageReadUrl, type ImageStorage } from "../images/storage";
 
@@ -52,6 +53,8 @@ export function createValidationsRouter(storage: ImageStorage): Router {
           )
       WHERE "id" = ${request.auth!.userId}::uuid
     `;
+    // Newly located citizens can unblock a pending report that had no recipients.
+    await runValidationRebatchJob();
     response.status(204).send();
   }));
 
@@ -212,16 +215,21 @@ export function createValidationsRouter(storage: ImageStorage): Router {
     }
     const evidenceId = routeId(request);
     const result = await prisma.$transaction(async (transaction) => {
+      // Part III §11: serialize competing votes and completion rounds on the ticket.
+      await transaction.$queryRaw`SELECT t."id" FROM "Ticket" t JOIN "CompletionEvidence" e ON e."ticketId" = t."id" WHERE e."id" = ${evidenceId}::uuid FOR UPDATE OF t`;
       const invitation = await transaction.completionVerificationRequest.findUnique({
         where: { completionEvidenceId_citizenId: { completionEvidenceId: evidenceId, citizenId: request.auth!.userId } },
-        include: { completionEvidence: { include: { project: { select: { id: true, state: true, agencyId: true, engineerId: true } }, ticket: { select: { id: true, state: true } } } } },
+        include: { completionEvidence: { include: { project: { select: { id: true, state: true, agencyId: true, engineerId: true } }, ticket: { select: { id: true, state: true, reporterId: true } } } } },
       });
       if (!invitation) return { kind: "missing" as const };
       const evidence = invitation.completionEvidence;
+      if (evidence.ticket.reporterId === request.auth!.userId || !evidence.uploadedAt) return { kind: "missing" as const };
+      const citizen = await transaction.user.findFirst({ where: { id: request.auth!.userId, role: UserRole.CITIZEN, deactivatedAt: null, phoneVerifiedAt: { not: null } }, select: { id: true } });
+      if (!citizen) return { kind: "missing" as const };
       const existing = await transaction.completionVerification.findUnique({
         where: { completionEvidenceId_validatorId: { completionEvidenceId: evidenceId, validatorId: request.auth!.userId } },
       });
-      if (existing) return { kind: "recorded" as const, state: evidence.project.state, duplicate: true };
+      if (existing || invitation.respondedAt) return { kind: "recorded" as const, state: evidence.project.state, duplicate: true };
       if (evidence.project.state !== ProjectState.AWAITING_VERIFICATION || evidence.ticket.state !== TicketState.AWAITING_CITIZEN_VERIFICATION) {
         return { kind: "recorded" as const, state: evidence.project.state, duplicate: false };
       }
@@ -234,17 +242,21 @@ export function createValidationsRouter(storage: ImageStorage): Router {
         },
       });
       await transaction.completionVerificationRequest.update({ where: { id: invitation.id }, data: { respondedAt: new Date() } });
-      const config = await transaction.systemConfig.findUnique({ where: { key: "verification.quorum" } });
-      if (!config || typeof config.value !== "number") throw new Error("Missing required SystemConfig verification.quorum");
+      const quorum = await validationQuorum(transaction);
       const [verified, rework] = await Promise.all([
         transaction.completionVerification.count({ where: { completionEvidenceId: evidenceId, decision: CompletionVerificationDecision.VERIFIED } }),
         transaction.completionVerification.count({ where: { completionEvidenceId: evidenceId, decision: CompletionVerificationDecision.REWORK_REQUESTED } }),
       ]);
-      const resolvedState = rework >= config.value ? ProjectState.ACTIVE : verified >= config.value ? ProjectState.CLOSED : null;
+      const resolvedState = rework >= quorum ? ProjectState.ACTIVE : verified >= quorum ? ProjectState.CLOSED : null;
       if (!resolvedState) return { kind: "recorded" as const, state: evidence.project.state, duplicate: false };
 
       const ticketState = resolvedState === ProjectState.CLOSED ? TicketState.CLOSED : TicketState.WORK_IN_PROGRESS;
-      await transaction.project.update({ where: { id: evidence.project.id }, data: { state: resolvedState } });
+      await transaction.project.update({ where: { id: evidence.project.id }, data: { state: resolvedState, ...(resolvedState === ProjectState.ACTIVE ? { actualCompletion: null } : {}) } });
+      await transaction.completionVerificationRequest.updateMany({ where: { completionEvidenceId: evidenceId, respondedAt: null }, data: { respondedAt: new Date() } });
+      if (resolvedState === ProjectState.ACTIVE && evidence.project.engineerId) await createWorkflowAction(transaction, {
+        dedupeKey: `project:${evidence.project.id}:rework:${evidence.id}`, type: "COMPLETE_WORK", ticketId: evidence.ticket.id, projectId: evidence.project.id,
+        responsibleUserId: evidence.project.engineerId, responsibleAgencyId: evidence.project.agencyId,
+      });
       await transaction.projectStateTransition.create({
         data: { projectId: evidence.project.id, fromState: ProjectState.AWAITING_VERIFICATION, toState: resolvedState, reason: resolvedState === ProjectState.CLOSED ? "CITIZEN_COMPLETION_VERIFIED" : "CITIZEN_REWORK_REQUESTED", actedById: request.auth!.userId },
       });
