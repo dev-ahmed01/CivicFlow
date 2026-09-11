@@ -1,4 +1,5 @@
 "use client";
+import { VerificationPanel } from "../road-scans/verification-panel";
 
 import type { CitizenTicketTimelineResponse, CivicWork, CoordinationConflict, EngineerCapacitySummary, EngineerProjectDetail, ProjectHeadTicketDetail } from "@civicos/shared";
 import { useCallback, useEffect, useState } from "react";
@@ -127,7 +128,7 @@ export function ProjectHeadRecordQuickView({ record, onClose, onChanged, returnT
       {completion.length ? <DrawerSection title="Before and after" description="Original or inspection evidence compared with Engineer completion evidence."><BeforeAfterEvidence after={completion} before={projectBefore} /></DrawerSection> : <DrawerSection title="Evidence"><EvidenceGallery items={[...projectBefore, ...progress]} /></DrawerSection>}
       {progress.length ? <DrawerSection title="Work progress"><EvidenceGallery items={progress} /></DrawerSection> : null}
       <DrawerSection title="Workflow"><ol className="drawer-timeline">{project.stateTransitions.slice(-5).map((item) => <li key={item.id}><span aria-hidden="true" /><div><strong>{human(item.toState)}</strong><time>{timelineDate(item.createdAt)}</time></div></li>)}</ol><StatusSummary items={[{ label: "Dependencies", value: project.dependencies.length ? `${project.dependencies.length} linked` : "None" }, { label: "Conflict status", value: conflicts.length ? `${conflicts.length} advisory warning${conflicts.length === 1 ? "" : "s"}` : "No conflict detected" }]} /></DrawerSection>
-      {completion.length ? <DrawerSection title="Engineer completion notes"><p className="drawer-description">{completion[0]?.caption}</p></DrawerSection> : null}
+      {completion.length ? <DrawerSection title="Engineer completion notes"><p className="drawer-description">{completion[0]?.caption}</p><VerificationPanel projectId={project.id} state={project.state} /></DrawerSection> : null}
     </> : null}
   </DetailDrawer>;
 }

@@ -31,6 +31,7 @@ const inspectionInclude = {
   evidence: { orderBy: { createdAt: "asc" as const } },
   ticket: {
     include: {
+      potholeCandidates: { select: { id: true } },
       category: { select: { id: true, name: true } },
       ward: { select: { id: true, name: true } },
       roadSegment: { select: { id: true, roadName: true } },
@@ -45,13 +46,14 @@ function responseInspection(storage: ImageStorage, inspection: InspectionRecord)
   const { objectKey, ...report } = inspection;
   return {
     ...report,
+    source: report.ticket.potholeCandidates.length ? "AREA_SCAN" : "REPORTED",
     ticket: { ...report.ticket, observations: report.ticket.observations.map(({ images, ...observation }) => ({ ...observation, imageUrl: images[0] ? storageReadUrl(storage, images[0].objectKey, images[0].url) : observation.imageUrl })) },
     fileUrl: objectKey && inspection.fileUrl ? storageReadUrl(storage, objectKey, inspection.fileUrl) : null,
     evidence: inspection.evidence.map(({ objectKey, ...item }) => ({ ...item, fileUrl: storageReadUrl(storage, objectKey, item.fileUrl) })),
   };
 }
 
-async function createAssignment(
+export async function createAssignment(
   transaction: Prisma.TransactionClient,
   input: { ticketId: string; engineerId: string; assignedById: string; agencyId: string; deadline: Date },
 ) {

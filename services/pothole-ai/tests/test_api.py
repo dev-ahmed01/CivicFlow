@@ -10,6 +10,7 @@ from fixtures.generate_fixtures import generate_all_fixtures
 def configure_test_env(tmp_path_factory):
     # Set mode to demo for test client fixture
     settings.pothole_ai_mode = "demo"
+    settings.pothole_ai_internal_token = "explicit-local-test-token-not-for-deployment"
     fixtures_dir = tmp_path_factory.mktemp("fixtures")
     generate_all_fixtures(str(fixtures_dir))
     return fixtures_dir
@@ -228,6 +229,5 @@ def test_all_endpoints_require_internal_token(client):
         }
     )
     assert res3.status_code == 401
-
 
 

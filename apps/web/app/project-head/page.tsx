@@ -15,6 +15,7 @@ import { apiFetch } from "./_lib/api";
 import { loadAllAgencyProjects } from "./_lib/paginated-projects";
 import { ProjectHeadRecordQuickView, type QuickRecord } from "./_components/record-quick-view";
 import { workStateLabel } from "./_components/work-ui";
+import { ScanAttention } from "./road-scans/scan-attention";
 
 type DashboardResponse = {
   agency: { id: string; name: string };
@@ -78,7 +79,8 @@ export default function ProjectHeadCommandCentrePage() {
   }, [projects, tickets]);
 
   return <div className="ph-command-page">
-    <PageHeader title="Today" description={data ? `${data.agency.name} · Decisions and work that need attention now.` : "Decisions and work that need attention now."} action={<Link className="portal-primary-button" href="/project-head/projects/new">Register planned work</Link>} />
+    <PageHeader title="Today" description={data ? `${data.agency.name} · Decisions and work that need attention now.` : "Decisions and work that need attention now."} action={<div className="scan-actions"><Link className="portal-secondary-button" href="/project-head/road-scans">Area Scan</Link><Link className="portal-primary-button" href="/project-head/projects/new">Register planned work</Link></div>} />
+    <ScanAttention />
     {error ? <p className="error" role="alert">{error}</p> : null}
     {!data && !error ? <p className="portal-muted" role="status">Loading current operations…</p> : null}
     {data ? <>

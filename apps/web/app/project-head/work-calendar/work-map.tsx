@@ -2,13 +2,39 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from "maplibre-gl";
-import type { CivicWorkCalendarItem, CivicWorkGeometry } from "@civicos/shared";
+import type { CivicWorkCalendarItem, CivicWorkGeometry, PotholeCandidate } from "@civicos/shared";
 
 type MapBounds = { minLongitude: number; minLatitude: number; maxLongitude: number; maxLatitude: number };
 type Coordinate = [number, number];
 
 const styleUrl = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 const periodColors = { PAST: "#718078", CURRENT: "#14823b", FUTURE: "#1f68a9" } as const;
+
+export function ScanCoverageMap({ candidates, onSelect }: { candidates: PotholeCandidate[]; onSelect: (id: string) => void }) {
+  const container = useRef<HTMLDivElement>(null);
+  const callback = useRef(onSelect);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { callback.current = onSelect; }, [onSelect]);
+  useEffect(() => {
+    if (!container.current || !candidates.length) return;
+    const first = candidates[0]!.camera;
+    let map: MapLibreMap;
+    try {
+      map = new maplibregl.Map({ container: container.current, style: styleUrl, center: [first.longitude, first.latitude], zoom: 15, attributionControl: {} });
+      map.addControl(new maplibregl.NavigationControl());
+      map.on("error", () => setFailed(true));
+      for (const candidate of candidates) {
+        const button = document.createElement("button");
+        button.className = "scan-map-marker"; button.textContent = "•";
+        button.setAttribute("aria-label", `Open ${candidate.reference}`);
+        button.addEventListener("click", () => callback.current(candidate.id));
+        new maplibregl.Marker({ element: button }).setLngLat([candidate.camera.longitude, candidate.camera.latitude]).addTo(map);
+      }
+    } catch { setFailed(true); return; }
+    return () => map.remove();
+  }, [candidates]);
+  return <div><div className="scan-map" ref={container} aria-label="Approximate camera anchor map" />{failed ? <p className="portal-muted">Basemap unavailable. All candidates remain accessible in the list.</p> : null}<p className="portal-muted">Markers show approximate configured camera anchors, not pothole GPS inferred from images.</p></div>;
+}
 
 function geometryCoordinates(geometry: CivicWorkGeometry): Coordinate[] {
   if (geometry.type === "Point") return [geometry.coordinates as Coordinate];

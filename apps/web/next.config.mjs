@@ -20,6 +20,9 @@ const nextConfig = {
   distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   reactStrictMode: true,
   transpilePackages: ["@civicos/shared"],
+  async rewrites() {
+    return [{ source: "/road-scan-assets/:file", destination: `${configuredApiUrl ?? "http://localhost:4000"}/road-scan-assets/:file` }];
+  },
 };
 
 export default nextConfig;

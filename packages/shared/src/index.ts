@@ -7,3 +7,4 @@ export * from "./mapped-work";
 export * from "./pagination";
 
 export const APP_NAME = "CivicOS";
+export * from "./road-scans";

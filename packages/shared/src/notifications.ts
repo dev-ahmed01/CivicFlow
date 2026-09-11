@@ -11,6 +11,7 @@ export type NotificationPresentation = {
 };
 
 const presentations: Record<string, NotificationPresentation> = {
+  ROAD_SCAN_READY: { icon: "i", tone: "info", category: "general", message: "Your camera scan results are ready for review." },
   VALIDATION_REQUEST: { icon: "i", tone: "info", category: "general", message: "A civic issue needs your validation." },
   TICKET_VALIDATED: { icon: "✓", tone: "success", category: "general", message: "Your report reached the required community confirmations." },
   TICKET_ROUTED_TO_AGENCY: { icon: "✓", tone: "success", category: "general", message: "Your issue has been routed to the responsible agency." },
@@ -67,6 +68,8 @@ function value(payload: Record<string, unknown>, key: string): string | undefine
 }
 
 export function notificationDestination(notification: Pick<Notification, "type" | "payload">, role: UserRole): string | undefined {
+  const scanId = value(notification.payload, "scanId");
+  if (scanId && role === "PROJECT_HEAD") return `/project-head/road-scans?scan=${encodeURIComponent(scanId)}`;
   const coordinationRequestId = value(notification.payload, "coordinationRequestId");
   const dependencyId = value(notification.payload, "dependencyId");
   const projectId = value(notification.payload, "projectId");

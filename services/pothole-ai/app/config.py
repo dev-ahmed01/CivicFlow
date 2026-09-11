@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     pothole_ai_mode: Literal["real", "demo"] = "real"
 
     # Security: Server-to-Server Internal Token
-    pothole_ai_internal_token: Optional[str] = "dev-secret-token-civicflow"
+    pothole_ai_internal_token: Optional[str] = None
     allowed_origins: str = "http://localhost:3000,http://localhost:5000"
 
     # Model Settings

@@ -752,6 +752,7 @@ export const inspectionReportSummarySchema = z.object({
   evidence: z.array(z.object({ id: idSchema, fileUrl: z.string().url(), contentType: z.string(), uploadedAt: dateSchema.nullable(), createdAt: dateSchema })),
 });
 export const inspectionDetailSchema = inspectionReportSummarySchema.extend({
+  source: z.enum(["AREA_SCAN", "REPORTED"]).optional(),
   ticket: z.object({
     id: idSchema,
     referenceNumber: z.string(),

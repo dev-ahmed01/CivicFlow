@@ -1,4 +1,5 @@
 "use client";
+import { VerificationPanel } from "../../road-scans/verification-panel";
 
 import type { Agency, CoordinationConflict, CoordinationRequest, DependencyListItem, EngineerProjectDetail, SequencingRecommendationOutcome } from "@civicos/shared";
 import Link from "next/link";
@@ -166,6 +167,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
     {error ? <p className="error" role="alert">{error}</p> : null}
     <RecordTabs active={tab} onChange={setTab} tabs={[{ id: "OVERVIEW", label: "Overview" }, { id: "ACTIVITY", label: "Activity", count: activity.length }, { id: "COORDINATION", label: "Coordination", count: conflictGroups.length + dependencies.length + requests.length }, { id: "DOCUMENTS", label: "Documents", count: documentCount }]} />
 
+    {["COMPLETED", "AWAITING_VERIFICATION", "CLOSED"].includes(project.state) ? <VerificationPanel projectId={project.id} state={project.state} /> : null}
     {tab === "OVERVIEW" ? <div className="ph-record-section" role="tabpanel">
       <CompactAlert title="Next step" action={primaryAction}>{nextStep}</CompactAlert>
       <section className="ph-record-group"><SectionHeader title="Work progress" description="The operational lifecycle from report to closure." /><WorkLifecycle current={projectWorkStage(project.state)} /></section>

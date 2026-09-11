@@ -218,7 +218,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
               ownerProjectHeadId: request.auth!.userId,
               createdById: request.auth!.userId,
               updatedById: request.auth!.userId,
-              origin: ticket.reporterId ? CivicWorkOrigin.CITIZEN_REPORTED : CivicWorkOrigin.AGENCY_PLANNED,
+              origin: await transaction.potholeCandidate.count({ where: { ticketId: ticket.id } }) ? CivicWorkOrigin.SYSTEM_INTEGRATION : ticket.reporterId ? CivicWorkOrigin.CITIZEN_REPORTED : CivicWorkOrigin.AGENCY_PLANNED,
               title: ticket.title,
               locationLabel: ticket.address,
               wardId: ticket.wardId,

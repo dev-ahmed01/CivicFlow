@@ -219,6 +219,7 @@ enum ProjectBlockerStatus {
 }
 
 model User {
+  roadScans RoadScan[]
   id                   String                               @id @default(uuid()) @db.Uuid
   role                 UserRole
   displayName          String?                              @db.VarChar(120)
@@ -285,6 +286,8 @@ model User {
 }
 
 model Ward {
+  roadCameras RoadCamera[]
+  roadScans RoadScan[]
   id                               String                                @id @default(uuid()) @db.Uuid
   name                             String                                @unique
   boundary                         Unsupported("geometry(Polygon,4326)")
@@ -297,6 +300,8 @@ model Ward {
 }
 
 model Agency {
+  roadCameras RoadCamera[]
+  roadScans RoadScan[]
   id   String @id @default(uuid()) @db.Uuid
   name String @unique
   type String
@@ -321,6 +326,7 @@ model Agency {
 }
 
 model Category {
+  roadCameras RoadCamera[]
   id              String  @id @default(uuid()) @db.Uuid
   name            String  @unique
   relevancePrompt String
@@ -348,6 +354,7 @@ model RoutingRule {
 }
 
 model Ticket {
+  potholeCandidates PotholeCandidate[]
   id                         String                              @id @default(uuid()) @db.Uuid
   referenceNumber            String                              @unique @default(dbgenerated("next_ticket_reference()")) @db.VarChar(20)
   categoryId                 String                              @db.Uuid
@@ -400,6 +407,7 @@ model TicketReferenceCounter {
 }
 
 model InspectionReport {
+  potholeCandidates PotholeCandidate[]
   id                     String                      @id @default(uuid()) @db.Uuid
   ticketId               String                      @db.Uuid
   assignedEngineerId     String                      @db.Uuid
@@ -554,6 +562,8 @@ model ValidationRequest {
 }
 
 model Project {
+  potholeCandidates PotholeCandidate[]
+  potholeVerifications PotholeVerificationScan[]
   id                 String                                  @id @default(uuid()) @db.Uuid
   referenceNumber    String                                  @unique @default(dbgenerated("next_civic_work_reference()")) @db.VarChar(24)
   ticketId           String?                                 @unique @db.Uuid
@@ -956,6 +966,7 @@ model DependencyStateTransition {
 }
 
 model RoadSegment {
+  roadCameras RoadCamera[]
   id                  String                                   @id @default(uuid()) @db.Uuid
   roadName            String
   geometry            Unsupported("geometry(LineString,4326)")
@@ -1207,4 +1218,142 @@ model RefreshSession {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+enum RoadScanStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum PotholeCandidateStatus {
+  NEW
+  INSPECTION_ASSIGNED
+  LINKED
+  DISMISSED
+}
+
+// Request-triggered camera coverage, provisioned through controlled operations.
+model RoadCamera {
+  id String @id @default(uuid()) @db.Uuid
+  code String @unique
+  name String
+  wardId String @db.Uuid
+  agencyId String @db.Uuid
+  categoryId String @db.Uuid
+  roadSegmentId String? @db.Uuid
+  latitude Float
+  longitude Float
+  enabled Boolean @default(true)
+  simulated Boolean @default(true)
+  providerReference String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ward Ward @relation(fields: [wardId], references: [id], onDelete: Restrict)
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  roadSegment RoadSegment? @relation(fields: [roadSegmentId], references: [id], onDelete: Restrict)
+  results RoadScanCameraResult[]
+  candidates PotholeCandidate[]
+  @@index([agencyId, wardId, enabled])
+}
+
+model RoadScan {
+  id String @id @default(uuid()) @db.Uuid
+  type String
+  status RoadScanStatus @default(QUEUED)
+  initiatedById String @db.Uuid
+  agencyId String @db.Uuid
+  wardId String @db.Uuid
+  providerMode String
+  simulated Boolean
+  camerasRequested Int @default(0)
+  camerasProcessed Int @default(0)
+  usableCameras Int @default(0)
+  unusableCameras Int @default(0)
+  rawDetections Int @default(0)
+  uniqueCandidates Int @default(0)
+  failureSummary String?
+  createdAt DateTime @default(now())
+  startedAt DateTime?
+  completedAt DateTime?
+  initiatedBy User @relation(fields: [initiatedById], references: [id], onDelete: Restrict)
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  ward Ward @relation(fields: [wardId], references: [id], onDelete: Restrict)
+  cameras RoadScanCameraResult[]
+  candidates PotholeCandidate[]
+  observations PotholeObservation[]
+  verification PotholeVerificationScan?
+  @@index([agencyId, wardId, createdAt])
+}
+
+model RoadScanCameraResult {
+  id String @id @default(uuid()) @db.Uuid
+  scanId String @db.Uuid
+  cameraId String @db.Uuid
+  status String @default("PENDING")
+  framesProcessed Int @default(0)
+  rawDetections Int @default(0)
+  failure String?
+  evidence Json @default("[]")
+  scan RoadScan @relation(fields: [scanId], references: [id], onDelete: Restrict)
+  camera RoadCamera @relation(fields: [cameraId], references: [id], onDelete: Restrict)
+  @@unique([scanId, cameraId])
+}
+
+model PotholeCandidate {
+  id String @id @default(uuid()) @db.Uuid
+  reference String @unique
+  scanId String @db.Uuid
+  cameraId String @db.Uuid
+  status PotholeCandidateStatus @default(NEW)
+  detection Json
+  evidence Json
+  uniqueFrameCount Int
+  firstSeenAt DateTime
+  lastSeenAt DateTime
+  ticketId String? @db.Uuid
+  inspectionId String? @db.Uuid
+  projectId String? @db.Uuid
+  dismissReason String?
+  audit Json @default("[]")
+  scan RoadScan @relation(fields: [scanId], references: [id], onDelete: Restrict)
+  camera RoadCamera @relation(fields: [cameraId], references: [id], onDelete: Restrict)
+  ticket Ticket? @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  inspection InspectionReport? @relation(fields: [inspectionId], references: [id], onDelete: Restrict)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  observations PotholeObservation[]
+  verifications PotholeVerificationScan[]
+  @@index([cameraId, status])
+  @@index([ticketId])
+  @@index([projectId])
+}
+
+model PotholeObservation {
+  id String @id @default(uuid()) @db.Uuid
+  candidateId String @db.Uuid
+  scanId String @db.Uuid
+  frameIndex Int
+  detection Json
+  evidence Json
+  candidate PotholeCandidate @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  scan RoadScan @relation(fields: [scanId], references: [id], onDelete: Restrict)
+  @@unique([candidateId, scanId, frameIndex])
+}
+
+model PotholeVerificationScan {
+  id String @id @default(uuid()) @db.Uuid
+  scanId String @unique @db.Uuid
+  candidateId String @db.Uuid
+  projectId String @db.Uuid
+  completionEvidenceId String @db.Uuid
+  result Json
+  before Json
+  after Json?
+  scan RoadScan @relation(fields: [scanId], references: [id], onDelete: Restrict)
+  candidate PotholeCandidate @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  @@index([projectId])
 }

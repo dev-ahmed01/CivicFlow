@@ -18,6 +18,8 @@ import {
   WorkflowActionType,
 } from "@prisma/client";
 import bcrypt from "bcrypt";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { DEMO_WARD_SRID, demoWardBoundaryWkt, demoWardIds, demoWards } from "./src/demo-wards";
 
 import { assertDemoResetAllowed, clearDemoDatabase } from "./src/demo-reset";
@@ -30,7 +32,7 @@ const hoursAgo = (n: number) => new Date(seedNow.getTime() - n * 3_600_000);
 const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
 const demoSeedMode = process.argv.includes("--reset") ? "reset" : process.env.DEMO_SEED_MODE ?? "if_empty";
 
-if (!["reset", "if_empty", "team_only", "insights_only"].includes(demoSeedMode)) {
+if (!["reset", "if_empty", "team_only", "insights_only", "road_scans_only"].includes(demoSeedMode)) {
   throw new Error("DEMO_SEED_MODE must be reset, if_empty, team_only, or insights_only");
 }
 
@@ -1181,6 +1183,11 @@ async function seedInsightsDemo(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  if (demoSeedMode === "road_scans_only") {
+    await client.$transaction(async transaction => { prisma = transaction; await seedRoadScanCameras(); }, { timeout: 30000 });
+    console.log("Additive demo camera provisioning complete; existing work preserved.");
+    return;
+  }
   if (demoSeedMode === "insights_only") {
     const host = new URL(process.env.DATABASE_URL ?? "").hostname;
     if (!["localhost", "127.0.0.1", "[::1]"].includes(host) || process.env.NODE_ENV === "production") throw new Error("Insights demo records may only be added to a local demo database");
@@ -1206,6 +1213,19 @@ async function main(): Promise<void> {
     await seedDataset();
     await syncCampusDemo();
   }, { timeout: 120000, maxWait: 10000 });
+}
+
+async function seedRoadScanCameras(): Promise<void> {
+  const ward = await prisma.ward.findUniqueOrThrow({ where: { id: demoWardIds.jakkasandra } });
+  const config = await prisma.systemConfig.findUniqueOrThrow({ where: { key: "road.category_id" } });
+  if (typeof config.value !== "string") throw new Error("Configure road.category_id before camera provisioning");
+  const category = await prisma.category.findUniqueOrThrow({ where: { id: config.value } });
+  const manifest = JSON.parse(readFileSync(resolve(process.cwd(), "demo/road-scans/manifest.json"), "utf8")) as { cameras: Array<{ code: string; reference: string; name: string; latitude: number; longitude: number }> };
+  const segmentId = "ac000000-0000-4000-8000-000000000001";
+  await prisma.$executeRaw`INSERT INTO "RoadSegment" ("id", "roadName", "geometry", "wardId", "surfaceType") VALUES (${segmentId}::uuid, 'Jakkasandra demo camera coverage', ST_GeomFromText('LINESTRING(77.438 12.637,77.443 12.641)',4326), ${ward.id}::uuid, 'Asphalt') ON CONFLICT ("id") DO NOTHING`;
+  for (const [index, camera] of manifest.cameras.entries()) {
+    await prisma.roadCamera.upsert({ where: { code: camera.code }, update: {}, create: { id: `ac000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`, code: camera.code, name: camera.name, wardId: ward.id, agencyId: category.primaryAgencyId, categoryId: category.id, roadSegmentId: segmentId, latitude: camera.latitude, longitude: camera.longitude, simulated: true, providerReference: camera.reference } });
+  }
 }
 
 main()

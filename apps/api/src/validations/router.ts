@@ -10,7 +10,7 @@ import {
 } from "@civicos/shared";
 import { requireAuth, requireRole } from "../auth/middleware";
 import { effectiveValidationQuorum, runValidationRebatchJob, submitValidation, validationQuorum, ValidationDailyCapError } from "./service";
-import { createWorkflowAction } from "../deadlines/service";
+import { applyCompletionTransition } from "./completion-transition";
 import { createNotifications } from "../notifications/service";
 import { storageReadUrl, type ImageStorage } from "../images/storage";
 
@@ -250,20 +250,7 @@ export function createValidationsRouter(storage: ImageStorage): Router {
       const resolvedState = rework >= quorum ? ProjectState.ACTIVE : verified >= quorum ? ProjectState.CLOSED : null;
       if (!resolvedState) return { kind: "recorded" as const, state: evidence.project.state, duplicate: false };
 
-      const ticketState = resolvedState === ProjectState.CLOSED ? TicketState.CLOSED : TicketState.WORK_IN_PROGRESS;
-      await transaction.project.update({ where: { id: evidence.project.id }, data: { state: resolvedState, ...(resolvedState === ProjectState.ACTIVE ? { actualCompletion: null } : {}) } });
-      await transaction.completionVerificationRequest.updateMany({ where: { completionEvidenceId: evidenceId, respondedAt: null }, data: { respondedAt: new Date() } });
-      if (resolvedState === ProjectState.ACTIVE && evidence.project.engineerId) await createWorkflowAction(transaction, {
-        dedupeKey: `project:${evidence.project.id}:rework:${evidence.id}`, type: "COMPLETE_WORK", ticketId: evidence.ticket.id, projectId: evidence.project.id,
-        responsibleUserId: evidence.project.engineerId, responsibleAgencyId: evidence.project.agencyId,
-      });
-      await transaction.projectStateTransition.create({
-        data: { projectId: evidence.project.id, fromState: ProjectState.AWAITING_VERIFICATION, toState: resolvedState, reason: resolvedState === ProjectState.CLOSED ? "CITIZEN_COMPLETION_VERIFIED" : "CITIZEN_REWORK_REQUESTED", actedById: request.auth!.userId },
-      });
-      await transaction.ticket.update({ where: { id: evidence.ticket.id }, data: { state: ticketState } });
-      await transaction.ticketStateTransition.create({
-        data: { ticketId: evidence.ticket.id, fromState: TicketState.AWAITING_CITIZEN_VERIFICATION, toState: ticketState, reason: resolvedState === ProjectState.CLOSED ? "CITIZEN_COMPLETION_VERIFIED" : "CITIZEN_REWORK_REQUESTED", actedById: request.auth!.userId },
-      });
+      await applyCompletionTransition(transaction, { projectId: evidence.project.id, ticketId: evidence.ticket.id, evidenceId, engineerId: evidence.project.engineerId, agencyId: evidence.project.agencyId, actorId: request.auth!.userId, target: resolvedState, reason: resolvedState === ProjectState.CLOSED ? "CITIZEN_COMPLETION_VERIFIED" : "CITIZEN_REWORK_REQUESTED" });
       const recipients = await transaction.user.findMany({
         where: { OR: [
           ...(evidence.project.engineerId ? [{ id: evidence.project.engineerId }] : []),

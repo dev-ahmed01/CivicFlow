@@ -90,8 +90,13 @@ app.add_middleware(
 def verify_internal_token(x_internal_token: Optional[str] = Header(None, alias="X-Internal-Token")):
     """Server-to-server token authentication dependency for internal endpoints."""
     expected_token = settings.pothole_ai_internal_token
-    if not expected_token:
-        return  # Token verification disabled if token is unset
+    insecure = not expected_token or expected_token.strip().lower() in {
+        "change-me", "changeme", "dev-secret-token-civicflow", "secret", "test"
+    }
+    deployed = settings.pothole_ai_mode == "real" or settings.env.lower() not in {"development", "test"}
+    if insecure or (deployed and len(expected_token or "") < 32):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Internal authentication is not configured securely.")
 
     if not x_internal_token or not secrets.compare_digest(x_internal_token, expected_token):
         raise HTTPException(

@@ -27,6 +27,9 @@ import { createCivicWorksRouter } from "./civic-works/router";
 import { createCoordinationRouter } from "./coordination/router";
 import { createInspectionsRouter } from "./inspections/router";
 import { demoWorkflowEnabled } from "./config/demo-workflow";
+import { createRoadScansRouter } from "./road-scans/router";
+import { assetDirectory, loadManifest } from "./road-scans/provider";
+import { join } from "node:path";
 
 export interface AppDependencies {
   otpProvider?: OtpProvider;
@@ -57,6 +60,16 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
     },
   }));
   app.use(express.json({ limit: "1mb" }));
+  // Only public licensed demo photos. No camera credentials or real source assets.
+  app.get("/road-scan-assets/:file", (request, response) => {
+    try {
+      const directory = assetDirectory(env.POTHOLE_DEMO_ASSET_DIR || undefined);
+      const asset = loadManifest(directory).assets.find(item => item.file === request.params.file);
+      if (!asset) { response.sendStatus(404); return; }
+      response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      response.sendFile(join(directory, asset.file));
+    } catch { response.sendStatus(404); }
+  });
 
   app.get("/health", (_request, response) => {
     response.json({ status: "ok" });
@@ -83,6 +96,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.use(createValidationsRouter(imageStorage));
   app.use(createAgencyRouter(imageStorage));
   app.use(createInspectionsRouter(imageStorage));
+  app.use("/project-head", createRoadScansRouter());
   app.use(createProjectsRouter(imageStorage));
   app.use(createCivicWorksRouter(imageStorage));
   app.use(createCoordinationRouter(imageStorage));
