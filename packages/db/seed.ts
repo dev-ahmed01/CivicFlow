@@ -23,7 +23,9 @@ import { resolve } from "node:path";
 import { DEMO_WARD_SRID, demoWardBoundaryWkt, demoWardIds, demoWards } from "./src/demo-wards";
 
 import { assertDemoResetAllowed, clearDemoDatabase } from "./src/demo-reset";
+import { provisionRoadScans } from "./src/provision-road-scans";
 const client = new PrismaClient();
+
 let prisma: Prisma.TransactionClient = client;
 const seedNow = new Date();
 const daysFromNow = (n: number) => new Date(seedNow.getTime() + n * 86_400_000);
@@ -918,7 +920,9 @@ async function seedDataset(): Promise<void> {
   await seedPlannedCivicWorks();
   await seedFreshScenarios();
   await reconcileDemoHistory();
+  await seedRoadScanCameras();
   await prisma.systemConfig.upsert({ where: { key: "demo.seeded_at" }, create: { key: "demo.seeded_at", value: seedNow.toISOString(), description: "Fresh demo reset timestamp" }, update: { value: seedNow.toISOString() } });
+
 
   console.log(`Seeded ${demoWards.length} wards, ${agencies.length} agencies, ${categories.length} categories, and ${users.length} users.`);
   console.log(`Seeded ${engineerDemoProjects.length} Executive Engineer demo projects.`);
@@ -1216,17 +1220,9 @@ async function main(): Promise<void> {
 }
 
 async function seedRoadScanCameras(): Promise<void> {
-  const ward = await prisma.ward.findUniqueOrThrow({ where: { id: demoWardIds.jakkasandra } });
-  const config = await prisma.systemConfig.findUniqueOrThrow({ where: { key: "road.category_id" } });
-  if (typeof config.value !== "string") throw new Error("Configure road.category_id before camera provisioning");
-  const category = await prisma.category.findUniqueOrThrow({ where: { id: config.value } });
-  const manifest = JSON.parse(readFileSync(resolve(process.cwd(), "demo/road-scans/manifest.json"), "utf8")) as { cameras: Array<{ code: string; reference: string; name: string; latitude: number; longitude: number }> };
-  const segmentId = "ac000000-0000-4000-8000-000000000001";
-  await prisma.$executeRaw`INSERT INTO "RoadSegment" ("id", "roadName", "geometry", "wardId", "surfaceType") VALUES (${segmentId}::uuid, 'Jakkasandra demo camera coverage', ST_GeomFromText('LINESTRING(77.438 12.637,77.443 12.641)',4326), ${ward.id}::uuid, 'Asphalt') ON CONFLICT ("id") DO NOTHING`;
-  for (const [index, camera] of manifest.cameras.entries()) {
-    await prisma.roadCamera.upsert({ where: { code: camera.code }, update: {}, create: { id: `ac000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`, code: camera.code, name: camera.name, wardId: ward.id, agencyId: category.primaryAgencyId, categoryId: category.id, roadSegmentId: segmentId, latitude: camera.latitude, longitude: camera.longitude, simulated: true, providerReference: camera.reference } });
-  }
+  await provisionRoadScans(prisma as unknown as PrismaClient);
 }
+
 
 main()
   .catch((error: unknown) => {

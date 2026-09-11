@@ -18,7 +18,9 @@
     "seed:run": "tsc -p tsconfig.seed.json && node .seed-dist/seed.js",
     "verify:wards": "tsc -p tsconfig.scripts.json && node .scripts-dist/scripts/verify-demo-wards.js",
     "verify:campus-reference": "tsc -p tsconfig.scripts.json && node .scripts-dist/scripts/verify-campus-reference.js",
+    "provision:road-scans": "tsx scripts/provision-road-scans.ts",
     "lint": "eslint src scripts seed.ts --max-warnings 0",
+
     "test": "vitest run",
     "demo:reset": "tsc -p tsconfig.seed.json && node .seed-dist/seed.js --reset",
     "verify:demo-data": "tsc -p tsconfig.scripts.json && node .scripts-dist/scripts/verify-demo-data.js"

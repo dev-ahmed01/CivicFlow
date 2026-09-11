@@ -19,7 +19,9 @@
     "db:generate": "pnpm --filter db db:generate",
     "db:migrate": "pnpm --filter db exec prisma migrate dev",
     "db:seed": "pnpm --filter db exec prisma db seed",
+    "road-scans:provision": "pnpm --filter db provision:road-scans",
     "demo:reset": "pnpm --filter db demo:reset",
+
     "verify:auth": "pnpm --filter api verify:auth",
     "verify:phase2": "pnpm --filter api verify:phase2",
     "verify:phase3": "pnpm --filter api verify:phase3",
