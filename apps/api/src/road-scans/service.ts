@@ -29,10 +29,14 @@ export async function getCandidate(actor: ScanActor, id: string, tx: Prisma.Tran
   return candidate;
 }
 export async function scanOptions(actor: ScanActor) {
+  if (getEnv().POTHOLE_SCAN_PROVIDER === "disabled") {
+    return { providerMode: "DEMO" as const, simulated: true, wards: [], newCandidates: 0 };
+  }
   const cameras = await prisma.roadCamera.findMany({ where: { ...cameraScope(actor), enabled: true }, include: { ward: { select: { id: true, name: true } } } });
   const wards = [...new Map(cameras.map(camera => [camera.wardId, camera.ward])).values()].map(ward => ({ ...ward, camerasAvailable: cameras.filter(camera => camera.wardId === ward.id).length }));
-  return { providerMode: getEnv().POTHOLE_SCAN_PROVIDER === "ai" ? "AI" : "DEMO", simulated: cameras.every(camera => camera.simulated), wards, newCandidates: await prisma.potholeCandidate.count({ where: { camera: cameraScope(actor), status: "NEW" } }) };
+  return { providerMode: getEnv().POTHOLE_SCAN_PROVIDER === "ai" ? "AI" as const : "DEMO" as const, simulated: cameras.every(camera => camera.simulated), wards, newCandidates: await prisma.potholeCandidate.count({ where: { camera: cameraScope(actor), status: "NEW" } }) };
 }
+
 export async function recentScans(actor: ScanActor) {
   const scans = await prisma.roadScan.findMany({ where: scanScope(actor), include: { ward: true }, orderBy: { createdAt: "desc" }, take: 25 });
   return scans.map(scan => roadScanSummarySchema.parse(wire(scan)));

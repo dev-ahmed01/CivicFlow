@@ -29,3 +29,19 @@ describe("AI client contract and failure boundary", () => {
   it("validates polygon bounds and runtime provenance", () => { expect(potholeDetectionResponseSchema.safeParse({}).success).toBe(false); });
   it("attaches internal authentication only server-side", async () => { const transport = vi.fn().mockResolvedValue(Response.json({ contractVersion: "1.0", status: "ok", runtimeMode: "REAL", modelLoaded: true, weightsSha256: "a".repeat(64) })); await new PotholeAiClient("http://private-ai", "a".repeat(40), 100, transport).health(); expect(transport.mock.calls[0]?.[1].headers["X-Internal-Token"]).toBe("a".repeat(40)); });
 });
+describe("scanOptions provider configuration", () => {
+  it("returns empty wards when POTHOLE_SCAN_PROVIDER is disabled", async () => {
+    process.env.DATABASE_URL ||= "postgresql://civicos:secret@localhost:5432/civicos";
+    process.env.JWT_ACCESS_SECRET ||= "access-secret-that-is-at-least-32-characters";
+    process.env.JWT_REFRESH_SECRET ||= "refresh-secret-that-is-at-least-32-characters";
+    process.env.POTHOLE_SCAN_PROVIDER = "disabled";
+    const { scanOptions } = await import("./service");
+    const actor = { userId: "user-1", agencyId: "agency-1", wardId: null };
+    const options = await scanOptions(actor);
+    expect(options.providerMode).toBe("DEMO");
+    expect(options.wards).toEqual([]);
+    expect(options.newCandidates).toBe(0);
+  });
+});
+
+

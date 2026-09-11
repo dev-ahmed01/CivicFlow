@@ -10,9 +10,24 @@ import { reviewScanCompletion } from "./review";
 const id = (request: Request) => z.string().uuid().parse(request.params.id);
 const route = (fn: (request: Request, response: Response) => Promise<void>) => (request: Request, response: Response) => {
   void fn(request, response).catch((error: unknown) => {
-    response.status(error instanceof ScanError ? error.status : error instanceof z.ZodError ? 400 : 500).json({ error: error instanceof ScanError ? error.message : error instanceof z.ZodError ? "Check the submitted scan details." : "The scan request could not be completed." });
+    const status = error instanceof ScanError ? error.status : error instanceof z.ZodError ? 400 : 500;
+    if (status === 500 || !(error instanceof ScanError)) {
+      console.error("[road-scans] Server route error:", {
+        method: request.method,
+        path: request.path,
+        userId: request.auth?.userId,
+        agencyId: request.auth?.agencyId,
+        wardId: request.auth?.wardId,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        errorMessage: error instanceof Error ? error.message : String(error),
+        prismaCode: (error as any)?.code,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
+    response.status(status).json({ error: error instanceof ScanError ? error.message : error instanceof z.ZodError ? "Check the submitted scan details." : "The scan request could not be completed." });
   });
 };
+
 export function createRoadScansRouter(): Router {
   const router = Router();
   router.use(requireAuth, requirePasswordResetComplete, requireRole("PROJECT_HEAD"));

@@ -42,9 +42,20 @@ export default function AreaScanPage() {
   async function process(id: string) { const result = await apiFetch<{ scan: RoadScan }>(`/project-head/road-scans/${id}/process`, { method: "POST" }); setScan(result.scan); await refresh(); }
   async function start() {
     setBusy(true); setError(undefined);
-    try { const result = await apiFetch<{ scan: RoadScan }>("/project-head/road-scans", { method: "POST", body: JSON.stringify({ type: "AREA", wardId }) }); setScan(result.scan); await process(result.scan.id); }
-    catch (error) { setError(message(error)); } finally { setBusy(false); }
+    try {
+      const result = await apiFetch<{ scan: RoadScan }>("/project-head/road-scans", { method: "POST", body: JSON.stringify({ type: "AREA", wardId }) });
+      setScan(result.scan);
+      try {
+        await process(result.scan.id);
+      } catch (processError) {
+        setError(message(processError));
+        await refresh();
+      }
+    } catch (createError) {
+      setError(message(createError));
+    } finally { setBusy(false); }
   }
+
   async function openCandidate(id: string) {
     setError(undefined); setAction("assign"); setReason(""); setEngineerId(""); setProjectId("");
     try {
