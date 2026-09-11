@@ -1,6 +1,6 @@
 import uuid
 import logging
-from typing import List, Optional
+from typing import List, Optional, Set
 from app.schemas import (
     NormalizedBBox,
     PotholeDetection,
@@ -30,7 +30,7 @@ def calculate_bbox_iou(box1: NormalizedBBox, box2: NormalizedBBox) -> float:
         return 0.0
     return inter_area / union_area
 
-def compute_visual_severity(ratio: float) -> str:
+def compute_visual_extent(ratio: float) -> str:
     if ratio < 0.005:
         return "LOW"
     elif ratio < 0.02:
@@ -55,9 +55,21 @@ class TemporalConfirmationEngine:
         override_min_repeats: Optional[int] = None
     ) -> TemporalConfirmationResponse:
         """
-        Process a list of sequential frame detections from a static camera feed
-        and cluster detections corresponding to the same physical pothole.
+        Process a list of sequential frame detections from ONE static camera.
+        Enforces single-camera scope and distinct-frame count per cluster.
         """
+        if not frames:
+            return TemporalConfirmationResponse(
+                totalFramesProcessed=0,
+                totalRawDetections=0,
+                confirmedClusters=[]
+            )
+
+        # Enforce single camera identity across sequence
+        camera_ids = {f.cameraId for f in frames if f.cameraId is not None}
+        if len(camera_ids) > 1:
+            raise ValueError(f"Temporal confirmation sequence contains mixed camera IDs ({camera_ids}). All frames must originate from the same static camera.")
+
         min_repeats = override_min_repeats if override_min_repeats is not None else self.min_repeat_frames
         sorted_frames = sorted(frames, key=lambda f: f.timestampSec)
 
@@ -65,13 +77,18 @@ class TemporalConfirmationEngine:
         total_raw_detections = 0
 
         for frame in sorted_frames:
+            # Track which clusters have already received a detection in THIS frame to prevent double counting
+            matched_cluster_ids_in_frame: Set[str] = set()
+
             for det in frame.detections:
                 total_raw_detections += 1
                 matched_cluster = None
                 best_iou = 0.0
 
-                # Search existing active clusters for IoU overlap within time window
                 for cluster in clusters:
+                    if cluster["clusterId"] in matched_cluster_ids_in_frame:
+                        continue
+
                     time_diff = frame.timestampSec - cluster["lastTimestampSec"]
                     if time_diff < 0 or time_diff > self.time_window_sec:
                         continue
@@ -82,13 +99,15 @@ class TemporalConfirmationEngine:
                         matched_cluster = cluster
 
                 if matched_cluster is not None:
-                    # Update cluster
+                    # Update cluster with max 1 detection per distinct frame
+                    cluster_id = matched_cluster["clusterId"]
+                    matched_cluster_ids_in_frame.add(cluster_id)
+
+                    matched_cluster["observedFrames"].add(frame.frameIndex)
                     matched_cluster["detections"].append(det)
-                    matched_cluster["repeatCount"] += 1
                     matched_cluster["lastFrameIndex"] = frame.frameIndex
                     matched_cluster["lastTimestampSec"] = frame.timestampSec
 
-                    # If this detection has higher confidence, update canonical polygon & bbox
                     if det.confidence > matched_cluster["highestConfidence"]:
                         matched_cluster["highestConfidence"] = det.confidence
                         matched_cluster["canonicalBbox"] = det.bbox
@@ -98,9 +117,11 @@ class TemporalConfirmationEngine:
                         matched_cluster["maxVisibleAreaRatio"] = det.visibleAreaRatio
                 else:
                     # Create new cluster
+                    c_id = f"cluster-{uuid.uuid4().hex[:8]}"
+                    matched_cluster_ids_in_frame.add(c_id)
                     clusters.append({
-                        "clusterId": f"cluster-{uuid.uuid4().hex[:8]}",
-                        "repeatCount": 1,
+                        "clusterId": c_id,
+                        "observedFrames": {frame.frameIndex},
                         "firstFrameIndex": frame.frameIndex,
                         "lastFrameIndex": frame.frameIndex,
                         "firstTimestampSec": frame.timestampSec,
@@ -114,14 +135,16 @@ class TemporalConfirmationEngine:
 
         confirmed_clusters: List[TemporalDefectCluster] = []
         for c in clusters:
-            if c["repeatCount"] >= min_repeats:
+            unique_frame_count = len(c["observedFrames"])
+            if unique_frame_count >= min_repeats:
                 avg_conf = sum(d.confidence for d in c["detections"]) / len(c["detections"])
                 max_ratio = c["maxVisibleAreaRatio"]
-                severity = compute_visual_severity(max_ratio)
+                extent = compute_visual_extent(max_ratio)
 
                 confirmed_clusters.append(TemporalDefectCluster(
                     clusterId=c["clusterId"],
-                    repeatCount=c["repeatCount"],
+                    uniqueFrameCount=unique_frame_count,
+                    repeatCount=unique_frame_count,
                     firstFrameIndex=c["firstFrameIndex"],
                     lastFrameIndex=c["lastFrameIndex"],
                     firstTimestampSec=round(c["firstTimestampSec"], 2),
@@ -130,7 +153,7 @@ class TemporalConfirmationEngine:
                     canonicalBbox=c["canonicalBbox"],
                     canonicalPolygon=c["canonicalPolygon"],
                     maxVisibleAreaRatio=round(max_ratio, 6),
-                    visualSeverityCandidate=severity
+                    visualExtentCandidate=extent
                 ))
 
         return TemporalConfirmationResponse(

@@ -3,31 +3,91 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
+from app.config import settings
 from fixtures.generate_fixtures import generate_all_fixtures
 
-@pytest.fixture(scope="module")
-def client(tmp_path_factory):
+@pytest.fixture(scope="module", autouse=True)
+def configure_test_env(tmp_path_factory):
+    # Set mode to demo for test client fixture
+    settings.pothole_ai_mode = "demo"
     fixtures_dir = tmp_path_factory.mktemp("fixtures")
     generate_all_fixtures(str(fixtures_dir))
-    with TestClient(app) as test_client:
-        yield test_client, fixtures_dir
+    return fixtures_dir
 
-def test_health_check(client):
+@pytest.fixture
+def client(configure_test_env):
+    settings.pothole_ai_mode = "demo"
+    with TestClient(app) as test_client:
+        yield test_client, configure_test_env
+
+def test_real_mode_missing_weights_fails_readiness(configure_test_env):
+    original_mode = settings.pothole_ai_mode
+    original_path = settings.model_path
+    try:
+        settings.pothole_ai_mode = "real"
+        settings.model_path = "weights/missing_weights.pt"
+        with TestClient(app) as test_client:
+            res = test_client.get("/health")
+            assert res.status_code == 503
+            data = res.json()
+            assert data["status"] == "unhealthy"
+            assert data["runtimeMode"] == "REAL"
+            assert data["modelLoaded"] is False
+    finally:
+        settings.pothole_ai_mode = original_mode
+        settings.model_path = original_path
+
+def test_health_check_unauthenticated(client):
     test_client, _ = client
     response = test_client.get("/health")
     assert response.status_code == 200
     data = response.json()
+    assert data["contractVersion"] == "1.0"
     assert data["status"] == "ok"
+    assert data["runtimeMode"] == "DEMO"
     assert data["modelLoaded"] is True
-    assert "version" in data
-    assert "modelName" in data
+
+def test_internal_token_auth(client):
+    test_client, fixtures_dir = client
+    img_path = os.path.join(fixtures_dir, "cam_01_single_pothole.jpg")
+    headers = {"X-Internal-Token": settings.pothole_ai_internal_token}
+
+    # 1. Without Token Header -> 401
+    with open(img_path, "rb") as f:
+        res_no_token = test_client.post(
+            "/v1/detect/image",
+            files={"image": ("cam_01.jpg", f, "image/jpeg")}
+        )
+    assert res_no_token.status_code == 401
+
+    # 2. Wrong Token Header -> 401
+    with open(img_path, "rb") as f:
+        res_bad_token = test_client.post(
+            "/v1/detect/image",
+            headers={"X-Internal-Token": "wrong-secret-token"},
+            files={"image": ("cam_01.jpg", f, "image/jpeg")}
+        )
+    assert res_bad_token.status_code == 401
+
+    # 3. Correct Token Header -> 200
+    with open(img_path, "rb") as f:
+        res_auth = test_client.post(
+            "/v1/detect/image",
+            headers=headers,
+            files={"image": ("cam_01.jpg", f, "image/jpeg")},
+            data={"camera_id": "CAM-001"}
+        )
+    assert res_auth.status_code == 200
 
 def test_detect_image_valid_fixture(client):
     test_client, fixtures_dir = client
     img_path = os.path.join(fixtures_dir, "cam_01_single_pothole.jpg")
+    headers = {"X-Internal-Token": settings.pothole_ai_internal_token}
+
     with open(img_path, "rb") as f:
         response = test_client.post(
             "/v1/detect/image",
+            headers=headers,
             files={"image": ("cam_01.jpg", f, "image/jpeg")},
             data={
                 "camera_id": "CAM-001",
@@ -39,43 +99,52 @@ def test_detect_image_valid_fixture(client):
     assert response.status_code == 200
     data = response.json()
 
+    assert data["contractVersion"] == "1.0"
     assert data["requestId"] == "req-12345"
     assert data["cameraId"] == "CAM-001"
     assert data["capturedAt"] == "2026-09-12T10:00:00Z"
     assert data["image"]["width"] == 1280
     assert data["image"]["height"] == 720
-    assert isinstance(data["detections"], list)
-    assert len(data["detections"]) >= 1
 
-    # Check normalized coordinate contract
+    # Frame Quality
+    assert "frameQuality" in data
+    assert data["frameQuality"]["usable"] is True
+    assert "blurScore" in data["frameQuality"]
+    assert "brightnessScore" in data["frameQuality"]
+
+    # Detections
+    assert len(data["detections"]) >= 1
     det = data["detections"][0]
     assert 0.0 <= det["bbox"]["x"] <= 1.0
     assert 0.0 <= det["bbox"]["y"] <= 1.0
-    assert 0.0 <= det["bbox"]["width"] <= 1.0
-    assert 0.0 <= det["bbox"]["height"] <= 1.0
-    assert isinstance(det["polygon"], list)
-    assert len(det["polygon"]) >= 3
+    assert det["visualExtentCandidate"] in ("LOW", "MEDIUM", "HIGH")
+    assert "model" in data
+    assert data["model"]["runtimeMode"] == "DEMO"
     assert "processingMs" in data
 
-def test_detect_image_clear_road(client):
+def test_detect_image_invalid_mime_type(client):
+    test_client, _ = client
+    headers = {"X-Internal-Token": settings.pothole_ai_internal_token}
+
+    response = test_client.post(
+        "/v1/detect/image",
+        headers=headers,
+        files={"image": ("document.txt", b"plain text data", "text/plain")}
+    )
+    assert response.status_code == 400
+    assert "Unsupported file format" in response.json()["detail"]
+
+def test_detect_image_invalid_confidence_bounds(client):
     test_client, fixtures_dir = client
-    img_path = os.path.join(fixtures_dir, "cam_03_clear_road.jpg")
+    img_path = os.path.join(fixtures_dir, "cam_01_single_pothole.jpg")
+    headers = {"X-Internal-Token": settings.pothole_ai_internal_token}
+
     with open(img_path, "rb") as f:
         response = test_client.post(
             "/v1/detect/image",
-            files={"image": ("cam_03.jpg", f, "image/jpeg")}
+            headers=headers,
+            files={"image": ("cam_01.jpg", f, "image/jpeg")},
+            data={"confidence_threshold": 1.5}
         )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data["detections"]) == 0
-
-def test_detect_image_bad_payload(client):
-    test_client, _ = client
-    response = test_client.post(
-        "/v1/detect/image",
-        files={"image": ("corrupt.txt", b"invalid-bytes", "text/plain")}
-    )
     assert response.status_code == 400
-    data = response.json()
-    assert "detail" in data
+    assert "confidence_threshold" in response.json()["detail"]

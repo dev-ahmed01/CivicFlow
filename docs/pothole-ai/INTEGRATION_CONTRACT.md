@@ -1,4 +1,4 @@
-# Pothole AI Service - Integration & Handoff Contract
+# Pothole AI Service - Integration & Handoff Contract (v1.0)
 
 > [!IMPORTANT]
 > **Surveillance & Architecture Guarantee**:
@@ -6,14 +6,16 @@
 
 ---
 
-## 1. Core Service Architecture
+## 1. Core Service Architecture & Authentication
 
 - **Protocol**: HTTP / REST JSON
-- **Default Port**: `8000`
+- **Default Port**: `8000` (Configurable via `PORT` env var)
 - **Base URL**: `http://localhost:8000` (or `http://pothole-ai:8000` in container environment)
-- **Role Separation**:
-  - **City Connect Node.js/Express App**: Owns authentication, camera metadata, ward mappings, ticket creation, S3 image persistence, map rendering, and Project Head approval workflows.
-  - **Pothole AI Microservice**: Stateless computer vision engine. Receives image binary payloads, performs YOLOv8 instance segmentation, and returns normalized coordinates and model metadata.
+- **Contract Version**: `"1.0"`
+- **Server-to-Server Authentication**:
+  - Requires `X-Internal-Token` header on all `/v1/*` inference endpoints.
+  - Token value is configured via `POTHOLE_AI_INTERNAL_TOKEN` (default: `dev-secret-token-civicflow`).
+  - `/health` endpoint remains unauthenticated for container readiness probes.
 
 ---
 
@@ -21,14 +23,31 @@
 
 ### 2.1 GET `/health`
 
-Verifies service readiness and model loading status.
+Verifies service readiness and exposes runtime mode (`REAL` vs `DEMO`).
 
-**Response `200 OK`**:
+**Response `200 OK` (Ready in DEMO or REAL mode)**:
 ```json
 {
+  "contractVersion": "1.0",
   "status": "ok",
+  "runtimeMode": "DEMO",
   "modelLoaded": true,
-  "modelName": "YOLOv8-Seg-Pothole",
+  "modelName": "Synthetic-Pothole-Demo",
+  "weightsSha256": null,
+  "version": "1.0.0",
+  "device": "cpu"
+}
+```
+
+**Response `503 Service Unavailable` (Unhealthy REAL mode)**:
+```json
+{
+  "contractVersion": "1.0",
+  "status": "unhealthy",
+  "runtimeMode": "REAL",
+  "modelLoaded": false,
+  "modelName": "Uninitialized",
+  "weightsSha256": null,
   "version": "1.0.0",
   "device": "cpu"
 }
@@ -40,24 +59,34 @@ Verifies service readiness and model loading status.
 
 Primary endpoint for Area Scan and Verification Scan image frame analysis.
 
+**Headers**:
+- `X-Internal-Token`: `dev-secret-token-civicflow` (Required)
+
 **Content-Type**: `multipart/form-data`
 
 **Form Parameters**:
-- `image` *(File, Required)*: JPEG or PNG binary image payload.
-- `camera_id` *(String, Optional)*: Identifier of the authorized road-facing camera source (e.g. `CAM-MG-ROAD-01`).
-- `captured_at` *(String, Optional)*: ISO 8601 timestamp when frame was captured.
-- `request_id` *(String, Optional)*: City Connect scan request tracking ID.
-- `confidence_threshold` *(Float, Optional)*: Confidence cutoff (default `0.25`).
+- `image` *(File, Required)*: JPEG or PNG binary image payload (Max `10MB`).
+- `camera_id` *(String, Optional)*: Identifier of the authorized camera source (Max 100 chars).
+- `captured_at` *(String, Optional)*: ISO 8601 capture timestamp.
+- `request_id` *(String, Optional)*: City Connect scan tracking ID.
+- `confidence_threshold` *(Float, Optional)*: Confidence cutoff ($0.0 \dots 1.0$, default `0.25`).
 
 **Response `200 OK`**:
 ```json
 {
+  "contractVersion": "1.0",
   "requestId": "req-88491",
   "cameraId": "CAM-MG-ROAD-01",
   "capturedAt": "2026-09-12T10:15:30Z",
   "image": {
     "width": 1920,
     "height": 1080
+  },
+  "frameQuality": {
+    "usable": true,
+    "blurScore": 143.20,
+    "brightnessScore": 0.6100,
+    "reasons": []
   },
   "detections": [
     {
@@ -76,13 +105,17 @@ Primary endpoint for Area Scan and Verification Scan image frame analysis.
         [0.29, 0.56],
         [0.28, 0.62]
       ],
-      "visibleAreaRatio": 0.0081,
+      "visibleAreaRatio": 0.008100,
+      "visualExtentCandidate": "MEDIUM",
       "visualSeverityCandidate": "MEDIUM"
     }
   ],
   "model": {
     "name": "YOLOv8-Seg-Pothole",
     "version": "1.0.0",
+    "runtimeMode": "REAL",
+    "weightsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source": "FarzadNekouee/YOLOv8_Pothole_Segmentation_Road_Damage_Assessment",
     "threshold": 0.25
   },
   "processingMs": 112
@@ -91,42 +124,29 @@ Primary endpoint for Area Scan and Verification Scan image frame analysis.
 
 ---
 
-## 3. Coordinate Conventions & Severity Rules
+## 3. Coordinate Conventions & Extent Rules
 
 ### Normalized Coordinates (0.0 to 1.0)
 - All `bbox` (`x`, `y`, `width`, `height`) and `polygon` contour points `[x, y]` are normalized from `0.0` to `1.0` relative to original image dimensions:
-  $$\text{x\_norm} = \frac{\text{pixel\_x}}{\text{image\_width}}, \quad \text{y\_norm} = \frac{\text{pixel\_y}}{\text{image\_height}}$$
-- City Connect frontends (MapLibre / Canvas / SVG) overlay bounding boxes and masks on scaled images by multiplying normalized coordinates by rendered canvas width and height.
+  $$x_{\text{norm}} = \frac{\text{pixel\_x}}{\text{image\_width}}, \quad y_{\text{norm}} = \frac{\text{pixel\_y}}{\text{image\_height}}$$
+- If an oversized image is downscaled internally before inference, coordinates are scaled back to match original image dimensions.
 
-### Area & Severity Heuristic
-- `visibleAreaRatio`: Mask area divided by total image area ($0.0 \dots 1.0$).
-- `visualSeverityCandidate`: Visual demo classification based on image area ratio:
+### Area & Extent Cutoffs
+- `visualExtentCandidate`: Relative image extent cutoff:
   - `< 0.005` ( $< 0.5\%$ of image area): `LOW`
   - `0.005 - 0.02` ($0.5\% - 2.0\%$): `MEDIUM`
   - `> 0.02` ( $> 2.0\%$): `HIGH`
-- *Note*: Visibly labeled as an uncalibrated visual heuristic. Physical depth or exact metric dimensions require field engineering measurement.
+- *Note*: Represents relative visible image extent, NOT physical depth or engineering severity.
 
 ---
 
 ## 4. Temporal Confirmation Engine
 
-For static road cameras, City Connect can pass a sequence of frame detections to `POST /v1/temporal/confirm` to confirm repeated physical observations over time:
+For static road cameras, City Connect passes a sequence of frame detections to `POST /v1/temporal/confirm`:
 
-**Request Payload**:
-```json
-[
-  {
-    "frameIndex": 0,
-    "timestampSec": 0.0,
-    "detections": [...]
-  },
-  {
-    "frameIndex": 30,
-    "timestampSec": 1.0,
-    "detections": [...]
-  }
-]
-```
+**Rules**:
+- All frames MUST belong to ONE camera ID.
+- `uniqueFrameCount` counts DISTINCT frames in which the physical defect was observed. Multiple detections in the SAME frame do not double-count.
 
 **Response Payload**:
 ```json
@@ -136,6 +156,7 @@ For static road cameras, City Connect can pass a sequence of frame detections to
   "confirmedClusters": [
     {
       "clusterId": "cluster-a1b2c3d4",
+      "uniqueFrameCount": 8,
       "repeatCount": 8,
       "firstTimestampSec": 0.0,
       "lastTimestampSec": 9.0,
@@ -143,7 +164,7 @@ For static road cameras, City Connect can pass a sequence of frame detections to
       "canonicalBbox": { "x": 0.20, "y": 0.56, "width": 0.13, "height": 0.09 },
       "canonicalPolygon": [[0.20, 0.58], [0.23, 0.55], [0.29, 0.56]],
       "maxVisibleAreaRatio": 0.0085,
-      "visualSeverityCandidate": "MEDIUM"
+      "visualExtentCandidate": "MEDIUM"
     }
   ]
 }
@@ -153,32 +174,21 @@ For static road cameras, City Connect can pass a sequence of frame detections to
 
 ## 5. Verification Scan Semantics
 
-When evaluating post-repair scans (`POST /v1/verification/evaluate`), the service compares pre-repair baseline ROI against new scan detections:
+`POST /v1/verification/evaluate` compares pre-repair baseline ROI against post-repair scan frames:
 
 **Possible Status Values**:
-1. `DEFECT_STILL_DETECTED`: A pothole detection overlaps the baseline ROI above IoU threshold ($\ge 0.30$). Defect remains unpatched or partially unpatched.
-2. `NO_MATCHING_DEFECT_DETECTED`: Clear post-repair scan with zero overlapping detections in baseline ROI. Road surface patched.
-3. `INCONCLUSIVE`: Scans marked with poor lighting, angle mismatch, or camera obstruction (`qualityOK: false`).
+1. `DEFECT_STILL_DETECTED`: Matching pothole detection overlaps baseline ROI across usable verification frames. Defect persists.
+2. `NO_MATCHING_DEFECT_DETECTED`: Minimum usable verification frames pass quality checks with ZERO matching detections in baseline ROI. Surface patched.
+3. `INCONCLUSIVE`: Scans have poor frame quality (too blurry/dark/obstructed), camera ID mismatch, or insufficient usable frames ($\le 2$).
 
 ---
 
 ## 6. Error Responses
 
-All errors return clean structured JSON without exposing Python stack traces:
-
-**Bad Request `400`**:
-```json
-{
-  "detail": "Failed to decode image. File may be corrupt or an unsupported format."
-}
-```
-
-**Service Unavailable `503`**:
-```json
-{
-  "detail": "Pothole AI model is not ready or failed to load."
-}
-```
+- `401 Unauthorized`: Missing or invalid `X-Internal-Token` header.
+- `400 Bad Request`: Non-JPEG/PNG file, invalid payload, or mixed camera IDs.
+- `413 Payload Too Large`: Upload file exceeds `MAX_UPLOAD_BYTES` ($10\text{ MB}$).
+- `503 Service Unavailable`: AI model uninitialized or REAL mode model load failure.
 
 ---
 
@@ -187,8 +197,10 @@ All errors return clean structured JSON without exposing Python stack traces:
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `8000` | HTTP service port |
-| `MODEL_PATH` | `weights/yolov8n-seg-pothole.pt` | Path to YOLOv8-seg weights or `MOCK` |
-| `CONFIDENCE_THRESHOLD` | `0.25` | Default confidence cutoff |
-| `DEVICE` | `cpu` | PyTorch device (`cpu`, `cuda`, `auto`) |
-| `TEMPORAL_IOU_THRESHOLD` | `0.30` | IoU threshold for temporal clustering |
-| `TEMPORAL_MIN_REPEAT_FRAMES` | `3` | Min frame observations for confirmation |
+| `POTHOLE_AI_MODE` | `real` | Runtime mode: `real` (requires weights) or `demo` (mock) |
+| `POTHOLE_AI_INTERNAL_TOKEN` | `dev-secret-token-civicflow` | Server-to-server auth token |
+| `ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5000` | Allowed CORS origins |
+| `MODEL_PATH` | `weights/yolov8n-seg-pothole.pt` | Path to YOLOv8-seg weights file |
+| `CONFIDENCE_THRESHOLD` | `0.25` | Default confidence threshold |
+| `MAX_UPLOAD_BYTES` | `10485760` | Upload file size limit ($10\text{ MB}$) |
+| `MAX_IMAGE_DIMENSION` | `1920` | Max dimension before safe downscaling |

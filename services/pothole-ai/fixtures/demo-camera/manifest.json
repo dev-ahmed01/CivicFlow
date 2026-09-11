@@ -1,0 +1,76 @@
+{
+  "networkName": "Simulated Camera Network",
+  "version": "1.0",
+  "disclaimer": "Simulated road camera network assets for SIH interactive demonstration. Does not ingest live municipal CCTV streams.",
+  "cameras": [
+    {
+      "cameraId": "CAM-01",
+      "name": "MG Road Intersection North",
+      "description": "Single clear pothole in active traffic lane",
+      "scenario": "SINGLE_POTHOLE",
+      "frames": [
+        {
+          "filename": "../cam_01_single_pothole.jpg",
+          "quality": "USABLE",
+          "expectedDetectionsCount": 1
+        }
+      ],
+      "license": "Internal Synthetic Demo Generator / Public Domain"
+    },
+    {
+      "cameraId": "CAM-02",
+      "name": "Indiranagar 100ft Road East",
+      "description": "Multiple potholes across lane boundaries",
+      "scenario": "MULTI_POTHOLE",
+      "frames": [
+        {
+          "filename": "../cam_02_multi_pothole.jpg",
+          "quality": "USABLE",
+          "expectedDetectionsCount": 2
+        }
+      ],
+      "license": "Internal Synthetic Demo Generator / Public Domain"
+    },
+    {
+      "cameraId": "CAM-03",
+      "name": "Koramangala 80ft Road",
+      "description": "Clear asphalt road surface with zero road defects",
+      "scenario": "CLEAR_ROAD",
+      "frames": [
+        {
+          "filename": "../cam_03_clear_road.jpg",
+          "quality": "USABLE",
+          "expectedDetectionsCount": 0
+        }
+      ],
+      "license": "Internal Synthetic Demo Generator / Public Domain"
+    },
+    {
+      "cameraId": "CAM-04",
+      "name": "Hebbal Flyover Access Road",
+      "description": "Before and after engineer pothole repair verification pair",
+      "scenario": "REPAIR_VERIFICATION",
+      "baselineFrame": {
+        "filename": "../cam_04_before_repair.jpg",
+        "quality": "USABLE",
+        "expectedDetectionsCount": 1
+      },
+      "verificationFrames": [
+        {
+          "filename": "../cam_04_after_repair.jpg",
+          "quality": "USABLE",
+          "expectedDetectionsCount": 0
+        }
+      ],
+      "license": "Internal Synthetic Demo Generator / Public Domain"
+    },
+    {
+      "cameraId": "CAM-05",
+      "name": "Outer Ring Road Bellandur",
+      "description": "Poor illumination and heavy rain blur causing inconclusive scan",
+      "scenario": "INCONCLUSIVE_POOR_QUALITY",
+      "frames": [],
+      "license": "Internal Synthetic Demo Generator / Public Domain"
+    }
+  ]
+}
