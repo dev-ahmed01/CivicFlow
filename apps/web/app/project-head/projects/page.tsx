@@ -1,5 +1,6 @@
 "use client";
 
+import { isActiveProjectState } from "@civicos/shared";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -169,7 +170,7 @@ export default function WorkPipelinePage() {
     if (dueFilter) {
       if (row.kind !== "project" || ["COMPLETED", "AWAITING_VERIFICATION", "CLOSED", "CANCELLED"].includes(row.state)) return false;
       if (dueFilter === "overdue") return Boolean(row.plannedEnd && new Date(row.plannedEnd).getTime() < Date.now());
-      if (dueFilter === "upcoming") return row.state !== "ACTIVE" && Boolean(row.plannedStart && new Date(row.plannedStart).getTime() >= Date.now() && new Date(row.plannedStart).getTime() <= Date.now() + 7 * 86400000);
+      if (dueFilter === "upcoming") return !isActiveProjectState(row.state) && Boolean(row.plannedStart && new Date(row.plannedStart).getTime() >= Date.now() && new Date(row.plannedStart).getTime() <= Date.now() + 7 * 86400000);
     }
     return true;
   }).sort((a, b) => sort === "title" ? a.title.localeCompare(b.title) : sort === "deadline" ? (a.deadline ? new Date(a.deadline).getTime() : Infinity) - (b.deadline ? new Date(b.deadline).getTime() : Infinity) : new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()), [rows, view, legacyView, dueFilter, sort]);

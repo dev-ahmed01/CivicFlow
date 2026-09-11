@@ -87,10 +87,10 @@ export const civicWorkCalendarInclude = {
   _count: {
     select: {
       evidence: true,
-      conflictLogs: true,
-      conflictingLogs: true,
-      roadConflictLogs: true,
-      conflictingRoadLogs: true,
+      conflictLogs: { where: { coordinationRequests: { none: { status: { in: ["COMPLETED", "CLOSED"] } } } } },
+      conflictingLogs: { where: { coordinationRequests: { none: { status: { in: ["COMPLETED", "CLOSED"] } } } } },
+      roadConflictLogs: { where: { coordinationRequests: { none: { status: { in: ["COMPLETED", "CLOSED"] } } } } },
+      conflictingRoadLogs: { where: { coordinationRequests: { none: { status: { in: ["COMPLETED", "CLOSED"] } } } } },
     },
   },
 } satisfies Prisma.ProjectInclude;
@@ -208,7 +208,8 @@ export async function findCivicWork(
 
 async function idsWithinBounds(client: CivicWorkClient, query: ListCivicWorksQuery): Promise<string[] | null> {
   if (query.minLongitude === undefined || query.minLatitude === undefined || query.maxLongitude === undefined || query.maxLatitude === undefined) {
-    return null;
+    const eligible = await client.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Project" WHERE "geometry" IS NOT NULL AND ST_IsValid("geometry") AND NOT ST_IsEmpty("geometry")`;
+    return eligible.map(({ id }) => id);
   }
   const rows = await client.$queryRaw<Array<{ id: string }>>`
     SELECT "id"
@@ -262,7 +263,7 @@ async function idsWithinCalendarBounds(client: CivicWorkClient, query: CivicWork
   const rows = await client.$queryRaw<Array<{ id: string }>>`
     SELECT "id"
     FROM "Project"
-    WHERE "geometry" IS NOT NULL
+    WHERE "geometry" IS NOT NULL AND ST_IsValid("geometry") AND NOT ST_IsEmpty("geometry")
       AND "plannedStart" <= ${new Date(query.dateTo)}
       AND "plannedEnd" >= ${new Date(query.dateFrom)}
       AND ST_Intersects(

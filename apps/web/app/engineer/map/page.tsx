@@ -1,5 +1,6 @@
 "use client";
 
+import { collectPages, eligibleMappedWorks, mappedWorkCategories, type PaginationMeta } from "@civicos/shared";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -14,11 +15,11 @@ type Bounds = { minLongitude: number; minLatitude: number; maxLongitude: number;
 const initialBounds: Bounds = { minLongitude: 77.56, minLatitude: 12.82, maxLongitude: 77.72, maxLatitude: 12.995 };
 
 const categories = [
-    { label: "Active work", icon: "connected", tone: "green", matches: (work: CivicWorkCalendarItem) => work.state === "ACTIVE" },
-    { label: "Needs attention", icon: "attention", tone: "amber", matches: (work: CivicWorkCalendarItem) => work.conflictCount + work.roadConflictCount > 0 },
-    { label: "Dependencies", icon: "people", tone: "blue", matches: (work: CivicWorkCalendarItem) => work.dependencySummary.open > 0 },
-    { label: "Upcoming work", icon: "calendar", tone: "gray", matches: (work: CivicWorkCalendarItem) => work.period === "FUTURE" },
-    { label: "Blocked", icon: "blocked", tone: "red", matches: (work: CivicWorkCalendarItem) => work.dependencySummary.blocked },
+    { label: "Active work", icon: "connected", tone: "green", matches: (work: CivicWorkCalendarItem) => mappedWorkCategories.active(work) },
+    { label: "Needs attention", icon: "attention", tone: "amber", matches: (work: CivicWorkCalendarItem) => mappedWorkCategories.attention(work) },
+    { label: "Dependencies", icon: "people", tone: "blue", matches: (work: CivicWorkCalendarItem) => mappedWorkCategories.dependencies(work) },
+    { label: "Upcoming work", icon: "calendar", tone: "gray", matches: (work: CivicWorkCalendarItem) => mappedWorkCategories.upcoming(work) },
+    { label: "Blocked", icon: "blocked", tone: "red", matches: (work: CivicWorkCalendarItem) => mappedWorkCategories.blocked(work) },
   ];
 
 export default function EngineerMapPage() {
@@ -41,7 +42,7 @@ export default function EngineerMapPage() {
     const to = new Date(); to.setMonth(to.getMonth() + 9);
     const query = new URLSearchParams({ dateFrom: from.toISOString(), dateTo: to.toISOString(), limit: "200" });
     Object.entries(bounds).forEach(([key, value]) => query.set(key, String(value)));
-    try { setWorks((await apiFetch<{ works: CivicWorkCalendarItem[] }>(`/civic-works/calendar?${query}`)).works); setError(undefined); }
+    try { setWorks(eligibleMappedWorks(await collectPages(async (page) => { query.set("page", String(page)); const result = await apiFetch<{ works: CivicWorkCalendarItem[]; pagination: PaginationMeta }>(`/civic-works/calendar?${query}`); return { items: result.works, pagination: result.pagination }; }))); setError(undefined); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load field map"); }
     finally { setLoading(false); }
   }, [bounds]);
@@ -51,7 +52,7 @@ export default function EngineerMapPage() {
   const filteredWorks = useMemo(() => regionWorks.filter((work) => !category || categories.find((item) => item.label === category)?.matches(work)), [regionWorks, category]);
   const selected = filteredWorks.find(({ id }) => id === selectedId);
   const agencies = Array.from(new Map(works.map((work) => [work.agency.id, work.agency])).values());
-  const actionable = works.filter((work) => work.agency.id === currentUser?.agencyId && work.engineer?.id === currentUser?.id && ["PENDING_UPTAKE", "UPTAKEN", "READY_TO_START", "ACTIVE", "MODIFIED", "COMPLETED"].includes(work.state)).length;
+  const actionable = filteredWorks.filter((work) => work.agency.id === currentUser?.agencyId && work.engineer?.id === currentUser?.id && ["PENDING_UPTAKE", "UPTAKEN", "READY_TO_START", "ACTIVE", "MODIFIED", "COMPLETED"].includes(work.state)).length;
   const clearFilters = () => { setCategory(undefined); setPeriod(undefined); setSearch(""); setAgency(""); setOnlyMine(false); };
   return <div className="field-module engineer-map-page">
     <EngineerHeader eyebrow="Field location context" title="Map" description="Your work, active dependencies, and nearby municipal activity in one operational view." count={loading ? undefined : actionable} countLabel="actionable tasks" />

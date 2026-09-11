@@ -27,7 +27,9 @@
     "verify:demo100": "tsc -p tsconfig.json && node dist/scripts/verify-demo100.js",
     "verify:coordination": "tsc -p tsconfig.json && node dist/scripts/verify-coordination.js",
     "verify:phase4-workflow": "tsc -p tsconfig.json && node dist/scripts/verify-phase4-coordination-workflow.js",
-    "verify:sih-redesign": "tsc -p tsconfig.json && node dist/scripts/verify-sih-redesign.js"
+    "verify:sih-redesign": "tsc -p tsconfig.json && node dist/scripts/verify-sih-redesign.js",
+    "verify:demo-counts": "tsc -p tsconfig.json && node dist/scripts/verify-demo-counts.js",
+    "measure:demo-latency": "tsc -p tsconfig.json && node dist/scripts/measure-demo-latency.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1120.0",

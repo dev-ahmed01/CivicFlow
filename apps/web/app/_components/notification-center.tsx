@@ -128,12 +128,18 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
           result.notifications.push(...more.notifications);
         }
       }
-      setNotifications(result.notifications.map((item) => ({ ...item, read: true })));
+      setNotifications(result.notifications);
       setUnreadCount(result.unreadCount);
       setPagination(result.pagination);
       const visible = role === "ENGINEER" ? result.notifications.filter((item) => notificationMatchesFilter(item.type, engineerFilter)).slice((page - 1) * 20, page * 20) : result.notifications;
       const unread = visible.filter((item) => !item.read);
-      if (unread.length > 0) await apiFetch("/notifications/read", { method: "PATCH", body: JSON.stringify({ ids: unread.map(({ id }) => id) }) });
+      if (unread.length > 0) {
+        await apiFetch("/notifications/read", { method: "PATCH", body: JSON.stringify({ ids: unread.map(({ id }) => id) }) });
+        const current = await apiFetch<{ unreadCount: number }>("/notifications?unread=true");
+        setUnreadCount(current.unreadCount);
+        const readIds = new Set(unread.map(({ id }) => id));
+        setNotifications(result.notifications.map((item) => readIds.has(item.id) ? { ...item, read: true } : item));
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load notifications");
     } finally {
@@ -153,7 +159,7 @@ export function NotificationCenter({ apiFetch, role, showFilters, variant = "por
   }, [filter, notifications, page, role]);
 
   return <section className={`notification-page ${variant === "citizen" ? "cf-notification-page" : ""} ${variant === "portal-inline" ? "portal-notification-page" : ""}`}>
-    <div className="portal-heading"><div><p className="eyebrow">Updates</p><h1>Notifications</h1><p>Everything that needs your attention, newest first.</p></div>{role === "ENGINEER" ? <div className="engineer-dependency-summary" title="Unread notifications when this page was opened"><strong>{loading ? "—" : unreadCount}</strong><span>unread</span></div> : null}</div>
+    <div className="portal-heading"><div><p className="eyebrow">Updates</p><h1>Notifications</h1><p>Everything that needs your attention, newest first.</p></div>{role === "ENGINEER" ? <div className="engineer-dependency-summary" title="Unread notifications remaining"><strong>{loading ? "—" : unreadCount}</strong><span>unread</span></div> : null}</div>
     {showFilters ? <div aria-label="Notification filters" className="notification-filters" role="tablist">
       {(role === "ENGINEER" ? filters.filter((item) => item.id === "all" || notifications.some((notification) => notificationMatchesFilter(notification.type, item.id))) : filters).map((item) => <button aria-selected={filter === item.id} className={filter === item.id ? "active" : ""} key={item.id} onClick={() => setFilter(item.id)} role="tab" type="button">{item.label}</button>)}
     </div> : null}

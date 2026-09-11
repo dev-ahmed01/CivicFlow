@@ -1,3 +1,4 @@
+import { isTerminalProjectState } from "@civicos/shared";
 import type { PaginationMeta, ProjectListItem } from "@civicos/shared";
 import { apiFetch } from "./api";
 
@@ -23,5 +24,5 @@ export async function loadWorkStage(view: WorkView): Promise<EngineerWork[]> {
 }
 
 export function isWorkOverdue(work: ProjectListItem, now = Date.now()): boolean {
-  return !["COMPLETED", "AWAITING_VERIFICATION", "CLOSED", "CANCELLED"].includes(work.state) && Boolean(work.action && new Date(work.action.deadline).getTime() < now);
+  return !isTerminalProjectState(work.state) && Boolean(work.action && new Date(work.action.deadline).getTime() < now);
 }

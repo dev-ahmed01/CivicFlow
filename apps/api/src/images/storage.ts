@@ -1,3 +1,4 @@
+import { timed } from "../http/timing";
 import { createHash, createHmac } from "node:crypto";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -303,9 +304,13 @@ export class S3CompatibleStorage implements ImageStorage {
       contentLength: null,
     };
     let headFailure: VerificationFailurePhase | null = null;
+    // HEAD metadata and full-body GET are independent. Settle both to prevent unhandled rejections.
+    const headRequest = timed("storage_head", () => this.request(this.sign("HEAD", objectKey), { method: "HEAD" })).then((value) => ({ value }), () => ({ value: null }));
+    const getRequest = timed("storage_get", () => this.request(this.sign("GET", objectKey), { method: "GET" })).then((value) => ({ value }), () => ({ value: null }));
 
     try {
-      const head = await this.request(this.sign("HEAD", objectKey), { method: "HEAD" });
+      const head = (await headRequest).value;
+      if (!head) throw new Error("HEAD unavailable");
       diagnostic.headStatus = head.status;
       diagnostic.storedContentType = normalizeContentType(head.headers.get("content-type")) || null;
       diagnostic.contentLength = parseContentLength(head.headers.get("content-length"));
@@ -324,7 +329,8 @@ export class S3CompatibleStorage implements ImageStorage {
     }
 
     try {
-      const download = await this.request(this.sign("GET", objectKey), { method: "GET" });
+      const download = (await getRequest).value;
+      if (!download) throw new Error("GET unavailable");
       diagnostic.getStatus = download.status;
       if (!download.ok) {
         this.logVerificationFailure({ ...diagnostic, failurePhase: "get_status" });

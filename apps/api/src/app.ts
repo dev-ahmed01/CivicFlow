@@ -1,3 +1,4 @@
+import { requestTiming } from "./http/timing";
 import cors from "cors";
 import compression from "compression";
 import express, { type Express } from "express";
@@ -37,6 +38,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   const env = getEnv();
   const app = express();
   app.disable("x-powered-by");
+  app.use(requestTiming);
   app.use(helmet());
   app.use(compression());
   const configuredOrigins = env.CORS_ORIGINS?.split(",").map((origin) => origin.trim()).filter(Boolean) ?? [];

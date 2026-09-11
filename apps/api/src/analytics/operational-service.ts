@@ -1,3 +1,4 @@
+import { OPEN_DEPENDENCY_STATES, TERMINAL_PROJECT_STATES } from "@civicos/shared";
 import {
   CompletionVerificationDecision,
   CoordinationStatus,
@@ -24,13 +25,7 @@ const PRE_EXECUTION_STATES = new Set<ProjectState>([
   ProjectState.CONFLICT_CHECKED,
   ProjectState.READY_TO_START,
 ]);
-const BLOCKING_DEPENDENCY_STATES: DependencyState[] = [
-  DependencyState.REQUESTED,
-  DependencyState.PENDING_RESPONSE,
-  DependencyState.ASSIGNED,
-  DependencyState.ESCALATED,
-  DependencyState.DECLINED_UNAVAILABLE,
-];
+const BLOCKING_DEPENDENCY_STATES = OPEN_DEPENDENCY_STATES;
 const CLOSED_COORDINATION_STATUSES: CoordinationStatus[] = [CoordinationStatus.COMPLETED, CoordinationStatus.CLOSED];
 const OPEN_COORDINATION_STATUSES: CoordinationStatus[] = [
   CoordinationStatus.SENT,
@@ -41,12 +36,7 @@ const OPEN_COORDINATION_STATUSES: CoordinationStatus[] = [
   CoordinationStatus.ACCEPTED,
   CoordinationStatus.IN_PROGRESS,
 ];
-const TERMINAL_PROJECT_STATES: ProjectState[] = [
-  ProjectState.COMPLETED,
-  ProjectState.AWAITING_VERIFICATION,
-  ProjectState.CLOSED,
-  ProjectState.CANCELLED,
-];
+
 
 function round(value: number, digits = 1): number {
   const scale = 10 ** digits;

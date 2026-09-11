@@ -5,17 +5,12 @@ import { describe, expect, it } from "vitest";
 describe("demo workload fixtures", () => {
   const seed = readFileSync(resolve(process.cwd(), "seed.ts"), "utf8");
 
-  it("keeps exactly three PWD Project Head/Engineer examples", () => {
-    const workflowBlock = seed.slice(seed.indexOf("const engineerDemoProjects"), seed.indexOf("const retiredEngineerDemoSuffixes"));
-    const pwdWorkflowItems = workflowBlock.match(/agencyId: ids\.agencies\.pwd/g) ?? [];
-    const flagshipStart = seed.indexOf("const work = [", seed.indexOf("async function seedRoadCuttingDemo"));
-    const flagshipBlock = seed.slice(flagshipStart, seed.indexOf("const projectIds = work.map", flagshipStart));
-    const pwdFlagshipItems = flagshipBlock.match(/agencyId: ids\.agencies\.pwd/g) ?? [];
-    expect(pwdWorkflowItems).toHaveLength(2);
-    expect(pwdFlagshipItems).toHaveLength(1);
-    expect(workflowBlock).toContain("ProjectState.PENDING_UPTAKE");
-    expect(workflowBlock).toContain("ProjectState.COMPLETED");
-    expect(flagshipBlock).toContain("purpose: \"resurfacing\"");
+  it("uses fresh dates and exact primary engineer names", () => {
+    expect(seed).not.toMatch(/new Date\("20\d{2}-/);
+    expect(seed).toContain('displayName: "Engineer 1"');
+    expect(seed).toContain('displayName: "Engineer 2"');
+    expect(seed).toContain('displayName: "Engineer 3"');
+    expect(seed).toContain('await clearDemoDatabase(transaction)');
   });
 
   it("retains the database uniqueness guard for one citizen vote per ticket", () => {

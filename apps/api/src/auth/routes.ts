@@ -1,3 +1,4 @@
+import { timed } from "../http/timing";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import bcrypt from "bcrypt";
@@ -72,7 +73,7 @@ export function createAuthRouter(otpProvider: OtpProvider): Router {
       return;
     }
 
-    const user = await prisma.user.findFirst({
+    const user = await timed("user_lookup", () => prisma.user.findFirst({
       where: {
         role: UserRole.CITIZEN,
         deactivatedAt: null,
@@ -81,8 +82,8 @@ export function createAuthRouter(otpProvider: OtpProvider): Router {
           { phone: parsed.data.userId },
         ],
       },
-    });
-    if (!user?.passwordHash || !(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
+    }));
+    if (!user?.passwordHash || !(await timed("password_compare", () => bcrypt.compare(parsed.data.password, user.passwordHash!)))) {
       response.status(401).json({ error: "Invalid User ID or password" });
       return;
     }
@@ -100,15 +101,15 @@ export function createAuthRouter(otpProvider: OtpProvider): Router {
       return;
     }
 
-    const user = await prisma.user.findUnique({
+    const user = await timed("user_lookup", () => prisma.user.findUnique({
       where: { email: parsed.data.email.toLowerCase() },
-    });
+    }));
     if (
       !user ||
       user.deactivatedAt ||
       user.role === UserRole.CITIZEN ||
       !user.passwordHash ||
-      !(await bcrypt.compare(parsed.data.password, user.passwordHash))
+      !(await timed("password_compare", () => bcrypt.compare(parsed.data.password, user.passwordHash!)))
     ) {
       response.status(401).json({ error: "Invalid email or password" });
       return;
@@ -157,10 +158,10 @@ export function createAuthRouter(otpProvider: OtpProvider): Router {
         return;
       }
 
-      const user = await prisma.user.findUnique({ where: { id: request.auth.userId } });
+      const user = await timed("user_lookup", () => prisma.user.findUnique({ where: { id: request.auth!.userId } }));
       if (
         !user?.passwordHash ||
-        !(await bcrypt.compare(parsed.data.currentPassword, user.passwordHash))
+        !(await timed("password_compare", () => bcrypt.compare(parsed.data.currentPassword, user.passwordHash!)))
       ) {
         response.status(401).json({ error: "Current password is invalid" });
         return;

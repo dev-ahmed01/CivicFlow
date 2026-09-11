@@ -1,3 +1,4 @@
+import { ENGINEER_STAGE_STATES } from "@civicos/shared";
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { CivicWorkOrigin, ProjectBlockerStatus, ProjectState, ReassignmentRequestStatus, TicketState, UserRole, WorkflowActionType, prisma, type Prisma } from "db";
@@ -335,11 +336,7 @@ export function createProjectsRouter(storage: ImageStorage): Router {
       }
 
       const engineerScope = request.auth!.role === UserRole.ENGINEER ? (scope?.success ? scope.data : "mine") : undefined;
-      const stageStates: Record<z.infer<typeof engineerStageSchema>, ProjectState[]> = {
-        scheduled: [ProjectState.UPTAKEN, ProjectState.TIMELINE_SET, ProjectState.CONFLICT_CHECKED, ProjectState.READY_TO_START],
-        active: [ProjectState.ACTIVE, ProjectState.MODIFIED],
-        completed: [ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION, ProjectState.CLOSED],
-      };
+      const stageStates = ENGINEER_STAGE_STATES;
       const where: Prisma.ProjectWhereInput = {
         agencyId: actorAgency(request),
         ...(engineerScope === "mine" ? { engineerId: request.auth!.userId, state: status?.success ? status.data : engineerStage?.success ? { in: stageStates[engineerStage.data] } : { notIn: [ProjectState.CLOSED, ProjectState.CANCELLED] } } : {}),

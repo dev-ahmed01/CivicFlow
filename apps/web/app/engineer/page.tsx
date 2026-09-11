@@ -1,5 +1,6 @@
 "use client";
 
+import { isActiveProjectState, isUpcomingProjectState } from "@civicos/shared";
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import type { DependencyListItem, InspectionDetail, ProjectListItem } from "@civicos/shared";
@@ -56,8 +57,8 @@ export default function EngineerTodayPage() {
   const userId = getSession()?.user.id;
   const assignedDependencies = dependencies.filter((item) => item.assignedEngineer?.id === userId && isDependencyOpen(item));
   const openInspections = inspections.filter(isInspectionOpen).sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
-  const activeProjects = projects.filter((item) => ["ACTIVE", "MODIFIED"].includes(item.state));
-  const scheduledProjects = projects.filter((item) => ["UPTAKEN", "TIMELINE_SET", "CONFLICT_CHECKED", "READY_TO_START"].includes(item.state));
+  const activeProjects = projects.filter((item) => isActiveProjectState(item.state));
+  const scheduledProjects = projects.filter((item) => isUpcomingProjectState(item.state));
   const needsAttention = assigned.length + openInspections.filter((item) => (item.status === "ASSIGNED" || new Date(item.deadline).getTime() < Date.now())).length + projects.filter((item) => isWorkOverdue(item)).length + assignedDependencies.length;
   const planItems: PlanItem[] = [
     ...activeProjects.map((item) => ({ id: item.id, title: item.title, location: item.locationLabel ?? item.ticket?.ward.name ?? "Location pending", status: "ACTIVE", at: item.actualStart ?? item.plannedStart ?? item.createdAt, href: `/engineer/projects/${item.id}` })),

@@ -1,3 +1,4 @@
+import { timed } from "../http/timing";
 import { AutoProcessor, AutoTokenizer, CLIPModel, RawImage, env as transformersEnv } from "@huggingface/transformers";
 import { prisma } from "db";
 import type { AppEnv } from "../config/env";
@@ -188,18 +189,18 @@ export class DevelopmentRelevanceService implements ImageRelevanceService {
 
   async checkImageRelevance(imageUrl: string, categoryId: string): Promise<ImageRelevanceResult> {
     try {
-      const categories = await this.categoryPrompts();
+      const [categories, image] = await timed("image_download_and_categories", () => Promise.all([this.categoryPrompts(), this.download(imageUrl)]));
       const selectedIndex = categories.findIndex((category) => category.id === categoryId);
       if (selectedIndex < 0 || categories.length < 2) return { score: 0, pass: false, reason: "LOW_CONFIDENCE" };
 
-      const image = await this.download(imageUrl);
       const categoryPrompts = categories.map((category) => `${category.name}: ${category.relevancePrompt}`);
       const prompts = [...categoryPrompts, ...unrelatedPrompts];
-      const analysis = await this.analyzer.analyze(image, prompts);
+      const analysis = await timed("clip_inference", () => this.analyzer.analyze(image, prompts));
       if (analysis.scores.length !== prompts.length || analysis.scores.some((score) => !Number.isFinite(score))) {
         return { score: 0, pass: false, reason: "LOW_CONFIDENCE" };
       }
       if (analysis.embedding.length > 0 && analysis.embedding.every(Number.isFinite)) {
+        if (this.embeddings.size >= 64) this.embeddings.delete(this.embeddings.keys().next().value!);
         this.embeddings.set(imageUrl, analysis.embedding);
       }
 

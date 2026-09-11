@@ -20,9 +20,15 @@ import {
 import bcrypt from "bcrypt";
 import { DEMO_WARD_SRID, demoWardBoundaryWkt, demoWardIds, demoWards } from "./src/demo-wards";
 
-const prisma = new PrismaClient();
+import { assertDemoResetAllowed, clearDemoDatabase } from "./src/demo-reset";
+const client = new PrismaClient();
+let prisma: Prisma.TransactionClient = client;
+const seedNow = new Date();
+const daysFromNow = (n: number) => new Date(seedNow.getTime() + n * 86_400_000);
+const daysAgo = (n: number) => daysFromNow(-n);
+const hoursAgo = (n: number) => new Date(seedNow.getTime() - n * 3_600_000);
 const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
-const demoSeedMode = process.env.DEMO_SEED_MODE ?? "reset";
+const demoSeedMode = process.argv.includes("--reset") ? "reset" : process.env.DEMO_SEED_MODE ?? "if_empty";
 
 if (demoSeedMode !== "reset" && demoSeedMode !== "if_empty" && demoSeedMode !== "team_only") {
   throw new Error("DEMO_SEED_MODE must be reset, if_empty, or team_only");
@@ -42,10 +48,8 @@ const ids = {
     pwd: "20000000-0000-4000-8000-000000000003",
     waste: "20000000-0000-4000-8000-000000000004",
     traffic: "20000000-0000-4000-8000-000000000005",
-    planning: "20000000-0000-4000-8000-000000000006",
-    parks: "20000000-0000-4000-8000-000000000007",
-    animalHusbandry: "20000000-0000-4000-8000-000000000008",
-    publicAmenities: "20000000-0000-4000-8000-000000000009",
+    drainage: "20000000-0000-4000-8000-000000000006",
+    telecom: "20000000-0000-4000-8000-000000000007",
   },
   roadSegments: {
     flagship: "80000000-0000-4000-8000-000000000001",
@@ -85,25 +89,23 @@ const agencies = [
   { id: ids.agencies.pwd, name: "BBMP Road Infrastructure", type: "Roads/BBMP" },
   { id: ids.agencies.waste, name: "Municipal Waste Management", type: "Solid Waste" },
   { id: ids.agencies.traffic, name: "Bengaluru Traffic Police", type: "Traffic" },
-  { id: ids.agencies.planning, name: "Town Planning Department", type: "Town Planning" },
-  { id: ids.agencies.parks, name: "BBMP Parks & Horticulture", type: "Parks and Urban Forestry" },
-  { id: ids.agencies.animalHusbandry, name: "BBMP Animal Husbandry", type: "Animal Welfare" },
-  { id: ids.agencies.publicAmenities, name: "BBMP Public Amenities", type: "Public Amenities" },
+  { id: ids.agencies.drainage, name: "BBMP Storm Water Drains", type: "Drainage" },
+  { id: ids.agencies.telecom, name: "Telecom Utility Coordination", type: "Telecom" },
 ] as const;
 
 const categories = [
   { id: "30000000-0000-4000-8000-000000000001", name: "Road Damage", relevancePrompt: "a pothole, damaged road, cracked pavement, or broken asphalt", primaryAgencyId: ids.agencies.pwd },
   { id: "30000000-0000-4000-8000-000000000002", name: "Streetlight", relevancePrompt: "a damaged, broken, leaning, or non-working street light", primaryAgencyId: ids.agencies.bescom },
   { id: "30000000-0000-4000-8000-000000000003", name: "Water Supply", relevancePrompt: "water leakage, a broken water pipe, flooding, or standing water", primaryAgencyId: ids.agencies.bwssb },
-  { id: "30000000-0000-4000-8000-000000000004", name: "Drainage/Sewage", relevancePrompt: "an overflowing drain, blocked storm drain, open sewer, or sewage spill", primaryAgencyId: ids.agencies.bwssb },
+  { id: "30000000-0000-4000-8000-000000000004", name: "Drainage/Sewage", relevancePrompt: "an overflowing drain, blocked storm drain, open sewer, or sewage spill", primaryAgencyId: ids.agencies.drainage },
   { id: "30000000-0000-4000-8000-000000000005", name: "Garbage/Waste", relevancePrompt: "dumped garbage, litter, an overflowing trash bin, or solid waste", primaryAgencyId: ids.agencies.waste },
   { id: "30000000-0000-4000-8000-000000000006", name: "Electrical Hazard", relevancePrompt: "exposed electrical wires, a fallen power line, sparking equipment, or an electrical hazard", primaryAgencyId: ids.agencies.bescom },
-  { id: "30000000-0000-4000-8000-000000000007", name: "Public Toilet", relevancePrompt: "a damaged, dirty, blocked, or unusable public toilet", primaryAgencyId: ids.agencies.publicAmenities },
-  { id: "30000000-0000-4000-8000-000000000008", name: "Parks & Trees", relevancePrompt: "a fallen or hazardous tree, damaged park equipment, or neglected public park", primaryAgencyId: ids.agencies.parks },
-  { id: "30000000-0000-4000-8000-000000000009", name: "Stray Animals", relevancePrompt: "stray dogs, cattle, or other unattended animals in a public place", primaryAgencyId: ids.agencies.animalHusbandry },
-  { id: "30000000-0000-4000-8000-000000000010", name: "Illegal Construction", relevancePrompt: "unauthorized construction, building work obstructing a public area, or construction debris", primaryAgencyId: ids.agencies.planning },
+  { id: "30000000-0000-4000-8000-000000000007", name: "Public Toilet", relevancePrompt: "a damaged, dirty, blocked, or unusable public toilet", primaryAgencyId: ids.agencies.waste },
+  { id: "30000000-0000-4000-8000-000000000008", name: "Parks & Trees", relevancePrompt: "a fallen or hazardous tree, damaged park equipment, or neglected public park", primaryAgencyId: ids.agencies.pwd },
+  { id: "30000000-0000-4000-8000-000000000009", name: "Stray Animals", relevancePrompt: "stray dogs, cattle, or other unattended animals in a public place", primaryAgencyId: ids.agencies.waste },
+  { id: "30000000-0000-4000-8000-000000000010", name: "Illegal Construction", relevancePrompt: "unauthorized construction, building work obstructing a public area, or construction debris", primaryAgencyId: ids.agencies.pwd },
   { id: "30000000-0000-4000-8000-000000000011", name: "Traffic & Signage", relevancePrompt: "a damaged traffic sign, broken signal, missing road sign, or traffic obstruction", primaryAgencyId: ids.agencies.traffic },
-  { id: "30000000-0000-4000-8000-000000000012", name: "Other", relevancePrompt: "a visible civic infrastructure problem in a public place", primaryAgencyId: ids.agencies.publicAmenities },
+  { id: "30000000-0000-4000-8000-000000000012", name: "Other", relevancePrompt: "a visible civic infrastructure problem in a public place", primaryAgencyId: ids.agencies.waste },
 ] as const;
 
 const routingRules = [
@@ -154,18 +156,10 @@ const communityValidators = Array.from({ length: 30 }, (_unused, index) => ({
 
 const engineerDemoProjects = [
   { suffix: "01", title: "Repair failed carriageway near Jayanagar 4th Block", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.ENGINEER_ASSIGNED, projectState: ProjectState.PENDING_UPTAKE, wardId: ids.wards.jayanagar, categoryId: categories[0].id, longitude: 77.5844, latitude: 12.9299, start: null, end: null },
-  { suffix: "04", title: "Complete pothole patching near South End Circle", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.WORK_COMPLETED, projectState: ProjectState.COMPLETED, wardId: ids.wards.jayanagar, categoryId: categories[0].id, longitude: 77.5802, latitude: 12.9367, start: new Date("2026-08-15T00:00:00.000Z"), end: new Date("2026-08-22T23:59:59.999Z") },
+  { suffix: "04", title: "Complete pothole patching near South End Circle", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", ticketState: TicketState.WORK_COMPLETED, projectState: ProjectState.COMPLETED, wardId: ids.wards.jayanagar, categoryId: categories[0].id, longitude: 77.5802, latitude: 12.9367, start: daysFromNow(-7), end: daysFromNow(-1) },
 ] as const;
 
-const retiredEngineerDemoSuffixes = ["02", "03"] as const;
 
-async function cleanupRetiredDemoFixtures(): Promise<void> {
-  const projectIds = retiredEngineerDemoSuffixes.map((suffix) => `70000000-0000-4000-8000-${suffix.padStart(12, "0")}`);
-  const ticketIds = retiredEngineerDemoSuffixes.map((suffix) => `50000000-0000-4000-8000-${suffix.padStart(12, "0")}`);
-  // Exact deterministic fixture IDs only; runtime and user-created records are never matched.
-  await prisma.project.deleteMany({ where: { id: { in: projectIds } } });
-  await prisma.ticket.deleteMany({ where: { id: { in: ticketIds } } });
-}
 
 async function seedWards(): Promise<void> {
   for (const ward of demoWards) {
@@ -284,7 +278,7 @@ async function seedGeneralEndToEndDemo(): Promise<void> {
   const projectHeadId = "40000000-0000-4000-8000-000000000103";
   const engineerId = "40000000-0000-4000-8000-000000000203";
   const validatorIds = communityValidators.slice(0, 3).map(({ id }) => id);
-  const at = (day: number, hour = 4) => new Date(Date.UTC(2026, 6, day, hour));
+  const at = (day: number, hour = 4) => new Date(daysAgo(21 - day).getTime() + hour * 3_600_000);
   const evidenceBaseUrl = "https://placehold.co/1200x800/e7ecf7/1f2937.jpg";
 
   await prisma.$executeRaw`
@@ -584,15 +578,15 @@ async function seedRoadCuttingDemo(): Promise<void> {
     INSERT INTO "RoadSegment" ("id", "roadName", "geometry", "wardId", "surfaceType", "lastRestorationDate")
     VALUES (${ids.roadSegments.flagship}::uuid, 'Segment X · 11th Main Road',
       ST_GeomFromText('LINESTRING(77.5825 12.9280,77.5870 12.9300)', 4326),
-      ${ids.wards.jayanagar}::uuid, 'Asphalt', ${new Date("2027-04-01T00:00:00.000Z")})
+      ${ids.wards.jayanagar}::uuid, 'Asphalt', ${daysFromNow(-30)})
     ON CONFLICT ("id") DO UPDATE SET "roadName" = EXCLUDED."roadName", "geometry" = EXCLUDED."geometry",
       "wardId" = EXCLUDED."wardId", "surfaceType" = EXCLUDED."surfaceType", "lastRestorationDate" = EXCLUDED."lastRestorationDate"
   `;
 
   const work = [
-    { suffix: "01", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", title: "Planned resurfacing on Segment X", purpose: "resurfacing", start: new Date("2027-06-20T00:00:00.000Z"), end: new Date("2027-06-24T23:59:59.999Z"), offset: 0, length: 420, refs: [] as string[] },
-    { suffix: "02", agencyId: ids.agencies.bwssb, engineerId: "40000000-0000-4000-8000-000000000202", title: "BWSSB pipeline intervention on Segment X", purpose: "pipeline", start: new Date("2027-06-10T00:00:00.000Z"), end: new Date("2027-06-16T23:59:59.999Z"), offset: 20, length: 260, refs: [] as string[] },
-    { suffix: "03", agencyId: ids.agencies.bescom, engineerId: "40000000-0000-4000-8000-000000000203", title: "BESCOM cable intervention on Segment X", purpose: "cable", start: new Date("2027-06-15T00:00:00.000Z"), end: new Date("2027-06-18T23:59:59.999Z"), offset: 100, length: 180, refs: ["83000000-0000-4000-8000-000000000002"] },
+    { suffix: "01", agencyId: ids.agencies.pwd, engineerId: "40000000-0000-4000-8000-000000000201", title: "Planned resurfacing on Segment X", purpose: "resurfacing", start: daysFromNow(12), end: daysFromNow(16), offset: 0, length: 420, refs: [] as string[] },
+    { suffix: "02", agencyId: ids.agencies.bwssb, engineerId: "40000000-0000-4000-8000-000000000202", title: "BWSSB pipeline intervention on Segment X", purpose: "pipeline", start: daysFromNow(2), end: daysFromNow(8), offset: 20, length: 260, refs: [] as string[] },
+    { suffix: "03", agencyId: ids.agencies.bescom, engineerId: "40000000-0000-4000-8000-000000000203", title: "BESCOM cable intervention on Segment X", purpose: "cable", start: daysFromNow(7), end: daysFromNow(10), offset: 100, length: 180, refs: ["83000000-0000-4000-8000-000000000002"] },
   ] as const;
 
   const projectIds = work.map((item) => `82000000-0000-4000-8000-${item.suffix.padStart(12, "0")}`);
@@ -675,8 +669,8 @@ async function seedPhase4CoordinationDemo(): Promise<void> {
       engineerId: "40000000-0000-4000-8000-000000000204",
       title: "BBMP Road Resurfacing · BTM 16th Main",
       purpose: "resurfacing",
-      start: new Date("2026-11-08T03:30:00.000Z"),
-      end: new Date("2026-11-15T12:30:00.000Z"),
+      start: daysFromNow(6),
+      end: daysFromNow(13),
     },
     {
       id: fixture.pipelineProject,
@@ -686,8 +680,8 @@ async function seedPhase4CoordinationDemo(): Promise<void> {
       engineerId: "40000000-0000-4000-8000-000000000202",
       title: "BWSSB pipeline replacement · BTM 16th Main",
       purpose: "pipeline",
-      start: new Date("2026-11-05T03:30:00.000Z"),
-      end: new Date("2026-11-12T12:30:00.000Z"),
+      start: daysFromNow(3),
+      end: daysFromNow(10),
     },
   ] as const;
 
@@ -754,8 +748,8 @@ async function seedPlannedCivicWorks(): Promise<void> {
       title: "BTM 2nd Stage water-main replacement",
       description: "Replace the aging distribution main and reinstate the affected carriageway along 16th Main Road.",
       locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru",
-      start: new Date("2026-10-12T03:30:00.000Z"),
-      end: new Date("2026-10-22T12:30:00.000Z"),
+      start: daysFromNow(4),
+      end: daysFromNow(14),
       geometry: { type: "LineString", coordinates: [[77.6075, 12.9142], [77.6125, 12.9142]] },
     },
     {
@@ -766,8 +760,8 @@ async function seedPlannedCivicWorks(): Promise<void> {
       title: "BESCOM underground cable maintenance",
       description: "Replace a deteriorated underground feeder cable and inspect jointing pits on the shared corridor.",
       locationLabel: "16th Main Road, BTM Layout 2nd Stage, Bengaluru",
-      start: new Date("2026-10-17T03:30:00.000Z"),
-      end: new Date("2026-10-20T12:30:00.000Z"),
+      start: daysFromNow(9),
+      end: daysFromNow(12),
       geometry: { type: "LineString", coordinates: [[77.6090, 12.9142], [77.6130, 12.9142]] },
     },
     {
@@ -778,8 +772,8 @@ async function seedPlannedCivicWorks(): Promise<void> {
       title: "BTM storm-drain desilting and repair",
       description: "Desilt the secondary drain, repair two damaged covers, and document pre-monsoon flow restoration.",
       locationLabel: "7th Cross Road, BTM Layout 1st Stage, Bengaluru",
-      start: new Date("2026-11-02T03:30:00.000Z"),
-      end: new Date("2026-11-06T12:30:00.000Z"),
+      start: daysFromNow(15),
+      end: daysFromNow(19),
       geometry: { type: "Point", coordinates: [77.6170, 12.9180] },
     },
   ] as const;
@@ -821,13 +815,14 @@ async function seedPlannedCivicWorks(): Promise<void> {
 
 // Preserve existing IDs and login emails because assignments and demo scripts use them.
 const pwdDemoEngineers = [
-  { id: "40000000-0000-4000-8000-000000000201", displayName: "Engineer - 01", email: "engineer.pwd@civicos.local" },
-  { id: "40000000-0000-4000-8000-000000000204", displayName: "Engineer - 02", email: "engineer.bbmp@civicos.local" },
-  { id: "40000000-0000-4000-8000-000000000205", displayName: "Engineer - 03", email: "engineer03.pwd@civicos.local" },
+  { id: "40000000-0000-4000-8000-000000000201", displayName: "Engineer 1", email: "engineer.pwd@civicos.local" },
+  { id: "40000000-0000-4000-8000-000000000204", displayName: "Engineer 2", email: "engineer.bbmp@civicos.local" },
+  { id: "40000000-0000-4000-8000-000000000205", displayName: "Engineer 3", email: "engineer03.pwd@civicos.local" },
 ];
 
 async function seedPwdDemoEngineers(passwordHash: string): Promise<void> {
-  await prisma.$transaction(async (transaction) => {
+  const transaction = prisma;
+  {
     for (const engineer of pwdDemoEngineers) {
       await transaction.user.upsert({
         where: { id: engineer.id },
@@ -840,30 +835,11 @@ async function seedPwdDemoEngineers(passwordHash: string): Promise<void> {
     const retired = await transaction.user.findUnique({ where: { id: retiredId }, select: { _count: { select: { engineeringProjects: true, assignedInspections: true, assignedDependencies: true, coordinationAssignments: true, responsibleActions: true } } } });
     if (retired && Object.values(retired._count).some((count) => count > 0)) throw new Error("The retired fourth demo engineer has assignments; preserve them and reconcile before seeding the three-person team.");
     await transaction.user.updateMany({ where: { id: retiredId, agencyId: ids.agencies.pwd, role: UserRole.ENGINEER, deactivatedAt: null }, data: { deactivatedAt: new Date() } });
-  });
+  }
 }
 
-async function main(): Promise<void> {
-  if (demoSeedMode === "team_only") {
-    await seedPwdDemoEngineers(await bcrypt.hash(demoInternalPassword, 12));
-    console.log("Seeded Engineer - 01, Engineer - 02, Engineer - 03 without resetting work or coordination.");
-    return;
-  }
-  // Ward defaults must still be reconciled when startup seeding skips the
-  // destructive demo-fixture reset on an already populated database.
+async function seedDataset(): Promise<void> {
   await seedWards();
-  if (demoSeedMode === "if_empty") {
-    const [generalTicket, flagshipSegment] = await Promise.all([
-      prisma.ticket.findUnique({ where: { id: ids.generalDemo.ticket }, select: { id: true } }),
-      prisma.roadSegment.findUnique({ where: { id: ids.roadSegments.flagship }, select: { id: true } }),
-    ]);
-    if (generalTicket && flagshipSegment) {
-      console.log("Demo fixtures already exist; skipping startup seed. Run db:seed without DEMO_SEED_MODE to reset the rehearsal state.");
-      return;
-    }
-  }
-  await cleanupRetiredDemoFixtures();
-
   for (const agency of agencies) {
     await prisma.agency.upsert({
       where: { id: agency.id },
@@ -913,8 +889,6 @@ async function main(): Promise<void> {
     { id: "40000000-0000-4000-8000-000000000104", role: UserRole.PROJECT_HEAD, displayName: "Prakash Menon", email: "head.bbmp@civicos.local", agencyId: ids.agencies.pwd, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000202", role: UserRole.ENGINEER, displayName: "Neha Kulkarni", email: "engineer.bwssb@civicos.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: false },
     { id: "40000000-0000-4000-8000-000000000203", role: UserRole.ENGINEER, displayName: "Sanjay Prasad", email: "engineer.bescom@civicos.local", agencyId: ids.agencies.bescom, passwordHash, mustResetPassword: false },
-    { id: "40000000-0000-4000-8000-000000000207", role: UserRole.ENGINEER, displayName: "Deepa Shetty", email: "deepa.shetty@bwssb.cityconnect.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: false },
-    { id: "40000000-0000-4000-8000-000000000208", role: UserRole.ENGINEER, displayName: "Nikhil Gowda", email: "nikhil.gowda@bwssb.cityconnect.local", agencyId: ids.agencies.bwssb, passwordHash, mustResetPassword: false },
   ];
 
   for (const user of users) {
@@ -939,6 +913,9 @@ async function main(): Promise<void> {
   await seedRoadCuttingDemo();
   await seedPhase4CoordinationDemo();
   await seedPlannedCivicWorks();
+  await seedFreshScenarios();
+  await reconcileDemoHistory();
+  await prisma.systemConfig.upsert({ where: { key: "demo.seeded_at" }, create: { key: "demo.seeded_at", value: seedNow.toISOString(), description: "Fresh demo reset timestamp" }, update: { value: seedNow.toISOString() } });
 
   console.log(`Seeded ${demoWards.length} wards, ${agencies.length} agencies, ${categories.length} categories, and ${users.length} users.`);
   console.log(`Seeded ${engineerDemoProjects.length} Executive Engineer demo projects.`);
@@ -951,11 +928,177 @@ async function main(): Promise<void> {
     : "Internal demo-user password uses the development-only repository fallback.");
 }
 
+// Fresh operational fixtures complement the complete citizen streetlight story above.
+async function seedFreshScenarios(): Promise<void> {
+  const head = "40000000-0000-4000-8000-000000000101";
+  const citizen = "40000000-0000-4000-8000-000000000001";
+  const [e1, e2, e3] = pwdDemoEngineers.map((e) => e.id) as [string, string, string];
+  const workId = (n: number) => `a1000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const extraAgencies = [ids.agencies.traffic, ids.agencies.drainage, ids.agencies.waste, ids.agencies.telecom];
+  const passwordHash = await bcrypt.hash(demoInternalPassword, 12);
+  const telecomCategory = "30000000-0000-4000-8000-000000000013";
+  await prisma.category.create({ data: { id: telecomCategory, name: "Telecom Utilities", relevancePrompt: "damaged communication cables, open utility ducts or a damaged telecom cabinet", primaryAgencyId: ids.agencies.telecom } });
+  for (const [i, agencyId] of extraAgencies.entries()) {
+    const projectHeadId = `40000000-0000-4000-8000-${String(111 + i).padStart(12, "0")}`;
+    const engineerId = `40000000-0000-4000-8000-${String(211 + i).padStart(12, "0")}`;
+    const key = ["traffic", "drainage", "waste", "telecom"][i]!;
+    await prisma.user.create({ data: { id: projectHeadId, role: UserRole.PROJECT_HEAD, displayName: ["Ravi Kumar", "Lakshmi Rao", "Kavya Rao", "Arjun Menon"][i], email: `head.${key}@civicos.local`, agencyId, passwordHash } });
+    await prisma.user.create({ data: { id: engineerId, role: UserRole.ENGINEER, displayName: ["Naveen Rao", "Priya Shetty", "Asha Kumar", "Vikram Rao"][i], email: `engineer.${key}@civicos.local`, agencyId, passwordHash } });
+    const title = ["HSR junction signal maintenance", "BTM storm-water drain restoration", "Indiranagar waste collection bay repair", "Outer Ring Road telecom duct repair"][i]!;
+    const ward = demoWards.find((w) => w.id === [ids.wards.hsrLayout, ids.wards.btmLayout, ids.wards.indiranagar, ids.wards.bellandur][i])!;
+    await prisma.project.create({ data: { id: workId(11 + i), agencyId, categoryId: [categories[10].id, categories[3].id, categories[4].id, telecomCategory][i], ownerProjectHeadId: projectHeadId, createdById: projectHeadId, engineerId, wardId: ward.id, origin: CivicWorkOrigin.AGENCY_PLANNED, state: ProjectState.READY_TO_START, title, locationLabel: `${ward.name}, Bengaluru`, workDescription: title, plannedStart: daysFromNow(4 + i), plannedEnd: daysFromNow(9 + i), createdAt: daysAgo(6) } });
+    await prisma.$executeRaw`UPDATE "Project" SET "geometry" = ST_SetSRID(ST_MakePoint(${ward.representativeCoordinates.longitude},${ward.representativeCoordinates.latitude}),4326) WHERE "id" = ${workId(11 + i)}::uuid`;
+  }
+  await prisma.project.update({ where: { id: ids.plannedWorks.btmDrainage }, data: { agencyId: ids.agencies.drainage, ownerProjectHeadId: "40000000-0000-4000-8000-000000000112", createdById: "40000000-0000-4000-8000-000000000112", engineerId: "40000000-0000-4000-8000-000000000212" } });
+  const work = [
+    { n: 1, title: "Repair BTM bus-stop carriageway", engineerId: e1, state: ProjectState.ACTIVE, x: 77.609, y: 12.916 },
+    { n: 2, title: "Restore Jayanagar pedestrian crossing", engineerId: e1, state: ProjectState.ACTIVE, x: 77.585, y: 12.931 },
+    { n: 3, title: "Patch Koramangala service road", engineerId: e1, state: ProjectState.ACTIVE, x: 77.622, y: 12.935 },
+    { n: 4, title: "Repair HSR Layout road shoulder", engineerId: e2, state: ProjectState.ACTIVE, x: 77.638, y: 12.912 },
+    { n: 5, title: "Restore JP Nagar junction surface", engineerId: e3, state: ProjectState.ACTIVE, x: 77.588, y: 12.908 },
+    { n: 6, title: "Review Jayanagar footpath restoration", engineerId: e3, state: ProjectState.AWAITING_VERIFICATION, x: 77.587, y: 12.930 },
+    { n: 7, title: "Completed BTM school-zone road repair", engineerId: e2, state: ProjectState.CLOSED, x: 77.61, y: 12.915 },
+    { n: 8, title: "Assign BTM lane resurfacing", engineerId: null, state: ProjectState.CREATED, x: 77.612, y: 12.917 },
+  ];
+  for (const item of work) {
+    const finished = [ProjectState.CLOSED, ProjectState.AWAITING_VERIFICATION].includes(item.state as "CLOSED" | "AWAITING_VERIFICATION");
+    const ticketId = `a2000000-0000-4000-8000-${String(item.n).padStart(12, "0")}`;
+    const ticketState = finished ? item.state === ProjectState.CLOSED ? TicketState.CLOSED : TicketState.AWAITING_CITIZEN_VERIFICATION : item.state === ProjectState.CREATED ? TicketState.PROJECT_CREATED : TicketState.WORK_IN_PROGRESS;
+    const ward = demoWards.find((w) => w.name.toLowerCase().includes(item.title.includes("Jayanagar") ? "jayanagar" : item.title.includes("HSR") ? "hsr" : item.title.includes("Koramangala") ? "koramangala" : item.title.includes("JP Nagar") ? "jp nagar" : "btm"))?.id ?? ids.wards.btmLayout;
+    await prisma.$executeRaw`INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt", "updatedAt") VALUES (${ticketId}::uuid, ${categories[0].id}::uuid, ${citizen}::uuid, ${ids.agencies.pwd}::uuid, ST_SetSRID(ST_MakePoint(${item.x}, ${item.y}),4326), ${ward}::uuid, ${ticketState}::"TicketState", ${item.title}, ${`${item.title}, Bengaluru`}, ${daysAgo(12)}, ${seedNow})`;
+    await prisma.observation.create({ data: { ticketId, submitterId: citizen, imageUrl: "https://placehold.co/1200x800.jpg?text=Illustrative+site+evidence", note: "Road surface damage documented by a resident.", latitude: item.y, longitude: item.x, createdAt: daysAgo(12) } });
+    await prisma.project.create({ data: { id: workId(item.n), ticketId, title: item.title, agencyId: ids.agencies.pwd, categoryId: categories[0].id, wardId: ward, ownerProjectHeadId: head, createdById: head, updatedById: head, engineerId: item.engineerId, origin: CivicWorkOrigin.CITIZEN_REPORTED, state: item.state, locationLabel: item.title.replace(/^(Repair|Restore|Patch|Review|Completed|Assign) /, "") + ", Bengaluru", workDescription: "Restore the inspected surface and reopen safe public access with photographic evidence.", plannedStart: daysAgo(5), plannedEnd: finished ? daysAgo(2) : daysFromNow(6), createdAt: daysAgo(9) } });
+    await prisma.$executeRaw`UPDATE "Project" SET "geometry" = ST_SetSRID(ST_MakePoint(${item.x},${item.y}),4326) WHERE "id" = ${workId(item.n)}::uuid`;
+    if (item.engineerId) {
+      await prisma.inspectionReport.create({ data: { ticketId, assignedEngineerId: item.engineerId, assignedById: head, submittedById: item.engineerId, reviewedById: head, status: InspectionStatus.REVIEWED, deadline: daysAgo(9), createdAt: daysAgo(11), acceptedAt: daysAgo(11), startedAt: daysAgo(10), submittedAt: daysAgo(9), reviewedAt: daysAgo(9), observations: "Surface failure confirmed. Utility alignment and safe pedestrian access checked.", issueConfirmation: InspectionIssueConfirmation.CONFIRMED, severity: InspectionSeverity.MEDIUM, recommendedWork: "Restore damaged surface after utility clearance.", complexity: InspectionComplexity.MEDIUM, coordinationRequired: false, recommendation: InspectionRecommendation.PROCEED, latitude: item.y, longitude: item.x, locationConfirmedAt: daysAgo(10), reviewDecision: "CREATE_WORK" } });
+      await prisma.projectWorkNote.create({ data: { projectId: workId(item.n), authorId: item.engineerId, note: finished ? "Restoration complete; public access reopened." : "Site protection installed. Work proceeding to the approved plan.", createdAt: daysAgo(finished ? 2 : 1) } });
+    }
+    if (finished && item.engineerId) {
+      const evidence = await prisma.completionEvidence.create({ data: { projectId: workId(item.n), ticketId, submittedById: item.engineerId, photoUrl: "https://placehold.co/1200x800.jpg?text=Illustrative+restoration+evidence", objectKey: `demo/fresh/completion-${item.n}.jpg`, contentType: "image/jpeg", notes: "Demo evidence: restored pavement and reopened access.", createdAt: daysAgo(2), uploadedAt: daysAgo(2) } });
+      await prisma.completionVerificationRequest.create({ data: { completionEvidenceId: evidence.id, citizenId: communityValidators[0]!.id, notifiedAt: daysAgo(2), respondedAt: item.state === ProjectState.CLOSED ? daysAgo(1) : null } });
+      if (item.state === ProjectState.CLOSED) await prisma.completionVerification.create({ data: { completionEvidenceId: evidence.id, validatorId: communityValidators[0]!.id, decision: CompletionVerificationDecision.VERIFIED, note: "Public access is restored.", createdAt: daysAgo(1) } });
+    }
+  }
+  // Intake and every inspection stage have independent real records.
+  for (const [index, status] of [null, InspectionStatus.ASSIGNED, InspectionStatus.ACCEPTED, InspectionStatus.IN_PROGRESS, InspectionStatus.SUBMITTED].entries()) {
+    const ticketId = `a3000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+    const state = !status ? TicketState.ROUTED_TO_AGENCY : status === InspectionStatus.SUBMITTED ? TicketState.INSPECTION_COMPLETE : TicketState.INSPECTION_DUE;
+    const engineerId = index < 3 ? e1 : e3;
+    await prisma.$executeRaw`INSERT INTO "Ticket" ("id", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt", "updatedAt") VALUES (${ticketId}::uuid, ${categories[0].id}::uuid, ${citizen}::uuid, ${ids.agencies.pwd}::uuid, ST_SetSRID(ST_MakePoint(77.61,12.915),4326), ${ids.wards.btmLayout}::uuid, ${state}::"TicketState", ${`BTM ${index + 1} Cross damaged road edge`}, 'BTM Layout, Bengaluru', ${daysAgo(2)}, ${seedNow})`;
+    await prisma.observation.create({ data: { ticketId, submitterId: citizen, imageUrl: "https://placehold.co/1200x800.jpg?text=Illustrative+site+evidence", note: "Cracked road edge near the crossing.", createdAt: daysAgo(2) } });
+    if (status) await prisma.inspectionReport.create({ data: { ticketId, assignedEngineerId: engineerId, assignedById: head, status, deadline: daysFromNow(2), createdAt: daysAgo(1), acceptedAt: status === InspectionStatus.ASSIGNED ? null : hoursAgo(18), startedAt: [InspectionStatus.IN_PROGRESS, InspectionStatus.SUBMITTED].includes(status as "IN_PROGRESS" | "SUBMITTED") ? hoursAgo(8) : null, submittedAt: status === InspectionStatus.SUBMITTED ? hoursAgo(2) : null, submittedById: status === InspectionStatus.SUBMITTED ? engineerId : null, observations: status === InspectionStatus.SUBMITTED ? "Road-edge settlement confirmed; localized repair recommended." : null, recommendation: status === InspectionStatus.SUBMITTED ? InspectionRecommendation.PROCEED : null } });
+  }
+  // Exactly one deliberately overdue dependency, with a grievance explaining it.
+  const dependencySpecs = [
+    { n: 1, projectId: workId(1), to: ids.agencies.bwssb, state: DependencyState.ASSIGNED, engineer: "40000000-0000-4000-8000-000000000202", deadline: daysFromNow(3) },
+    { n: 2, projectId: workId(2), to: ids.agencies.bescom, state: DependencyState.PENDING_RESPONSE, engineer: null, deadline: daysFromNow(4) },
+    { n: 3, projectId: workId(3), to: ids.agencies.traffic, state: DependencyState.ESCALATED, engineer: null, deadline: hoursAgo(6) },
+    { n: 4, projectId: ids.phase4Coordination.resurfacingProject, to: ids.agencies.bwssb, state: DependencyState.FULFILLED, engineer: "40000000-0000-4000-8000-000000000202", deadline: daysAgo(1) },
+  ];
+  for (const d of dependencySpecs) {
+    const id = `a4000000-0000-4000-8000-${String(d.n).padStart(12, "0")}`;
+    await prisma.dependency.create({ data: { id, projectId: d.projectId, requestingAgencyId: ids.agencies.pwd, respondingAgencyId: d.to, assignedEngineerId: d.engineer, state: d.state, requirement: d.n === 4 ? "Complete pipeline excavation before road restoration." : "Confirm utility clearance and safe access before the next work stage.", deadline: d.deadline, createdAt: daysAgo(4), respondedAt: d.engineer ? daysAgo(3) : null, escalatedAt: d.state === DependencyState.ESCALATED ? hoursAgo(3) : null } });
+  }
+  await prisma.dependency.create({ data: { id: "a4000000-0000-4000-8000-000000000005", projectId: ids.plannedWorks.btmPipeline, requestingAgencyId: ids.agencies.bwssb, respondingAgencyId: ids.agencies.pwd, assignedEngineerId: e2, state: DependencyState.ASSIGNED, requirement: "Engineer 2 to inspect road reinstatement after water-main excavation.", deadline: daysFromNow(5), createdAt: daysAgo(2), respondedAt: daysAgo(1) } });
+  await prisma.projectBlocker.create({ data: { projectId: workId(3), reportedById: e1, title: "Traffic diversion awaiting confirmation", details: "Intentionally overdue demo handoff; Project Head is coordinating safe access.", severity: "HIGH", createdAt: hoursAgo(5) } });
+  const grievance = await prisma.grievance.create({ data: { ticketId: "a2000000-0000-4000-8000-000000000003", projectId: workId(3), dependencyId: "a4000000-0000-4000-8000-000000000003", raisedByUserId: citizen, responsibleUserId: head, responsibleAgencyId: ids.agencies.pwd, source: "CITIZEN", status: "UNDER_REVIEW", reason: "Access to the service road needs a confirmed diversion.", createdAt: hoursAgo(4) } });
+  // Human-approved BTM sequence: the warning records the original overlap;
+  // coordination entries and audit events explain the subsequent agreed schedule.
+  const fixture = ids.phase4Coordination;
+  const coordinated = await prisma.coordinationRequest.create({ data: { projectId: fixture.resurfacingProject, conflictingProjectId: fixture.pipelineProject, roadConflictLogId: fixture.conflict, dependencyId: "a4000000-0000-4000-8000-000000000004", requestingAgencyId: ids.agencies.pwd, respondingAgencyId: ids.agencies.bwssb, createdById: head, assignedEngineerId: "40000000-0000-4000-8000-000000000202", requestTypeKey: "schedule-coordination", subject: "BTM pipeline first, resurfacing after clearance", details: "Both agencies agreed the pipeline-first sequence after reviewing the road advisory.", status: "CLOSED", responseDeadline: daysAgo(1), sentAt: daysAgo(4), closedAt: hoursAgo(12), createdAt: daysAgo(4) } });
+  for (const [index, status] of ["SENT", "ACKNOWLEDGED", "ACCEPTED", "COMPLETED", "CLOSED"].entries()) await prisma.coordinationEntry.create({ data: { requestId: coordinated.id, senderId: index === 0 || index === 4 ? head : "40000000-0000-4000-8000-000000000102", senderAgencyId: index === 0 || index === 4 ? ids.agencies.pwd : ids.agencies.bwssb, action: status, toStatus: status as "SENT" | "ACKNOWLEDGED" | "ACCEPTED" | "COMPLETED" | "CLOSED", message: status === "CLOSED" ? "Pipeline complete. Roads engineer agreed resurfacing from tomorrow." : "Pipeline-first sequence confirmed by the responsible agency.", createdAt: hoursAgo(96 - index * 21) } });
+  await prisma.project.update({ where: { id: fixture.pipelineProject }, data: { state: ProjectState.COMPLETED, plannedStart: daysAgo(5), plannedEnd: daysAgo(1), actualStart: daysAgo(5), actualCompletion: daysAgo(1) } });
+  await prisma.project.update({ where: { id: fixture.resurfacingProject }, data: { plannedStart: daysFromNow(1), plannedEnd: daysFromNow(7) } });
+  for (const id of [fixture.pipelineProject, fixture.resurfacingProject]) {
+    const project = await prisma.project.findUniqueOrThrow({ where: { id } });
+    await prisma.intervention.update({ where: { projectId: id }, data: { plannedStart: project.plannedStart!, plannedEnd: project.plannedEnd! } });
+    await prisma.projectAuditEvent.create({ data: { projectId: id, actorId: id === fixture.pipelineProject ? "40000000-0000-4000-8000-000000000102" : head, action: "COORDINATED_SCHEDULE_UPDATED", metadata: { coordinationRequestId: coordinated.id, rule: "PIPELINE_BEFORE_RESURFACING", originalStart: daysFromNow(id === fixture.pipelineProject ? 3 : 6).toISOString(), originalEnd: daysFromNow(id === fixture.pipelineProject ? 10 : 13).toISOString(), newStart: project.plannedStart!.toISOString(), newEnd: project.plannedEnd!.toISOString() }, createdAt: hoursAgo(12) } });
+  }
+  const openConflict = await prisma.conflictLog.create({ data: { projectId: ids.plannedWorks.btmPipeline, conflictingProjectId: ids.plannedWorks.btmCable, projectAgencyId: ids.agencies.bwssb, conflictingAgencyId: ids.agencies.bescom, projectTimelineStart: daysFromNow(4), projectTimelineEnd: daysFromNow(14), conflictingTimelineStart: daysFromNow(9), conflictingTimelineEnd: daysFromNow(12), overlapStart: daysFromNow(9), overlapEnd: daysFromNow(12), locationDescription: "BTM 16th Main shared water and electricity corridor", distanceMeters: 0, severity: "PROMINENT", timelineFingerprint: "a".repeat(64), createdAt: hoursAgo(4) } });
+  await prisma.coordinationRequest.create({ data: { projectId: ids.plannedWorks.btmPipeline, conflictingProjectId: ids.plannedWorks.btmCable, conflictLogId: openConflict.id, requestingAgencyId: ids.agencies.bwssb, respondingAgencyId: ids.agencies.bescom, createdById: "40000000-0000-4000-8000-000000000102", requestTypeKey: "schedule-coordination", subject: "Review BTM water-main and cable overlap", details: "Joint review needed before excavation; warning remains advisory.", status: "SENT", responseDeadline: daysFromNow(3), sentAt: hoursAgo(3), createdAt: hoursAgo(3) } });
+  await prisma.notification.deleteMany();
+  const events = [
+    { userId: e1, type: "PROJECT_ASSIGNMENT", payload: { projectId: workId(1) } },
+    { userId: e2, type: "PROJECT_ASSIGNMENT", payload: { projectId: workId(4) } },
+    { userId: e3, type: "PROJECT_ASSIGNMENT", payload: { projectId: workId(5) } },
+    { userId: e1, type: "INSPECTION_ASSIGNED", payload: { ticketId: "a3000000-0000-4000-8000-000000000002" } },
+    { userId: head, type: "DEPENDENCY_ESCALATED", payload: { dependencyId: "a4000000-0000-4000-8000-000000000003", projectId: workId(3) } },
+    { userId: head, type: "ROAD_CONFLICT_DETECTED", payload: { projectId: fixture.resurfacingProject, coordinationRequestId: coordinated.id } },
+    { userId: "40000000-0000-4000-8000-000000000103", type: "CONFLICT_DETECTED", payload: { projectId: ids.plannedWorks.btmCable } },
+    { userId: head, type: "GRIEVANCE_CREATED", payload: { grievanceId: grievance.id, ticketId: grievance.ticketId } },
+    { userId: communityValidators[0]!.id, type: "COMPLETION_VERIFICATION_REQUEST", payload: { ticketId: "a2000000-0000-4000-8000-000000000006", projectId: workId(6) } },
+    { userId: citizen, type: "WORK_COMPLETED", payload: { ticketId: "a2000000-0000-4000-8000-000000000007" } },
+  ];
+  for (const [index, event] of events.entries()) await prisma.notification.create({ data: { ...event, read: index % 3 === 0, createdAt: hoursAgo(index + 1) } });
+}
+
+async function reconcileDemoHistory(): Promise<void> {
+  // Eliminate future actual starts from the older flagship fixture.
+  const roadIds = [1, 2, 3].map((n) => `82000000-0000-4000-8000-${String(n).padStart(12, "0")}`);
+  await prisma.project.updateMany({ where: { id: { in: roadIds } }, data: { state: ProjectState.READY_TO_START, actualStart: null } });
+  await prisma.workflowAction.updateMany({ where: { projectId: { in: roadIds } }, data: { type: WorkflowActionType.START_WORK } });
+  await prisma.project.update({ where: { id: "70000000-0000-4000-8000-000000000004" }, data: { engineerId: pwdDemoEngineers[1]!.id } });
+  await prisma.workflowAction.updateMany({ where: { projectId: "70000000-0000-4000-8000-000000000004" }, data: { responsibleUserId: pwdDemoEngineers[1]!.id } });
+  const states: ProjectState[] = ["CREATED", "PENDING_UPTAKE", "UPTAKEN", "TIMELINE_SET", "CONFLICT_CHECKED", "READY_TO_START", "ACTIVE", "COMPLETED", "AWAITING_VERIFICATION", "CLOSED"];
+  for (const project of await prisma.project.findMany()) {
+    const index = states.indexOf(project.state);
+    const started = index >= states.indexOf("ACTIVE");
+    const completed = index >= states.indexOf("COMPLETED");
+    const start = started ? project.plannedStart ?? daysAgo(5) : null;
+    const end = completed ? project.plannedEnd ?? daysAgo(2) : null;
+    const createdAt = project.createdAt > daysAgo(1) ? daysAgo(10) : project.createdAt;
+    const lastVerification = await prisma.completionVerification.findFirst({ where: { completionEvidence: { projectId: project.id } }, orderBy: { createdAt: "desc" } });
+    await prisma.project.update({ where: { id: project.id }, data: { createdAt, actualStart: start, actualCompletion: end } });
+    await prisma.projectStateTransition.deleteMany({ where: { projectId: project.id } });
+    const chain = states.slice(0, index + 1);
+    for (const [i, state] of chain.entries()) {
+      const at = state === "ACTIVE" ? start! : state === "COMPLETED" ? end! : state === "AWAITING_VERIFICATION" ? new Date(end!.getTime() + 3600000) : state === "CLOSED" ? new Date((lastVerification?.createdAt ?? end!).getTime() + 3600000) : new Date(createdAt.getTime() + i * 3600000);
+      await prisma.projectStateTransition.create({ data: { projectId: project.id, fromState: chain[i - 1] ?? null, toState: state, reason: "DEMO_RECORDED_LIFECYCLE", actedById: state === "CLOSED" ? project.ownerProjectHeadId : i < 2 ? project.ownerProjectHeadId : project.engineerId ?? project.ownerProjectHeadId, createdAt: at } });
+    }
+    if (project.ticketId) {
+      const ticketState = completed ? project.state === "CLOSED" ? TicketState.CLOSED : project.state === "AWAITING_VERIFICATION" ? TicketState.AWAITING_CITIZEN_VERIFICATION : TicketState.WORK_COMPLETED : started ? TicketState.WORK_IN_PROGRESS : project.engineerId ? TicketState.ENGINEER_ASSIGNED : TicketState.PROJECT_CREATED;
+      await prisma.ticket.update({ where: { id: project.ticketId }, data: { state: ticketState, createdAt: new Date(createdAt.getTime() - 4 * 86400000) } });
+      await prisma.inspectionReport.updateMany({ where: { ticketId: project.ticketId, status: InspectionStatus.REVIEWED }, data: { createdAt: new Date(createdAt.getTime() - 2 * 86400000), acceptedAt: new Date(createdAt.getTime() - 2 * 86400000 + 3600000), startedAt: new Date(createdAt.getTime() - 86400000), submittedAt: new Date(createdAt.getTime() - 7200000), reviewedAt: new Date(createdAt.getTime() - 3600000), deadline: createdAt } });
+    }
+  }
+  for (const ticket of await prisma.ticket.findMany({ include: { project: { include: { stateTransitions: { orderBy: { createdAt: "asc" } } } }, inspectionReports: true } })) {
+    await prisma.ticketStateTransition.deleteMany({ where: { ticketId: ticket.id } });
+    const prefix: TicketState[] = [TicketState.DRAFT, TicketState.AI_CHECK_PENDING, TicketState.PENDING_VALIDATION, TicketState.VALIDATED, TicketState.ROUTED_TO_AGENCY];
+    if (ticket.inspectionReports.length || ticket.project) prefix.push(TicketState.INSPECTION_DUE);
+    if (ticket.inspectionReports.some((i) => [InspectionStatus.SUBMITTED, InspectionStatus.REVIEWED].includes(i.status as "SUBMITTED" | "REVIEWED")) || ticket.project) prefix.push(TicketState.INSPECTION_COMPLETE);
+    const events = prefix.map((state, i) => ({ state, at: new Date(ticket.createdAt.getTime() + i * 3600000) }));
+    const mapping: Partial<Record<ProjectState, TicketState>> = { CREATED: TicketState.PROJECT_CREATED, PENDING_UPTAKE: TicketState.ENGINEER_ASSIGNED, ACTIVE: TicketState.WORK_IN_PROGRESS, COMPLETED: TicketState.WORK_COMPLETED, AWAITING_VERIFICATION: TicketState.AWAITING_CITIZEN_VERIFICATION, CLOSED: TicketState.CLOSED };
+    for (const t of ticket.project?.stateTransitions ?? []) if (mapping[t.toState]) events.push({ state: mapping[t.toState]!, at: t.createdAt });
+    for (const [i, event] of events.entries()) await prisma.ticketStateTransition.create({ data: { ticketId: ticket.id, fromState: events[i - 1]?.state ?? null, toState: event.state, reason: "DEMO_RECORDED_LIFECYCLE", createdAt: event.at } });
+  }
+  for (const dependency of await prisma.dependency.findMany()) {
+    await prisma.dependencyStateTransition.deleteMany({ where: { dependencyId: dependency.id } });
+    const chain: DependencyState[] = [DependencyState.REQUESTED, DependencyState.PENDING_RESPONSE, ...(dependency.assignedEngineerId ? [DependencyState.ASSIGNED] : []), ...([DependencyState.REQUESTED, DependencyState.PENDING_RESPONSE, DependencyState.ASSIGNED].includes(dependency.state as "REQUESTED" | "PENDING_RESPONSE" | "ASSIGNED") ? [] : [dependency.state])];
+    for (const [i, state] of chain.entries()) await prisma.dependencyStateTransition.create({ data: { dependencyId: dependency.id, fromState: chain[i - 1] ?? null, toState: state, reason: state === DependencyState.ESCALATED ? "INTENTIONAL_DEMO_OVERDUE" : "DEMO_AGENCY_HANDOFF", actedById: dependency.assignedEngineerId, createdAt: new Date(dependency.createdAt.getTime() + i * 3600000) } });
+  }
+}
+
+async function main(): Promise<void> {
+  if (demoSeedMode === "if_empty") {
+    const occupied = await client.user.count() + await client.agency.count() + await client.ticket.count() + await client.project.count();
+    if (occupied) { console.log("Database contains application data; startup seed skipped without mutations. Use demo:reset explicitly."); return; }
+  }
+  const target = assertDemoResetAllowed(process.env);
+  console.warn(`DEMO RESET: replacing all application records in ${target}; schema, migrations, configuration and reference counters are preserved.`);
+  await client.$transaction(async (transaction) => {
+    prisma = transaction;
+    await transaction.$queryRaw`SELECT pg_advisory_xact_lock(7240911)::text`;
+    if (demoSeedMode === "team_only") { await seedPwdDemoEngineers(await bcrypt.hash(demoInternalPassword, 12)); return; }
+    await clearDemoDatabase(transaction);
+    await seedDataset();
+  }, { timeout: 120000, maxWait: 10000 });
+}
+
 main()
   .catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    await client.$disconnect();
   });

@@ -1,3 +1,4 @@
+import { TERMINAL_PROJECT_STATES, OPEN_DEPENDENCY_STATES } from "@civicos/shared";
 import {
   CivicWorkOrigin,
   DependencyState,
@@ -180,12 +181,7 @@ export async function listNearbyCivicWorks(actor: CivicWorkActor, query: NearbyC
   return { works: rows.map(toPublicCivicWork), radiusMeters: query.radiusMeters };
 }
 
-const terminalProjectStates = new Set<ProjectState>([
-  ProjectState.COMPLETED,
-  ProjectState.AWAITING_VERIFICATION,
-  ProjectState.CLOSED,
-  ProjectState.CANCELLED,
-]);
+const terminalProjectStates = new Set<ProjectState>(TERMINAL_PROJECT_STATES);
 
 export function classifyCivicWorkPeriod(work: {
   state: ProjectState;
@@ -205,12 +201,7 @@ export function classifyCivicWorkPeriod(work: {
 
 function calendarItem(record: CivicWorkCalendarRecord, geometry: CivicWorkGeometry, asOf: Date): CivicWorkCalendarItem {
   const fulfilled = record.dependencies.filter(({ state }) => state === DependencyState.FULFILLED).length;
-  const openStates: DependencyState[] = [
-    DependencyState.REQUESTED,
-    DependencyState.PENDING_RESPONSE,
-    DependencyState.ASSIGNED,
-    DependencyState.ESCALATED,
-  ];
+  const openStates = OPEN_DEPENDENCY_STATES;
   const open = record.dependencies.filter(({ state }) => openStates.includes(state)).length;
   const blockedBy = [...new Map(record.dependencies
     .filter(({ state }) => openStates.includes(state))

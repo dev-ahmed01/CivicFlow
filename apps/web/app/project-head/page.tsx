@@ -49,7 +49,7 @@ export default function ProjectHeadCommandCentrePage() {
   const attention = useMemo<AttentionRow[]>(() => {
     if (!data) return [];
     const items: AttentionRow[] = [
-      { label: "Inspections awaiting assignment", count: data.counts.inspectionsAwaitingAssignment, context: "Validated citizen issues need an inspection decision.", href: "/project-head/projects?view=INSPECTION", action: "Inspect", priority: 1, tone: "warning" },
+      { label: "Inspections awaiting assignment", count: data.counts.inspectionsAwaitingAssignment, context: "Validated citizen issues need an inspection decision.", href: "/project-head/projects?view=INTAKE", action: "Inspect", priority: 1, tone: "warning" },
       { label: "Submitted inspections awaiting review", count: data.counts.inspectionsAwaitingReview, context: "Inspection findings are ready for a Project Head decision.", href: "/project-head/projects?view=READY", action: "Review inspections", priority: 2, tone: "standard" },
       { label: "Civic work ready for Engineer assignment", count: data.counts.worksReadyForAssignment, context: "Prepared work has no responsible Engineer yet.", href: "/project-head/projects?view=READY", action: "Assign engineers", priority: 3, tone: "standard" },
       { label: "Incoming coordination requests", count: data.counts.incomingCoordination, context: "Partner agencies are waiting for a response from your agency.", href: "/project-head/dependencies", action: "Open coordination", priority: 4, tone: "warning" },

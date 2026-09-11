@@ -240,12 +240,13 @@ function AppContent() {
       setConfirmingLocation(false);
     }
   };
+  const [photoStage, setPhotoStage] = useState("Preparing photo...");
   const continueAfterPhotoCheck = async () => {
-    if (!selectedCategory || !images[0]) return;
+    if (imageChecking || !selectedCategory || !images[0]) return;
     const nextAttempt = photoAttempt + 1;
     setImageChecking(true); setImageCheckError(undefined); setPhotoAttempt(nextAttempt);
     try {
-      const result = await validateReportImage(selectedCategory.id, images[0], nextAttempt);
+      const result = await validateReportImage(selectedCategory.id, images[0], nextAttempt, setPhotoStage);
       if (nextScreenAfterPhotoCheck(result) === "location-detect" && result.validationToken) {
         setImageValidationToken(result.validationToken); setScreen("location-detect");
       } else {
@@ -281,7 +282,7 @@ function AppContent() {
 
   let content;
   if (screen === "category") content = <CategoryScreen categories={categories} loading={!categoryError && categories.length === 0} error={categoryError} selectedId={selectedCategory?.id} onBack={() => setScreen("home")} onSelect={(category) => { setSelectedCategory(category); setImageValidationToken(undefined); setImageCheckError(undefined); setScreen("evidence"); }} />;
-  else if (screen === "evidence") content = <EvidenceScreen images={images} checking={imageChecking} checkError={imageCheckError} onChange={(next) => { setImages(next); setImageValidationToken(undefined); setImageCheckError(undefined); }} onBack={() => setScreen("category")} onNext={() => void continueAfterPhotoCheck()} />;
+  else if (screen === "evidence") content = <EvidenceScreen images={images} checking={imageChecking} stage={photoStage} checkError={imageCheckError} onChange={(next) => { setImages(next); setImageValidationToken(undefined); setImageCheckError(undefined); }} onBack={() => setScreen("category")} onNext={() => void continueAfterPhotoCheck()} />;
   else if (screen === "location-detect") content = <LocationDetectScreen onBack={() => setScreen("evidence")} onDetected={(next) => { setLocation(next); setConfirmedLocation(undefined); setScreen("location-confirm"); }} />;
   else if (screen === "location-confirm" && location) content = <LocationConfirmScreen value={location} confirming={confirmingLocation} onChange={(next) => { setLocation(next); setConfirmedLocation(undefined); }} onBack={() => setScreen("evidence")} onRetry={() => setScreen("location-detect")} onNext={() => void confirmReportLocation()} />;
   else if (screen === "review" && selectedCategory && images[0] && confirmedLocation) content = <ReviewReportScreen category={selectedCategory} image={images[0]} location={confirmedLocation} submitting={submitting} onBack={() => setScreen("location-confirm")} onSubmit={() => void completeSubmission()} />;
@@ -295,7 +296,7 @@ function AppContent() {
   else if (screen === "verification" && selectedValidation) content = <VerificationRequestScreen validation={selectedValidation} submitting={validationSubmitting} onBack={() => setScreen("validations")} onSubmit={(vote) => void submitValidationVote(vote)} />;
   else if (screen === "completion-validations") content = <CompletionVerificationListScreen completions={completionValidations} loading={completionLoading} error={completionError} onBack={() => setScreen("home")} onOpen={(completion) => { setSelectedCompletion(completion); setScreen("completion-verification"); }} />;
   else if (screen === "completion-verification" && selectedCompletion) content = <CompletionVerificationScreen completion={selectedCompletion} submitting={completionSubmitting} onBack={() => setScreen("completion-validations")} onSubmit={(decision) => void submitCompletionVote(decision)} />;
-  else if (screen === "notifications") content = <NotificationsScreen role="CITIZEN" onBack={() => setScreen("home")} onOpen={openNotification} onViewed={() => setNotificationUnread(0)} />;
+  else if (screen === "notifications") content = <NotificationsScreen role="CITIZEN" onBack={() => setScreen("home")} onOpen={openNotification} onViewed={setNotificationUnread} />;
   else if (screen === "profile") content = <CitizenProfileScreen auth={citizenAuth} onSignOut={signOut} />;
   else if (screen === "nearby-works") content = <NearbyWorksScreen onBack={() => setScreen("home")} />;
   else content = <HomeScreen auth={citizenAuth} unread={notificationUnread} summary={homeSummary} loading={homeLoading} onReport={() => setScreen("category")} onNearby={() => setScreen("nearby-works")} onTickets={openTickets} onValidations={() => openValidations()} onCompletionValidations={() => openCompletionValidations()} onNotifications={() => setScreen("notifications")} onProfile={() => setScreen("profile")} onOpenNotification={openNotification} />;

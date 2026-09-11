@@ -1,3 +1,4 @@
+import { timed } from "../http/timing";
 import { createHash, randomUUID } from "node:crypto";
 import { prisma, type User } from "db";
 import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
@@ -66,13 +67,13 @@ export async function issueTokens(user: TokenUser) {
     },
   );
 
-  await prisma.refreshSession.create({
+  await timed("refresh_session_write", () => prisma.refreshSession.create({
     data: {
       userId: user.id,
       tokenHash: tokenHash(refreshToken),
       expiresAt: expirationDate(refreshToken),
     },
-  });
+  }));
 
   return {
     accessToken,

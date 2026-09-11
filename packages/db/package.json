@@ -18,11 +18,14 @@
     "seed:run": "tsc -p tsconfig.seed.json && node .seed-dist/seed.js",
     "verify:wards": "tsc -p tsconfig.scripts.json && node .scripts-dist/scripts/verify-demo-wards.js",
     "lint": "eslint src scripts seed.ts --max-warnings 0",
-    "test": "vitest run"
+    "test": "vitest run",
+    "demo:reset": "tsc -p tsconfig.seed.json && node .seed-dist/seed.js --reset",
+    "verify:demo-data": "tsc -p tsconfig.scripts.json && node .scripts-dist/scripts/verify-demo-data.js"
   },
   "dependencies": {
     "@prisma/client": "6.19.0",
-    "bcrypt": "6.0.0"
+    "bcrypt": "6.0.0",
+    "@civicos/shared": "workspace:*"
   },
   "devDependencies": {
     "@civicos/config": "workspace:*",

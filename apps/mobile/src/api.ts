@@ -1,3 +1,5 @@
+import { startTiming } from "./performance";
+import { collectPages, type PaginationMeta } from "@civicos/shared";
 import type {
   CategorySummary,
   CitizenTicketSummary,
@@ -139,6 +141,7 @@ function uploadExtension(contentType: LocalImage["contentType"]): string {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const endNetwork = startTiming("api_request");
   await hydrateSession();
   const request = (token: string) => fetch(`${apiUrl}${path}`, {
     ...init,
@@ -151,7 +154,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try { response = await request(accessToken); }
   catch (cause) { throw new Error("City Connect is unreachable. Check your connection and try again.", { cause }); }
-  if (response.status === 401 && refreshToken && path !== "/auth/refresh" && path !== "/auth/logout") {
+  if (response.status === 401 && refreshToken && !path.startsWith("/auth/")) {
     try {
       const tokenToRotate = refreshToken;
       refreshInFlight ??= rawTokenRequest("/auth/refresh", { refreshToken: tokenToRotate }).finally(() => { refreshInFlight = undefined; });
@@ -167,6 +170,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
   }
   const body = await response.json().catch(() => ({})) as T & ApiErrorBody;
+  endNetwork({ status: response.status });
   if (!response.ok) throw new ApiHttpError(body.error ?? `Request failed (${response.status})`, response.status, body.code, body.diagnostic);
   return body;
 }
@@ -184,7 +188,9 @@ async function rawTokenRequest(path: string, payload: Record<string, string>): P
 
 async function persistSession(): Promise<void> {
   if (!currentAuth || !accessToken || !refreshToken) return;
+  const end = startTiming("secure_store_write");
   await SecureStore.setItemAsync(sessionKey, JSON.stringify({ accessToken, refreshToken, auth: currentAuth }));
+  end();
 }
 
 async function hydrateSession(): Promise<void> {
@@ -320,8 +326,7 @@ export async function loadEngineerProjects(scope: "mine" | "assigned" | "geograp
   query.set("limit", "50");
   if (filters.agencyId) query.set("agency", filters.agencyId);
   if (filters.status) query.set("status", filters.status);
-  const result = await apiFetch<{ projects: ProjectListItem[] }>(`/projects?${query.toString()}`);
-  return result.projects;
+  return collectPages(async (page) => { query.set("page", String(page)); const result = await apiFetch<{ projects: ProjectListItem[]; pagination: PaginationMeta }>(`/projects?${query}`); return { items: result.projects, pagination: result.pagination }; });
 }
 
 export async function loadEngineerProject(projectId: string): Promise<EngineerProjectDetail> {
@@ -395,6 +400,7 @@ export async function loadNearbyCivicWorks(
 }
 
 export async function uploadFile(target: UploadTarget, image: LocalImage): Promise<void> {
+  const preparationEnd = startTiming("photo_prepare");
   const signedContentType = target.headers["Content-Type"];
   let stagedUri: string | undefined;
   let stage: PhotoFailureStage = "STAGE_LOCAL_FILE_READ";
@@ -422,12 +428,15 @@ export async function uploadFile(target: UploadTarget, image: LocalImage): Promi
       throw new Error("The selected photo is not a readable local file");
     }
 
+    preparationEnd({ bytes: localFile.size });
+    const uploadEnd = startTiming("photo_upload");
     stage = "STAGE_PUT_NETWORK";
     const result = await FileSystem.uploadAsync(target.uploadUrl, uploadUri, {
       httpMethod: "PUT",
       uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
       headers: { "Content-Type": signedContentType },
     });
+    uploadEnd({ bytes: localFile.size });
     if (result.status < 200 || result.status >= 300) {
       stage = `STAGE_PUT_${result.status}`;
       if (target.diagnostic === "free_demo") storageError = safeStorageErrorFromBody(result.body);
@@ -455,8 +464,7 @@ export async function loadCategories(): Promise<CategorySummary[]> {
 }
 
 export async function loadMyTickets(filter: "ongoing" | "past"): Promise<CitizenTicketSummary[]> {
-  const result = await apiFetch<{ tickets: CitizenTicketSummary[] }>(`/citizens/me/tickets?filter=${filter}&limit=50`);
-  return result.tickets;
+  return collectPages(async (page) => { const result = await apiFetch<{ tickets: CitizenTicketSummary[]; pagination: PaginationMeta }>(`/citizens/me/tickets?filter=${filter}&limit=50&page=${page}`); return { items: result.tickets, pagination: result.pagination }; });
 }
 
 export async function loadTicket(ticketId: string): Promise<{ ticket: CitizenTicketDetail } & CitizenTicketTimelineResponse> {
@@ -534,7 +542,10 @@ export type MobileNotification = Omit<Notification, "createdAt"> & { createdAt: 
 
 export async function loadNotifications(unread?: boolean): Promise<{ notifications: MobileNotification[]; unreadCount: number }> {
   const query = unread === undefined ? "?limit=50" : `?unread=${String(unread)}&limit=50`;
-  return apiFetch(`/notifications${query}`);
+  if (unread === true) return apiFetch(`/notifications${query}`);
+  let unreadCount = 0;
+  const notifications = await collectPages<MobileNotification>(async (page) => { const result = await apiFetch<{ notifications: MobileNotification[]; unreadCount: number; pagination: PaginationMeta }>(`/notifications${query}&page=${page}`); unreadCount = result.unreadCount; return { items: result.notifications, pagination: result.pagination }; });
+  return { notifications, unreadCount };
 }
 
 export async function markNotificationsRead(ids: string[]): Promise<void> {
@@ -566,7 +577,9 @@ export type ImageRelevanceCheck = {
   validationToken?: string;
 };
 
-export async function validateReportImage(categoryId: string, image: LocalImage, attempt: number): Promise<ImageRelevanceCheck> {
+export async function validateReportImage(categoryId: string, image: LocalImage, attempt: number, onStage?: (stage: string) => void): Promise<ImageRelevanceCheck> {
+  onStage?.("Preparing photo...");
+  const endPresign = startTiming("photo_presign");
   let target: { objectKey: string; upload: UploadTarget };
   try {
     target = await apiFetch<{ objectKey: string; upload: UploadTarget }>("/tickets/image-relevance", {
@@ -582,12 +595,19 @@ export async function validateReportImage(categoryId: string, image: LocalImage,
     logPhotoFlowFailure("STAGE_PRESIGN", image.contentType);
     throw photoFailure("STAGE_PRESIGN");
   }
+  endPresign();
+  onStage?.("Uploading photo...");
   await uploadFile(target.upload, image);
+  onStage?.("Verifying and checking photo...");
+  const endCheck = startTiming("photo_verification_and_relevance");
   try {
-    return await apiFetch<ImageRelevanceCheck>("/tickets/image-relevance", {
+    const result = await apiFetch<ImageRelevanceCheck>("/tickets/image-relevance", {
       method: "POST",
       body: JSON.stringify({ action: "complete", categoryId, objectKey: target.objectKey, fileName: image.fileName, contentType: image.contentType, attempt }),
     });
+    endCheck();
+    onStage?.("Photo checked");
+    return result;
   } catch {
     logPhotoFlowFailure("STAGE_RELEVANCE_COMPLETE", image.contentType);
     throw photoFailure("STAGE_RELEVANCE_COMPLETE");

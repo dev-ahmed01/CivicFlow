@@ -230,6 +230,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@civicos/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@prisma/client':
         specifier: 6.19.0
         version: 6.19.0(prisma@6.19.0(typescript@5.9.2))(typescript@5.9.2)

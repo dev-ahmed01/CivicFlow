@@ -20,7 +20,7 @@ function groupFor(type: string): GroupName {
 
 const groupOrder: GroupName[] = ["Needs attention", "Community validation", "Ticket updates", "Completion verification", "Grievance updates"];
 
-export function NotificationsScreen({ role, onBack, onOpen, onViewed }: { role: UserRole; onBack: () => void; onOpen: (notification: MobileNotification) => void; onViewed: () => void }) {
+export function NotificationsScreen({ role, onBack, onOpen, onViewed }: { role: UserRole; onBack: () => void; onOpen: (notification: MobileNotification) => void; onViewed: (unread: number) => void }) {
   const [notifications, setNotifications] = useState<MobileNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -30,10 +30,12 @@ export function NotificationsScreen({ role, onBack, onOpen, onViewed }: { role: 
     setError(undefined);
     try {
       const result = await loadNotifications();
-      setNotifications(result.notifications.map((item) => ({ ...item, read: true })));
+      setNotifications(result.notifications);
       await markNotificationsRead(result.notifications.filter((item) => !item.read).map((item) => item.id));
-      await clearAppBadge();
-      onViewedRef.current();
+      const remaining = await loadNotifications(true);
+      setNotifications(result.notifications.map((item) => ({ ...item, read: true })));
+      if (remaining.unreadCount === 0) await clearAppBadge();
+      onViewedRef.current(remaining.unreadCount);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not load updates"); }
     finally { setLoading(false); }
   }, []);

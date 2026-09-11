@@ -1,5 +1,6 @@
 "use client";
 
+import { collectPages, eligibleMappedWorks } from "@civicos/shared";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CivicWorkCalendarItem, CivicWorkLedgerItem, CivicWorkLedgerLocation, CivicWorkPeriod, PaginationMeta } from "@civicos/shared";
@@ -72,7 +73,8 @@ export function WorkCalendarClient() {
     try {
       const query = new URLSearchParams({ dateFrom: asIsoDate(dateFrom), dateTo: asIsoDate(dateTo, true), limit: "200" });
       for (const [key, value] of Object.entries(mapBounds)) query.set(key, String(value));
-      const result = await apiFetch<CalendarResponse>(`/civic-works/calendar?${query.toString()}`);
+      const allWorks = eligibleMappedWorks(await collectPages(async (page) => { query.set("page", String(page)); const result = await apiFetch<CalendarResponse>(`/civic-works/calendar?${query}`); return { items: result.works, pagination: result.pagination }; }));
+      const result = { works: allWorks, pagination: { total: allWorks.length } };
       if (requestId !== calendarRequestId.current) return;
       setWorks(result.works);
       setResultTotal(result.pagination.total);
@@ -126,7 +128,7 @@ export function WorkCalendarClient() {
   };
 
   return <div className="work-calendar-page ph-schedule-page">
-    <PageHeader title="Schedule" description="Map and timeline views of municipal work across agencies." action={<span className="ph-result-count">{resultTotal} works in view</span>} />
+    <PageHeader title="Schedule" description="Map and timeline views of municipal work across agencies." action={<span className="ph-result-count">{visibleWorks.length} works in view</span>} />
 
     <div className="work-calendar-toolbar">
       <div aria-label="Schedule view" className="work-calendar-tabs" role="tablist">{(["MAP", "TIMELINE"] as const).map((item) => <button aria-selected={view === item} className={view === item ? "active" : ""} key={item} onClick={() => setView(item)} role="tab" type="button">{item === "MAP" ? "Map" : "Timeline"}</button>)}</div>

@@ -33,7 +33,7 @@ export function createNotificationsRouter(): Router {
       countOnly ? Promise.resolve(0) : prisma.notification.count({ where }),
       prisma.notification.count({ where: { userId: request.auth!.userId, read: false } }),
     ]);
-    response.json({ notifications, unreadCount, pagination: paginationMeta(pagination.data.page, pagination.data.limit, total) });
+    response.json({ notifications, unreadCount, pagination: paginationMeta(pagination.data.page, pagination.data.limit, countOnly ? unreadCount : total) });
   }));
 
   router.patch("/notifications/read", asyncRoute(async (request, response) => {

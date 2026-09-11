@@ -1,10 +1,11 @@
+import { OPEN_INSPECTION_STATES, isEngineerDependencyState } from "@civicos/shared";
 import type { InspectionDetail, DependencyListItem } from "@civicos/shared";
 
 export const inspectionFilters = ["All", "Assigned", "Accepted", "In progress", "Completed", "Overdue"] as const;
 export type InspectionFilter = (typeof inspectionFilters)[number];
 
 export function isInspectionOpen(inspection: Pick<InspectionDetail, "status">): boolean {
-  return !["SUBMITTED", "REVIEWED", "CANCELLED"].includes(inspection.status);
+  return OPEN_INSPECTION_STATES.includes(inspection.status);
 }
 
 export function matchesInspectionFilter(inspection: Pick<InspectionDetail, "status" | "deadline">, filter: InspectionFilter, now: number): boolean {
@@ -22,5 +23,5 @@ export function inspectionAction(status: InspectionDetail["status"]): string {
 }
 
 export function isDependencyOpen(dependency: Pick<DependencyListItem, "state">): boolean {
-  return !["FULFILLED", "DECLINED_UNAVAILABLE", "DECLINED_NOT_CONCERNED"].includes(dependency.state);
+  return isEngineerDependencyState(dependency.state);
 }

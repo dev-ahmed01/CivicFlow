@@ -5,7 +5,7 @@ describe("Project Head work pipeline", () => {
   it("groups the display lifecycle without promoting planning to execution", () => {
     expect(lifecycleGroup("ticket", "INSPECTION_COMPLETE")).toBe("UPCOMING");
     expect(lifecycleGroup("project", "UPTAKEN")).toBe("UPCOMING");
-    expect(lifecycleGroup("project", "MODIFIED")).toBe("UPCOMING");
+    expect(lifecycleGroup("project", "MODIFIED")).toBe("ONGOING");
     expect(lifecycleGroup("project", "ACTIVE")).toBe("ONGOING");
     expect(lifecycleGroup("project", "COMPLETED")).toBe("REVIEW");
     expect(lifecycleGroup("project", "CLOSED")).toBe("COMPLETED");
@@ -20,7 +20,7 @@ describe("Project Head work pipeline", () => {
   it("does not present planned work as active before execution", () => {
     expect(pipelineStage("project", "TIMELINE_SET")).toBe("SCHEDULED");
     expect(pipelineStage("project", "CONFLICT_CHECKED")).toBe("SCHEDULED");
-    expect(pipelineStage("project", "READY_TO_START")).toBe("READY");
+    expect(pipelineStage("project", "READY_TO_START")).toBe("SCHEDULED");
     expect(pipelineStage("project", "ACTIVE")).toBe("ACTIVE");
   });
 

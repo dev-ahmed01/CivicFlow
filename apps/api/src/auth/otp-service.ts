@@ -1,3 +1,4 @@
+import { timed } from "../http/timing";
 import { randomInt } from "node:crypto";
 import bcrypt from "bcrypt";
 import { prisma, UserRole } from "db";
@@ -68,11 +69,10 @@ export async function verifyCitizenOtp(phone: string, code: string) {
     throw new Error("Invalid or expired OTP");
   }
 
-  const challenge = await prisma.otpChallenge.findFirst({
+  const [challenge, maxAttempts] = await timed("otp_lookup_and_policy", () => Promise.all([prisma.otpChallenge.findFirst({
     where: { userId: user.id, consumedAt: null },
     orderBy: { createdAt: "desc" },
-  });
-  const maxAttempts = await configuredMaxAttempts();
+  }), configuredMaxAttempts()]));
 
   if (
     !challenge ||
@@ -82,7 +82,7 @@ export async function verifyCitizenOtp(phone: string, code: string) {
     throw new Error("Invalid or expired OTP");
   }
 
-  const valid = await bcrypt.compare(code, challenge.codeHash);
+  const valid = await timed("otp_compare", () => bcrypt.compare(code, challenge.codeHash));
   if (!valid) {
     await prisma.otpChallenge.update({
       where: { id: challenge.id },

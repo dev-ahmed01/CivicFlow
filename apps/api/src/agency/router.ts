@@ -1,6 +1,7 @@
+import { ACTIVE_PROJECT_STATES, CLOSURE_PROJECT_STATES, OPEN_INSPECTION_STATES, engineerWorkload } from "@civicos/shared";
 import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { CivicWorkOrigin, CoordinationStatus, DependencyState, GrievanceStatus, InspectionStatus, ProjectState, TicketState, UserRole, WorkflowActionType, prisma } from "db";
+import { CivicWorkOrigin, CoordinationStatus, DependencyState, GrievanceStatus, ProjectState, TicketState, UserRole, WorkflowActionType, prisma } from "db";
 import {
   agencyOriginatedTicketRequestSchema,
   ticketStateSchema,
@@ -19,14 +20,7 @@ const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Respo
   void handler(request, response, next).catch(next);
 };
 const idSchema = z.string().uuid();
-const activeWorkStates = new Set<ProjectState>([
-  ProjectState.UPTAKEN,
-  ProjectState.TIMELINE_SET,
-  ProjectState.CONFLICT_CHECKED,
-  ProjectState.READY_TO_START,
-  ProjectState.ACTIVE,
-  ProjectState.MODIFIED,
-]);
+
 
 function safeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-120);
@@ -92,7 +86,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
           },
         }),
         prisma.project.count({
-          where: { agencyId, state: ProjectState.ACTIVE },
+          where: { agencyId, state: { in: ACTIVE_PROJECT_STATES } },
         }),
         buildProjectHeadPerformance(agencyId),
         prisma.workflowAction.count({ where: { responsibleAgencyId: agencyId, respondedAt: null, deadline: { lte: new Date(now.getTime() + 24 * 60 * 60 * 1000) } } }),
@@ -102,12 +96,12 @@ export function createAgencyRouter(storage: ImageStorage): Router {
         prisma.coordinationRequest.count({ where: { respondingAgencyId: agencyId, status: { in: openCoordination } } }),
         prisma.conflictLog.count({ where: { OR: [{ projectAgencyId: agencyId }, { conflictingAgencyId: agencyId }], coordinationRequests: { none: {} } } }),
         prisma.roadConflictLog.count({ where: { OR: [{ projectAgencyId: agencyId }, { conflictingAgencyId: agencyId }], coordinationRequests: { none: {} } } }),
-        prisma.project.count({ where: { agencyId, state: { in: [ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION] } } }),
+        prisma.project.count({ where: { agencyId, state: { in: CLOSURE_PROJECT_STATES } } }),
         prisma.dependency.count({ where: { OR: [{ requestingAgencyId: agencyId }, { respondingAgencyId: agencyId }], state: DependencyState.ESCALATED } }),
         prisma.grievance.count({ where: { responsibleAgencyId: agencyId, status: { in: [GrievanceStatus.ESCALATED, GrievanceStatus.REOPENED] } } }),
-        prisma.project.count({ where: { agencyId, plannedStart: { gte: now, lte: soon }, state: { notIn: [ProjectState.ACTIVE, ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION, ProjectState.CLOSED, ProjectState.CANCELLED] } } }),
+        prisma.project.count({ where: { agencyId, plannedStart: { gte: now, lte: soon }, state: { notIn: [...ACTIVE_PROJECT_STATES, ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION, ProjectState.CLOSED, ProjectState.CANCELLED] } } }),
         prisma.project.count({ where: { agencyId, plannedEnd: { lt: now }, state: { notIn: [ProjectState.COMPLETED, ProjectState.AWAITING_VERIFICATION, ProjectState.CLOSED, ProjectState.CANCELLED] } } }),
-        prisma.user.count({ where: { agencyId, role: UserRole.ENGINEER, engineeringProjects: { some: { state: ProjectState.ACTIVE } } } }),
+        prisma.user.count({ where: { agencyId, role: UserRole.ENGINEER, engineeringProjects: { some: { state: { in: ACTIVE_PROJECT_STATES } } } } }),
         prisma.conflictLog.count({ where: { OR: [{ projectAgencyId: agencyId }, { conflictingAgencyId: agencyId }] } }),
         prisma.roadConflictLog.count({ where: { OR: [{ projectAgencyId: agencyId }, { conflictingAgencyId: agencyId }] } }),
       ]);
@@ -120,7 +114,7 @@ export function createAgencyRouter(storage: ImageStorage): Router {
           activeProjects,
           attentionActions,
           openGrievances,
-          inspectionsAwaitingAssignment: newValidatedTickets + inspectionsDue,
+          inspectionsAwaitingAssignment: newValidatedTickets,
           inspectionsAwaitingReview,
           worksReadyForAssignment,
           incomingCoordination: dependencyRequestsPending + coordinationRequestsPending,
@@ -154,30 +148,20 @@ export function createAgencyRouter(storage: ImageStorage): Router {
           displayName: true,
           engineeringProjects: {
             where: { state: { notIn: [ProjectState.CLOSED, ProjectState.CANCELLED] } },
-            select: { state: true },
+            select: { id: true, state: true, plannedEnd: true },
           },
           assignedInspections: {
-            where: { status: { in: [InspectionStatus.ASSIGNED, InspectionStatus.ACCEPTED, InspectionStatus.IN_PROGRESS] } },
+            where: { status: { in: OPEN_INSPECTION_STATES } },
             select: { deadline: true },
           },
           responsibleActions: {
             where: { respondedAt: null },
-            select: { deadline: true },
+            select: { deadline: true, type: true, projectId: true },
           },
         },
       });
       response.json({ engineers: engineers.map(({ engineeringProjects, assignedInspections, responsibleActions, ...engineer }) => {
-        const activeWorks = engineeringProjects.filter(({ state }) => activeWorkStates.has(state)).length;
-        const pendingAssignments = engineeringProjects.filter(({ state }) => state === ProjectState.PENDING_UPTAKE).length;
-        const pendingInspections = assignedInspections.length;
-        const deadlines = [...assignedInspections.map(({ deadline }) => deadline), ...responsibleActions.map(({ deadline }) => deadline)];
-        const overdueTasks = deadlines.filter((deadline) => deadline.getTime() < now.getTime()).length;
-        const nextDeadline = deadlines.filter((deadline) => deadline.getTime() >= now.getTime()).sort((left, right) => left.getTime() - right.getTime())[0] ?? null;
-        // Phase 10 — deterministic capacity indicator; it explains persisted workload rather than predicting suitability.
-        const loadScore = activeWorks * 2 + pendingAssignments + pendingInspections + overdueTasks * 2;
-        const loadLabel = loadScore >= 7 ? "High load" : loadScore >= 3 ? "Moderate load" : "Available";
-        const loadReason = `${activeWorks} active work${activeWorks === 1 ? "" : "s"}, ${pendingInspections} inspection${pendingInspections === 1 ? "" : "s"}${overdueTasks ? `, ${overdueTasks} overdue` : ""}`;
-        return { ...engineer, activeWorks, pendingAssignments, pendingInspections, overdueTasks, nextDeadline, loadLabel, loadReason };
+        return { ...engineer, ...engineerWorkload(engineeringProjects, assignedInspections, responsibleActions, now.getTime()) };
       }) });
     }),
   );
