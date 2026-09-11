@@ -6,34 +6,77 @@
 
 ---
 
-## 1. Core Service Architecture & Authentication
+## 1. Deployment & Railway Architecture
 
-- **Protocol**: HTTP / REST JSON
-- **Default Port**: `8000` (Configurable via `PORT` env var)
-- **Base URL**: `http://localhost:8000` (or `http://pothole-ai:8000` in container environment)
-- **Contract Version**: `"1.0"`
-- **Server-to-Server Authentication**:
-  - Requires `X-Internal-Token` header on all `/v1/*` inference endpoints.
-  - Token value is configured via `POTHOLE_AI_INTERNAL_TOKEN` (default: `dev-secret-token-civicflow`).
-  - `/health` endpoint remains unauthenticated for container readiness probes.
+The Pothole AI Service runs as an **isolated, standalone microservice** alongside the main City Connect Express API.
+
+```
+┌─────────────────┐       HTTPS       ┌────────────────────────┐
+│  Citizen Web /  │ ────────────────> │  City Connect Express  │
+│ Project Head UI │                   │    API (apps/api)      │
+└─────────────────┘                   └────────────────────────┘
+                                                  │
+                                                  │ Private HTTP / Server-to-Server
+                                                  │ Header: X-Internal-Token
+                                                  ▼
+                                      ┌────────────────────────┐
+                                      │   Pothole AI Service   │
+                                      │ (services/pothole-ai)  │
+                                      └────────────────────────┘
+```
+
+### Railway Environment Configurations
+
+#### 1. City Connect Express API Service (`apps/api`)
+```env
+POTHOLE_AI_URL=http://pothole-ai.railway.internal:8000
+POTHOLE_AI_INTERNAL_TOKEN=<SHARED_STRONG_RANDOM_SECRET>
+```
+
+#### 2. Pothole AI Service (`services/pothole-ai`)
+```env
+PORT=8000
+POTHOLE_AI_MODE=real
+POTHOLE_AI_INTERNAL_TOKEN=<SHARED_STRONG_RANDOM_SECRET>
+MODEL_PATH=weights/yolov8n-seg-pothole.pt
+```
+
+### Generating Production Secrets
+Do **NOT** commit production secrets to Git. To generate a secure random 32-byte secret for `POTHOLE_AI_INTERNAL_TOKEN`, execute:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+Configure the **exact same token** on both Express API and Pothole AI Railway services.
 
 ---
 
-## 2. API Endpoints
+## 2. Core Service Architecture & Authentication
 
-### 2.1 GET `/health`
+- **Protocol**: HTTP / REST JSON
+- **Default Port**: Configured dynamically via `PORT` env var (Railway default)
+- **Contract Version**: `"1.0"`
+- **Server-to-Server Authentication**:
+  - Requires `X-Internal-Token` header on all `/v1/*` inference endpoints.
+  - Authentication checked via constant-time comparison `secrets.compare_digest`.
+  - `/health` endpoint remains unauthenticated for readiness probes.
+
+---
+
+## 3. API Endpoints
+
+### 3.1 GET `/health`
 
 Verifies service readiness and exposes runtime mode (`REAL` vs `DEMO`).
 
-**Response `200 OK` (Ready in DEMO or REAL mode)**:
+**Response `200 OK` (Ready in REAL mode)**:
 ```json
 {
   "contractVersion": "1.0",
   "status": "ok",
-  "runtimeMode": "DEMO",
+  "runtimeMode": "REAL",
   "modelLoaded": true,
-  "modelName": "Synthetic-Pothole-Demo",
-  "weightsSha256": null,
+  "modelName": "yolov8n-seg-pothole.pt",
+  "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
   "version": "1.0.0",
   "device": "cpu"
 }
@@ -55,17 +98,17 @@ Verifies service readiness and exposes runtime mode (`REAL` vs `DEMO`).
 
 ---
 
-### 2.2 POST `/v1/detect/image`
+### 3.2 POST `/v1/detect/image`
 
 Primary endpoint for Area Scan and Verification Scan image frame analysis.
 
 **Headers**:
-- `X-Internal-Token`: `dev-secret-token-civicflow` (Required)
+- `X-Internal-Token`: `<SHARED_STRONG_RANDOM_SECRET>` (Required)
 
 **Content-Type**: `multipart/form-data`
 
 **Form Parameters**:
-- `image` *(File, Required)*: JPEG or PNG binary image payload (Max `10MB`).
+- `image` *(File, Required)*: JPEG, PNG, or WebP binary image payload (Max `10MB`).
 - `camera_id` *(String, Optional)*: Identifier of the authorized camera source (Max 100 chars).
 - `captured_at` *(String, Optional)*: ISO 8601 capture timestamp.
 - `request_id` *(String, Optional)*: City Connect scan tracking ID.
@@ -111,10 +154,10 @@ Primary endpoint for Area Scan and Verification Scan image frame analysis.
     }
   ],
   "model": {
-    "name": "YOLOv8-Seg-Pothole",
+    "name": "yolov8n-seg-pothole.pt",
     "version": "1.0.0",
     "runtimeMode": "REAL",
-    "weightsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
     "source": "FarzadNekouee/YOLOv8_Pothole_Segmentation_Road_Damage_Assessment",
     "threshold": 0.25
   },
@@ -124,12 +167,11 @@ Primary endpoint for Area Scan and Verification Scan image frame analysis.
 
 ---
 
-## 3. Coordinate Conventions & Extent Rules
+## 4. Coordinate Conventions & Extent Rules
 
 ### Normalized Coordinates (0.0 to 1.0)
 - All `bbox` (`x`, `y`, `width`, `height`) and `polygon` contour points `[x, y]` are normalized from `0.0` to `1.0` relative to original image dimensions:
   $$x_{\text{norm}} = \frac{\text{pixel\_x}}{\text{image\_width}}, \quad y_{\text{norm}} = \frac{\text{pixel\_y}}{\text{image\_height}}$$
-- If an oversized image is downscaled internally before inference, coordinates are scaled back to match original image dimensions.
 
 ### Area & Extent Cutoffs
 - `visualExtentCandidate`: Relative image extent cutoff:
@@ -140,50 +182,24 @@ Primary endpoint for Area Scan and Verification Scan image frame analysis.
 
 ---
 
-## 4. Temporal Confirmation Engine
+## 5. Temporal Confirmation Engine
 
-For static road cameras, City Connect passes a sequence of frame detections to `POST /v1/temporal/confirm`:
-
-**Rules**:
+`POST /v1/temporal/confirm` analyzes sequential frame detections from a single static camera:
 - All frames MUST belong to ONE camera ID.
 - `uniqueFrameCount` counts DISTINCT frames in which the physical defect was observed. Multiple detections in the SAME frame do not double-count.
 
-**Response Payload**:
-```json
-{
-  "totalFramesProcessed": 10,
-  "totalRawDetections": 12,
-  "confirmedClusters": [
-    {
-      "clusterId": "cluster-a1b2c3d4",
-      "uniqueFrameCount": 8,
-      "repeatCount": 8,
-      "firstTimestampSec": 0.0,
-      "lastTimestampSec": 9.0,
-      "averageConfidence": 0.92,
-      "canonicalBbox": { "x": 0.20, "y": 0.56, "width": 0.13, "height": 0.09 },
-      "canonicalPolygon": [[0.20, 0.58], [0.23, 0.55], [0.29, 0.56]],
-      "maxVisibleAreaRatio": 0.0085,
-      "visualExtentCandidate": "MEDIUM"
-    }
-  ]
-}
-```
-
 ---
 
-## 5. Verification Scan Semantics
+## 6. Verification Scan Semantics
 
 `POST /v1/verification/evaluate` compares pre-repair baseline ROI against post-repair scan frames:
-
-**Possible Status Values**:
-1. `DEFECT_STILL_DETECTED`: Matching pothole detection overlaps baseline ROI across usable verification frames. Defect persists.
-2. `NO_MATCHING_DEFECT_DETECTED`: Minimum usable verification frames pass quality checks with ZERO matching detections in baseline ROI. Surface patched.
-3. `INCONCLUSIVE`: Scans have poor frame quality (too blurry/dark/obstructed), camera ID mismatch, or insufficient usable frames ($\le 2$).
+- `DEFECT_STILL_DETECTED`: Matching pothole detection overlaps baseline ROI across usable verification frames.
+- `NO_MATCHING_DEFECT_DETECTED`: Minimum usable verification frames ($\ge 3$) pass quality checks with ZERO matching detections in baseline ROI.
+- `INCONCLUSIVE`: Scans have poor frame quality, camera ID mismatch, or insufficient usable frames ($\le 2$).
 
 ---
 
-## 6. Error Responses
+## 7. Error Responses
 
 - `401 Unauthorized`: Missing or invalid `X-Internal-Token` header.
 - `400 Bad Request`: Non-JPEG/PNG file, invalid payload, or mixed camera IDs.
@@ -192,13 +208,13 @@ For static road cameras, City Connect passes a sequence of frame detections to `
 
 ---
 
-## 7. Environment Variables
+## 8. Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `8000` | HTTP service port |
+| `PORT` | `8000` | HTTP service port (Set dynamically by Railway) |
 | `POTHOLE_AI_MODE` | `real` | Runtime mode: `real` (requires weights) or `demo` (mock) |
-| `POTHOLE_AI_INTERNAL_TOKEN` | `dev-secret-token-civicflow` | Server-to-server auth token |
+| `POTHOLE_AI_INTERNAL_TOKEN` | `change-me` | Server-to-server auth token |
 | `ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5000` | Allowed CORS origins |
 | `MODEL_PATH` | `weights/yolov8n-seg-pothole.pt` | Path to YOLOv8-seg weights file |
 | `CONFIDENCE_THRESHOLD` | `0.25` | Default confidence threshold |

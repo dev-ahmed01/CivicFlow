@@ -116,3 +116,33 @@ def test_verification_camera_mismatch_inconclusive():
     response = engine.evaluate(request)
     assert response.verificationStatus == "INCONCLUSIVE"
     assert "Camera mismatch" in response.reason
+
+def test_verification_only_one_usable_frame_inconclusive():
+    engine = VerificationScanEngine(default_iou_threshold=0.30, min_usable_frames=3)
+    baseline = create_det(0.40, 0.40, 0.15, 0.10, conf=0.95)
+
+    usable_quality = FrameQualityInfo(usable=True, blurScore=120.0, brightnessScore=0.50, reasons=[])
+    unusable_quality = FrameQualityInfo(usable=False, blurScore=15.0, brightnessScore=0.08, reasons=["TOO_BLURRY"])
+
+    # 4 frames total, but ONLY 1 frame is usable (less than minUsableFrames = 3)
+    frames = [
+        FrameDetectionInput(frameIndex=1, timestampSec=1.0, cameraId="CAM-01", frameQuality=usable_quality, detections=[]),
+        FrameDetectionInput(frameIndex=2, timestampSec=2.0, cameraId="CAM-01", frameQuality=unusable_quality, detections=[]),
+        FrameDetectionInput(frameIndex=3, timestampSec=3.0, cameraId="CAM-01", frameQuality=unusable_quality, detections=[]),
+        FrameDetectionInput(frameIndex=4, timestampSec=4.0, cameraId="CAM-01", frameQuality=unusable_quality, detections=[])
+    ]
+
+    request = VerificationScanRequest(
+        baselineDetection=baseline,
+        baselineCameraId="CAM-01",
+        currentCameraId="CAM-01",
+        currentFrames=frames,
+        iouThreshold=0.30,
+        minUsableFrames=3
+    )
+
+    response = engine.evaluate(request)
+    assert response.verificationStatus == "INCONCLUSIVE"
+    assert response.usableFramesProcessed == 1
+    assert response.totalFramesProcessed == 4
+

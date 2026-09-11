@@ -1,0 +1,93 @@
+{
+  "sampleId": "real_sample_02",
+  "title": "A pothole in Dilova Street in Kyiv",
+  "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/a/ad/A_pothole_in_Dilova_Street_in_Kyiv.jpg",
+  "license": "CC0",
+  "description": "Urban street pothole with asphalt degradation",
+  "expectedLabel": "pothole",
+  "imageDimensions": {
+    "width": 4032,
+    "height": 2268
+  },
+  "runtimeMode": "REAL",
+  "modelFilename": "yolov8n-seg-pothole.pt",
+  "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+  "processingMs": 188,
+  "numDetections": 1,
+  "detections": [
+    {
+      "detectionId": "0bf214a5-5b75-4cd7-8440-6e3a90149b91",
+      "label": "pothole",
+      "confidence": 0.9343,
+      "bbox": {
+        "x": 0.0907,
+        "y": 0.194,
+        "width": 0.6719,
+        "height": 0.5134
+      },
+      "polygon": [
+        [
+          0.0922,
+          0.5611
+        ],
+        [
+          0.2687,
+          0.6722
+        ],
+        [
+          0.5141,
+          0.7056
+        ],
+        [
+          0.6937,
+          0.5722
+        ],
+        [
+          0.7375,
+          0.5083
+        ],
+        [
+          0.7484,
+          0.4139
+        ],
+        [
+          0.7281,
+          0.3361
+        ],
+        [
+          0.6516,
+          0.2444
+        ],
+        [
+          0.5406,
+          0.2056
+        ],
+        [
+          0.3563,
+          0.225
+        ],
+        [
+          0.2328,
+          0.1944
+        ],
+        [
+          0.1672,
+          0.2389
+        ],
+        [
+          0.1531,
+          0.3306
+        ],
+        [
+          0.0953,
+          0.4667
+        ]
+      ],
+      "visibleAreaRatio": 0.029154,
+      "visualExtentCandidate": "HIGH",
+      "visualSeverityCandidate": "HIGH"
+    }
+  ],
+  "potholeDetected": true,
+  "evaluationOutcome": "TP (True Positive)"
+}

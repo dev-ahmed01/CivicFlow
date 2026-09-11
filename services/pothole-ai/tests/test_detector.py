@@ -61,3 +61,14 @@ def test_detector_invalid_bytes():
     detector = PotholeDetector(mode="demo")
     with pytest.raises(ValueError, match="Failed to decode image"):
         detector.detect_bytes(b"invalid-bytes-stream")
+
+def test_detector_real_mode_verified_weights_load():
+    weights_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "weights", "yolov8n-seg-pothole.pt")
+    if not os.path.exists(weights_path):
+        pytest.skip("Verified YOLO weights file not found locally")
+
+    detector = PotholeDetector(mode="real", model_path=weights_path)
+    assert detector.is_loaded is True
+    assert detector.runtime_mode == "REAL"
+    assert detector.weights_sha256 == "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704"
+

@@ -1,0 +1,20 @@
+{
+  "sampleId": "real_sample_08",
+  "title": "Damaged road surface background Spain",
+  "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/f/fd/002_Damaged_road_surface_background_-_cracked_asphalt_blacktop_in_Spain.jpg",
+  "license": "CC BY 3.0",
+  "description": "Cracked blacktop without severe depth cavity (Hard Negative)",
+  "expectedLabel": "clear",
+  "imageDimensions": {
+    "width": 3600,
+    "height": 2400
+  },
+  "runtimeMode": "REAL",
+  "modelFilename": "yolov8n-seg-pothole.pt",
+  "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+  "processingMs": 310,
+  "numDetections": 0,
+  "detections": [],
+  "potholeDetected": false,
+  "evaluationOutcome": "TN (True Negative)"
+}

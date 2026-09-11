@@ -6,3 +6,5 @@ __pycache__/
 weights/*.pt
 fixtures/*.jpg
 fixtures/real/*.jpg
+validation/real/images/
+

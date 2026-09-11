@@ -1,0 +1,97 @@
+{
+  "sampleId": "real_sample_03",
+  "title": "Pothole Big",
+  "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Pothole_Big.jpg",
+  "license": "Public domain",
+  "description": "Large deep road cavity on asphalt",
+  "expectedLabel": "pothole",
+  "imageDimensions": {
+    "width": 400,
+    "height": 300
+  },
+  "runtimeMode": "REAL",
+  "modelFilename": "yolov8n-seg-pothole.pt",
+  "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+  "processingMs": 161,
+  "numDetections": 1,
+  "detections": [
+    {
+      "detectionId": "64cf37f6-7478-4e92-a7f4-cad763fe17ff",
+      "label": "pothole",
+      "confidence": 0.9393,
+      "bbox": {
+        "x": 0.3284,
+        "y": 0.5661,
+        "width": 0.5075,
+        "height": 0.2698
+      },
+      "polygon": [
+        [
+          0.3297,
+          0.6458
+        ],
+        [
+          0.3297,
+          0.7
+        ],
+        [
+          0.3656,
+          0.7438
+        ],
+        [
+          0.4328,
+          0.7958
+        ],
+        [
+          0.5156,
+          0.8208
+        ],
+        [
+          0.7547,
+          0.825
+        ],
+        [
+          0.8094,
+          0.7937
+        ],
+        [
+          0.8313,
+          0.7458
+        ],
+        [
+          0.8266,
+          0.7104
+        ],
+        [
+          0.7578,
+          0.6396
+        ],
+        [
+          0.6578,
+          0.5917
+        ],
+        [
+          0.5766,
+          0.5729
+        ],
+        [
+          0.4891,
+          0.5667
+        ],
+        [
+          0.3922,
+          0.5875
+        ],
+        [
+          0.3656,
+          0.6021
+        ]
+      ],
+      "visibleAreaRatio": 0.261642,
+      "visualExtentCandidate": "HIGH",
+      "visualSeverityCandidate": "HIGH"
+    }
+  ],
+  "potholeDetected": true,
+  "evaluationOutcome": "TP (True Positive)"
+}

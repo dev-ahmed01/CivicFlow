@@ -1,0 +1,169 @@
+{
+  "sampleId": "real_sample_01",
+  "title": "A photo of a pothole",
+  "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/8/82/A_photo_of_a_pothole_2021-07-11.jpg",
+  "license": "CC BY-SA 4.0",
+  "description": "Obvious single pothole on asphalt road",
+  "expectedLabel": "pothole",
+  "imageDimensions": {
+    "width": 4608,
+    "height": 2592
+  },
+  "runtimeMode": "REAL",
+  "modelFilename": "yolov8n-seg-pothole.pt",
+  "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+  "processingMs": 2366,
+  "numDetections": 2,
+  "detections": [
+    {
+      "detectionId": "4ff0bb21-bbb7-47ee-814d-63ab4bf8e718",
+      "label": "pothole",
+      "confidence": 0.9348,
+      "bbox": {
+        "x": 0.5998,
+        "y": 0.189,
+        "width": 0.251,
+        "height": 0.4003
+      },
+      "polygon": [
+        [
+          0.675,
+          0.1917
+        ],
+        [
+          0.6188,
+          0.2639
+        ],
+        [
+          0.6,
+          0.325
+        ],
+        [
+          0.6,
+          0.3667
+        ],
+        [
+          0.6453,
+          0.4722
+        ],
+        [
+          0.6953,
+          0.5333
+        ],
+        [
+          0.7203,
+          0.5806
+        ],
+        [
+          0.7453,
+          0.5861
+        ],
+        [
+          0.7984,
+          0.5306
+        ],
+        [
+          0.8281,
+          0.4806
+        ],
+        [
+          0.85,
+          0.3972
+        ],
+        [
+          0.85,
+          0.3583
+        ],
+        [
+          0.8156,
+          0.2667
+        ],
+        [
+          0.7922,
+          0.2306
+        ],
+        [
+          0.7719,
+          0.2167
+        ],
+        [
+          0.7453,
+          0.2194
+        ],
+        [
+          0.7203,
+          0.1917
+        ]
+      ],
+      "visibleAreaRatio": 0.007701,
+      "visualExtentCandidate": "MEDIUM",
+      "visualSeverityCandidate": "MEDIUM"
+    },
+    {
+      "detectionId": "6cdb19ba-5117-4445-8abc-f7bf5c2484d5",
+      "label": "pothole",
+      "confidence": 0.8361,
+      "bbox": {
+        "x": 0.1396,
+        "y": 0.1862,
+        "width": 0.2843,
+        "height": 0.4571
+      },
+      "polygon": [
+        [
+          0.2094,
+          0.2056
+        ],
+        [
+          0.1719,
+          0.3028
+        ],
+        [
+          0.1422,
+          0.4806
+        ],
+        [
+          0.1406,
+          0.6306
+        ],
+        [
+          0.1625,
+          0.6417
+        ],
+        [
+          0.3703,
+          0.6361
+        ],
+        [
+          0.4062,
+          0.6083
+        ],
+        [
+          0.4234,
+          0.5611
+        ],
+        [
+          0.4109,
+          0.4194
+        ],
+        [
+          0.4188,
+          0.2639
+        ],
+        [
+          0.4125,
+          0.1972
+        ],
+        [
+          0.2297,
+          0.1889
+        ]
+      ],
+      "visibleAreaRatio": 0.01278,
+      "visualExtentCandidate": "MEDIUM",
+      "visualSeverityCandidate": "MEDIUM"
+    }
+  ],
+  "potholeDetected": true,
+  "evaluationOutcome": "TP (True Positive)"
+}

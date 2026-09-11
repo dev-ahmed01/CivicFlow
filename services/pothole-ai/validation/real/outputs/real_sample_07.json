@@ -1,0 +1,20 @@
+{
+  "sampleId": "real_sample_07",
+  "title": "Damaged asphalt surface cracked",
+  "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/b/be/Damaged_asphalt_surface_1.jpg",
+  "license": "CC0",
+  "description": "Cracked road surface without pothole cavity (Hard Negative)",
+  "expectedLabel": "clear",
+  "imageDimensions": {
+    "width": 4000,
+    "height": 3000
+  },
+  "runtimeMode": "REAL",
+  "modelFilename": "yolov8n-seg-pothole.pt",
+  "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+  "processingMs": 291,
+  "numDetections": 0,
+  "detections": [],
+  "potholeDetected": false,
+  "evaluationOutcome": "TN (True Negative)"
+}

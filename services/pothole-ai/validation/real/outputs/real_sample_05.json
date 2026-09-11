@@ -1,0 +1,153 @@
+{
+  "sampleId": "real_sample_05",
+  "title": "Pothole in an asphalt pavement",
+  "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/b/b3/Pothole_in_an_asphalt_pavement.jpg",
+  "license": "CC BY-SA 4.0",
+  "description": "Textured asphalt surface with edge degradation",
+  "expectedLabel": "pothole",
+  "imageDimensions": {
+    "width": 5472,
+    "height": 3648
+  },
+  "runtimeMode": "REAL",
+  "modelFilename": "yolov8n-seg-pothole.pt",
+  "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+  "processingMs": 353,
+  "numDetections": 1,
+  "detections": [
+    {
+      "detectionId": "6601a487-a6a1-449c-a698-8f4610ee047a",
+      "label": "pothole",
+      "confidence": 0.6212,
+      "bbox": {
+        "x": 0.1545,
+        "y": 0.3281,
+        "width": 0.7949,
+        "height": 0.6106
+      },
+      "polygon": [
+        [
+          0.9484,
+          0.9375
+        ],
+        [
+          0.9484,
+          0.6094
+        ],
+        [
+          0.9078,
+          0.6281
+        ],
+        [
+          0.8953,
+          0.7078
+        ],
+        [
+          0.8922,
+          0.607
+        ],
+        [
+          0.8625,
+          0.5719
+        ],
+        [
+          0.9109,
+          0.375
+        ],
+        [
+          0.9,
+          0.3281
+        ],
+        [
+          0.6641,
+          0.3305
+        ],
+        [
+          0.6406,
+          0.3539
+        ],
+        [
+          0.6719,
+          0.382
+        ],
+        [
+          0.6422,
+          0.4688
+        ],
+        [
+          0.6094,
+          0.3937
+        ],
+        [
+          0.4453,
+          0.3281
+        ],
+        [
+          0.2406,
+          0.3422
+        ],
+        [
+          0.1703,
+          0.4008
+        ],
+        [
+          0.1562,
+          0.6844
+        ],
+        [
+          0.2203,
+          0.7875
+        ],
+        [
+          0.3219,
+          0.7852
+        ],
+        [
+          0.3453,
+          0.8297
+        ],
+        [
+          0.5359,
+          0.8672
+        ],
+        [
+          0.5906,
+          0.9375
+        ],
+        [
+          0.6344,
+          0.9375
+        ],
+        [
+          0.6172,
+          0.9164
+        ],
+        [
+          0.6828,
+          0.8156
+        ],
+        [
+          0.8797,
+          0.7477
+        ],
+        [
+          0.9469,
+          0.8039
+        ],
+        [
+          0.9406,
+          0.893
+        ],
+        [
+          0.7344,
+          0.9375
+        ]
+      ],
+      "visibleAreaRatio": 0.039655,
+      "visualExtentCandidate": "HIGH",
+      "visualSeverityCandidate": "HIGH"
+    }
+  ],
+  "potholeDetected": true,
+  "evaluationOutcome": "TP (True Positive)"
+}

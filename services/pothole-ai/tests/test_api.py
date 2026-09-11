@@ -140,11 +140,94 @@ def test_detect_image_invalid_confidence_bounds(client):
     headers = {"X-Internal-Token": settings.pothole_ai_internal_token}
 
     with open(img_path, "rb") as f:
-        response = test_client.post(
+        response_high = test_client.post(
             "/v1/detect/image",
             headers=headers,
             files={"image": ("cam_01.jpg", f, "image/jpeg")},
             data={"confidence_threshold": 1.5}
         )
-    assert response.status_code == 400
-    assert "confidence_threshold" in response.json()["detail"]
+    assert response_high.status_code == 400
+    assert "confidence_threshold" in response_high.json()["detail"]
+
+    with open(img_path, "rb") as f:
+        response_neg = test_client.post(
+            "/v1/detect/image",
+            headers=headers,
+            files={"image": ("cam_01.jpg", f, "image/jpeg")},
+            data={"confidence_threshold": -0.5}
+        )
+    assert response_neg.status_code == 400
+    assert "confidence_threshold" in response_neg.json()["detail"]
+
+def test_detect_image_valid_png(client):
+    test_client, _ = client
+    headers = {"X-Internal-Token": settings.pothole_ai_internal_token}
+
+    # Generate small 100x100 PNG image in memory
+    from PIL import Image
+    buf = io.BytesIO()
+    img = Image.new("RGB", (100, 100), color=(80, 80, 80))
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    response = test_client.post(
+        "/v1/detect/image",
+        headers=headers,
+        files={"image": ("test.png", buf.getvalue(), "image/png")}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["image"]["width"] == 100
+    assert data["image"]["height"] == 100
+
+def test_detect_image_max_upload_bytes_exceeded(client):
+    test_client, _ = client
+    headers = {"X-Internal-Token": settings.pothole_ai_internal_token}
+
+    # Generate oversized payload exceeding MAX_UPLOAD_BYTES (10MB + 100 bytes)
+    large_payload = b"0" * (10485760 + 100)
+
+    response = test_client.post(
+        "/v1/detect/image",
+        headers=headers,
+        files={"image": ("large.jpg", large_payload, "image/jpeg")}
+    )
+    assert response.status_code in (400, 413)
+    assert "exceeds maximum limit" in response.json()["detail"]
+
+def test_all_endpoints_require_internal_token(client):
+    test_client, _ = client
+
+    # 1. Image detect without token -> 401
+    res1 = test_client.post(
+        "/v1/detect/image",
+        files={"image": ("test.jpg", b"fake", "image/jpeg")}
+    )
+    assert res1.status_code == 401
+
+    # 2. Temporal confirm without token -> 401
+    res2 = test_client.post("/v1/temporal/confirm", json=[])
+    assert res2.status_code == 401
+
+    # 3. Verification scan without token -> 401
+    dummy_det = {
+        "detectionId": "d1",
+        "label": "pothole",
+        "confidence": 0.9,
+        "bbox": {"x": 0.1, "y": 0.1, "width": 0.1, "height": 0.1},
+        "polygon": [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2], [0.1, 0.2]],
+        "visibleAreaRatio": 0.01,
+        "visualExtentCandidate": "MEDIUM"
+    }
+    res3 = test_client.post(
+        "/v1/verification/evaluate",
+        json={
+            "baselineDetection": dummy_det,
+            "currentCameraId": "CAM-01",
+            "currentFrames": []
+        }
+    )
+    assert res3.status_code == 401
+
+
+

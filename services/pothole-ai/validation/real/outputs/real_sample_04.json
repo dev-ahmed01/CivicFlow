@@ -1,0 +1,81 @@
+{
+  "sampleId": "real_sample_04",
+  "title": "Pothole in Potomac after rain",
+  "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/2/29/Pothole_in_Potomac_after_rain.jpg",
+  "license": "CC BY-SA 4.0",
+  "description": "Pothole filled with water/puddle reflection (difficult case)",
+  "expectedLabel": "pothole",
+  "imageDimensions": {
+    "width": 8160,
+    "height": 6120
+  },
+  "runtimeMode": "REAL",
+  "modelFilename": "yolov8n-seg-pothole.pt",
+  "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+  "processingMs": 5066,
+  "numDetections": 1,
+  "detections": [
+    {
+      "detectionId": "2a6936e9-fa70-4c8a-9b2f-0ee7e9639ef7",
+      "label": "pothole",
+      "confidence": 0.8717,
+      "bbox": {
+        "x": 0.3871,
+        "y": 0.4046,
+        "width": 0.2949,
+        "height": 0.2102
+      },
+      "polygon": [
+        [
+          0.3875,
+          0.5292
+        ],
+        [
+          0.4219,
+          0.5583
+        ],
+        [
+          0.5078,
+          0.6042
+        ],
+        [
+          0.5594,
+          0.5979
+        ],
+        [
+          0.6188,
+          0.5646
+        ],
+        [
+          0.6656,
+          0.4958
+        ],
+        [
+          0.6766,
+          0.4583
+        ],
+        [
+          0.6625,
+          0.4437
+        ],
+        [
+          0.5719,
+          0.4062
+        ],
+        [
+          0.4469,
+          0.4062
+        ],
+        [
+          0.3875,
+          0.4917
+        ]
+      ],
+      "visibleAreaRatio": 0.004777,
+      "visualExtentCandidate": "LOW",
+      "visualSeverityCandidate": "LOW"
+    }
+  ],
+  "potholeDetected": true,
+  "evaluationOutcome": "TP (True Positive)"
+}

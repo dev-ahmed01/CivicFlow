@@ -17,9 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy lock file and install reproducible Python dependencies
+# Copy lock file and install reproducible Python dependencies (using PyTorch CPU wheels)
 COPY requirements.lock.txt requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.lock.txt
+RUN pip install --no-cache-dir -r requirements.lock.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
 
 # Create weights, scripts, and fixtures directories
 RUN mkdir -p weights scripts fixtures app docs
@@ -30,8 +31,8 @@ COPY fixtures/ ./fixtures/
 COPY scripts/ ./scripts/
 COPY README.md ./
 
-# Generate synthetic test fixtures on container build
-RUN python fixtures/generate_fixtures.py
+# Generate synthetic test fixtures and acquire verified YOLO weights on container build
+RUN python fixtures/generate_fixtures.py && python scripts/fetch_model.py
 
 # Create non-root app user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
@@ -40,6 +41,7 @@ USER appuser
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+  CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.getenv('PORT', '8000') + '/health')" || exit 1
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+

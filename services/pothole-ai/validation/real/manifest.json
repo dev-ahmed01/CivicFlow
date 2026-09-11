@@ -1,0 +1,162 @@
+{
+  "validationType": "REAL_IMAGE_MODEL_VALIDATION",
+  "methodology": "IMAGE_LEVEL_CLASSIFICATION",
+  "modelMetadata": {
+    "modelFilename": "yolov8n-seg-pothole.pt",
+    "runtimeMode": "REAL",
+    "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+    "upstreamSource": "FarzadNekouee/YOLOv8_Pothole_Segmentation_Road_Damage_Assessment"
+  },
+  "confusionMatrix": {
+    "totalSamples": 8,
+    "truePositives": 5,
+    "falsePositives": 0,
+    "falseNegatives": 0,
+    "trueNegatives": 3,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1Score": 1.0
+  },
+  "disclaimer": "Controlled prototype validation on a 8-sample dataset. Sample size is small and is not representative of municipal-scale camera performance under all lighting/weather conditions.",
+  "samples": [
+    {
+      "sampleId": "real_sample_01",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/8/82/A_photo_of_a_pothole_2021-07-11.jpg",
+      "license": "CC BY-SA 4.0",
+      "expectedLabel": "pothole",
+      "width": 4608,
+      "height": 2592,
+      "runtimeMode": "REAL",
+      "modelFilename": "yolov8n-seg-pothole.pt",
+      "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+      "numDetections": 2,
+      "confidences": [
+        0.9348,
+        0.8361
+      ],
+      "processingMs": 2366,
+      "potholeDetected": true,
+      "evaluationOutcome": "TP (True Positive)"
+    },
+    {
+      "sampleId": "real_sample_02",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/a/ad/A_pothole_in_Dilova_Street_in_Kyiv.jpg",
+      "license": "CC0",
+      "expectedLabel": "pothole",
+      "width": 4032,
+      "height": 2268,
+      "runtimeMode": "REAL",
+      "modelFilename": "yolov8n-seg-pothole.pt",
+      "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+      "numDetections": 1,
+      "confidences": [
+        0.9343
+      ],
+      "processingMs": 188,
+      "potholeDetected": true,
+      "evaluationOutcome": "TP (True Positive)"
+    },
+    {
+      "sampleId": "real_sample_03",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Pothole_Big.jpg",
+      "license": "Public domain",
+      "expectedLabel": "pothole",
+      "width": 400,
+      "height": 300,
+      "runtimeMode": "REAL",
+      "modelFilename": "yolov8n-seg-pothole.pt",
+      "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+      "numDetections": 1,
+      "confidences": [
+        0.9393
+      ],
+      "processingMs": 161,
+      "potholeDetected": true,
+      "evaluationOutcome": "TP (True Positive)"
+    },
+    {
+      "sampleId": "real_sample_04",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/2/29/Pothole_in_Potomac_after_rain.jpg",
+      "license": "CC BY-SA 4.0",
+      "expectedLabel": "pothole",
+      "width": 8160,
+      "height": 6120,
+      "runtimeMode": "REAL",
+      "modelFilename": "yolov8n-seg-pothole.pt",
+      "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+      "numDetections": 1,
+      "confidences": [
+        0.8717
+      ],
+      "processingMs": 5066,
+      "potholeDetected": true,
+      "evaluationOutcome": "TP (True Positive)"
+    },
+    {
+      "sampleId": "real_sample_05",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/b/b3/Pothole_in_an_asphalt_pavement.jpg",
+      "license": "CC BY-SA 4.0",
+      "expectedLabel": "pothole",
+      "width": 5472,
+      "height": 3648,
+      "runtimeMode": "REAL",
+      "modelFilename": "yolov8n-seg-pothole.pt",
+      "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+      "numDetections": 1,
+      "confidences": [
+        0.6212
+      ],
+      "processingMs": 353,
+      "potholeDetected": true,
+      "evaluationOutcome": "TP (True Positive)"
+    },
+    {
+      "sampleId": "real_sample_06",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/b/b5/Asphalt_road_surface_%28Unsplash%29.jpg",
+      "license": "CC0",
+      "expectedLabel": "clear",
+      "width": 4928,
+      "height": 3264,
+      "runtimeMode": "REAL",
+      "modelFilename": "yolov8n-seg-pothole.pt",
+      "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+      "numDetections": 0,
+      "confidences": [],
+      "processingMs": 181,
+      "potholeDetected": false,
+      "evaluationOutcome": "TN (True Negative)"
+    },
+    {
+      "sampleId": "real_sample_07",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/b/be/Damaged_asphalt_surface_1.jpg",
+      "license": "CC0",
+      "expectedLabel": "clear",
+      "width": 4000,
+      "height": 3000,
+      "runtimeMode": "REAL",
+      "modelFilename": "yolov8n-seg-pothole.pt",
+      "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+      "numDetections": 0,
+      "confidences": [],
+      "processingMs": 291,
+      "potholeDetected": false,
+      "evaluationOutcome": "TN (True Negative)"
+    },
+    {
+      "sampleId": "real_sample_08",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/f/fd/002_Damaged_road_surface_background_-_cracked_asphalt_blacktop_in_Spain.jpg",
+      "license": "CC BY 3.0",
+      "expectedLabel": "clear",
+      "width": 3600,
+      "height": 2400,
+      "runtimeMode": "REAL",
+      "modelFilename": "yolov8n-seg-pothole.pt",
+      "weightsSha256": "04b05396b38dfe0801c3db2e4cc8c77e23b23c024a4cea37fce8295660817704",
+      "numDetections": 0,
+      "confidences": [],
+      "processingMs": 310,
+      "potholeDetected": false,
+      "evaluationOutcome": "TN (True Negative)"
+    }
+  ]
+}

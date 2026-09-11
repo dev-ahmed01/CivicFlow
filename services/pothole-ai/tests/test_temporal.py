@@ -88,3 +88,43 @@ def test_temporal_engine_mixed_camera_ids_rejected():
 
     with pytest.raises(ValueError, match="mixed camera IDs"):
         engine.analyze_sequence(frames)
+
+def test_temporal_engine_multiple_spatial_clusters():
+    engine = TemporalConfirmationEngine(iou_threshold=0.30, min_repeat_frames=3)
+
+    # 3 frames each containing 2 distinct non-overlapping potholes (left and right)
+    frames = [
+        FrameDetectionInput(
+            frameIndex=i*30,
+            timestampSec=float(i),
+            cameraId="CAM-01",
+            detections=[
+                create_sample_detection(0.15, 0.40, 0.10, 0.08, conf=0.90), # Pothole A (Left)
+                create_sample_detection(0.75, 0.40, 0.10, 0.08, conf=0.92)  # Pothole B (Right)
+            ]
+        )
+        for i in range(3)
+    ]
+
+    response = engine.analyze_sequence(frames)
+    assert response.totalFramesProcessed == 3
+    assert response.totalRawDetections == 6
+    assert len(response.confirmedClusters) == 2
+
+def test_temporal_engine_out_of_order_timestamps():
+    engine = TemporalConfirmationEngine(iou_threshold=0.30, min_repeat_frames=3)
+
+    # Out of order frames: timestamp 2.0s, 0.0s, 1.0s
+    frames = [
+        FrameDetectionInput(frameIndex=60, timestampSec=2.0, cameraId="CAM-01", detections=[create_sample_detection(0.35, 0.45, 0.10, 0.08)]),
+        FrameDetectionInput(frameIndex=0, timestampSec=0.0, cameraId="CAM-01", detections=[create_sample_detection(0.35, 0.45, 0.10, 0.08)]),
+        FrameDetectionInput(frameIndex=30, timestampSec=1.0, cameraId="CAM-01", detections=[create_sample_detection(0.35, 0.45, 0.10, 0.08)])
+    ]
+
+    response = engine.analyze_sequence(frames)
+    assert response.totalFramesProcessed == 3
+    assert len(response.confirmedClusters) == 1
+    cluster = response.confirmedClusters[0]
+    assert cluster.firstTimestampSec == 0.0
+    assert cluster.lastTimestampSec == 2.0
+
