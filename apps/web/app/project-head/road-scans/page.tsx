@@ -10,7 +10,7 @@ import { ScanEvidenceView, VerificationResult } from "./evidence";
 const CoverageMap = dynamic(() => import("../work-calendar/work-map").then(module => module.ScanCoverageMap), { ssr: false, loading: () => <p>Loading camera map…</p> });
 const labels: Record<string, string> = { QUEUED: "Ready to process", RUNNING: "Processing cameras", COMPLETED: "Completed", PARTIAL: "Partially completed", FAILED: "Unable to complete", NEW: "Needs review", INSPECTION_ASSIGNED: "Inspection assigned", LINKED: "Linked to work", DISMISSED: "Dismissed", PENDING: "Waiting", USABLE: "Usable", POOR_QUALITY: "Poor quality", UNAVAILABLE: "Unavailable", LOW: "Small", MEDIUM: "Moderate", HIGH: "Large" };
 const message = (error: unknown) => error instanceof Error && !/https?:|Express|Python|API is unreachable/.test(error.message) ? error.message : "The scan request could not be completed. Please try again.";
-export function ScanSummary({ scan }: { scan: RoadScan }) {
+function ScanSummary({ scan }: { scan: RoadScan }) {
   return <><div className="scan-summary"><StatusSummary items={[{ label: "Cameras available", value: scan.camerasRequested }, { label: "Successfully sampled", value: scan.usableCameras }, { label: "Poor quality / unavailable", value: scan.unusableCameras }, { label: "Raw detections", value: scan.rawDetections }, { label: "Unique candidates", value: scan.uniqueCandidates }, { label: "Linked to work", value: scan.candidates.filter(item => item.projectId).length }]} /></div>{scan.failureSummary ? <p className="scan-notice">{scan.failureSummary}</p> : null}</>;
 }
 export default function AreaScanPage() {
@@ -81,3 +81,4 @@ export default function AreaScanPage() {
     </DetailDrawer>
   </div>;
 }
+
