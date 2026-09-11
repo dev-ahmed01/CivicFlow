@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { resolveWardGeometry } from "./ward-resolution";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { UserRole, prisma } from "db";
 import {
@@ -76,9 +77,7 @@ export function createCivicWorksRouter(storage: ImageStorage): Router {
       const geometry = civicWorkGeometrySchema.safeParse(input?.geometry);
       // Part III §7.1: the submitted point/geometry determines ward, never a client assertion.
       if (geometry.success) {
-        const wards = await prisma.$queryRaw<Array<{ id: string; name: string }>>`
-          SELECT "id", "name" FROM "Ward" WHERE ST_Covers("boundary", ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(geometry.data)}),4326)) ORDER BY "id" LIMIT 1
-        `;
+        const wards = await resolveWardGeometry(prisma, geometry.data);
         if (!wards[0]) { response.status(422).json({ error: "Choose a location inside a supported reporting area" }); return; }
         input = { ...input, wardId: wards[0].id, locationLabel: input.locationLabel || wards[0].name };
       }

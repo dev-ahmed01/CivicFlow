@@ -90,6 +90,12 @@ export const operationalMetricKeys = [
   "first-time-completion",
   "verified-closure",
   "overdue-coordination",
+  "evidence-backed-completion",
+  "rework-rate",
+  "risks-addressed",
+  "coordinated-road-length",
+  "sequencing-accepted",
+  "works-coordinated",
 ] as const;
 
 export type OperationalMetricKey = (typeof operationalMetricKeys)[number];
@@ -98,16 +104,20 @@ export type OperationalMetric = {
   key: OperationalMetricKey;
   label: string;
   value: number | null;
-  unit: "count" | "hours" | "percent";
+  unit: "count" | "hours" | "percent" | "meters";
   numerator?: number;
   denominator?: number;
   sampleSize?: number;
   description: string;
+  direction: "higher" | "lower" | "context";
+  limitedSample: boolean;
+  previous: { value: number | null; numerator?: number; denominator?: number; sampleSize?: number };
+  comparison: { change: number | null; relativePercent: number | null; interpretation: "Improved" | "Declined" | "Unchanged" | "No comparable data" | "Context only" };
 };
 
 export type OperationalRecord = {
   id: string;
-  recordType: "conflict" | "dependency" | "work" | "coordination" | "road-conflict" | "completion";
+  recordType: "conflict" | "dependency" | "work" | "coordination" | "road-conflict" | "completion" | "sequencing" | "intervention";
   reference: string;
   title: string;
   status: string;
@@ -120,6 +130,14 @@ export type OperationalRecord = {
   durationHours?: number;
   relatedReference?: string;
   detail?: string;
+  projectId?: string;
+  included?: boolean;
+  executionStart?: string;
+  responseAt?: string;
+  uploadedAt?: string;
+  coordinationStatus?: string;
+  evidenceIds?: string[];
+  lengthMeters?: number;
 };
 
 export type OperationalBreakdownRow = {
@@ -134,15 +152,25 @@ export type OperationalAnalyticsReport = {
   filters: AnalyticsReport["filters"];
   metrics: OperationalMetric[];
   details: Record<OperationalMetricKey, OperationalRecord[]>;
-  workBreakdown: {
-    byAgency: OperationalBreakdownRow[];
-    byWard: OperationalBreakdownRow[];
-    byType: OperationalBreakdownRow[];
-  };
-  conservationInputs: {
-    repeatedRiskSegments: number;
-    affectedLengthMeters: number;
-    acceptedSequencingRecommendations: number;
-    note: string;
-  };
+  previousDetails: Record<OperationalMetricKey, OperationalRecord[]>;
+  periods: InsightsPeriods;
+  sampleThreshold: number;
+  containsDemoRecords: boolean;
+  dimensions: Array<{ kind: "ward" | "category"; id: string; name: string; metrics: OperationalMetric[] }>;
+  options: { wards: Array<{ id: string; name: string }>; categories: Array<{ id: string; name: string }> };
+  trend: Array<{ from: string; to: string; metrics: OperationalMetric[] }>;
+  validation: InsightsBenchmark | null;
+  notes: string[];
 };
+
+export const insightsPresetSchema = z.enum(["today", "last7", "last30", "week", "month", "custom"]);
+export type InsightsPreset = z.infer<typeof insightsPresetSchema>;
+export type InsightsPeriods = { current: { from: string; to: string }; previous: { from: string; to: string }; label: string; timeZone: "Asia/Kolkata"; partial: boolean };
+export const insightsBenchmarkSchema = z.object({
+  version: z.literal(1), generatedAt: z.string().datetime(), revision: z.string(),
+  suites: z.array(z.object({ name: z.string(), scope: z.string(), correct: z.number().int().nonnegative(), total: z.number().int().positive(),
+    cases: z.array(z.object({ name: z.string(), expected: z.string(), actual: z.string(), passed: z.boolean() })),
+    confusion: z.object({ tp: z.number(), fp: z.number(), tn: z.number(), fn: z.number() }).optional(),
+  })),
+});
+export type InsightsBenchmark = z.infer<typeof insightsBenchmarkSchema>;

@@ -1,5 +1,11 @@
-import type { MetricRow } from "@civicos/shared";
+import type { MetricRow, OperationalAnalyticsReport } from "@civicos/shared";
 import { EmptyState } from "../../_components/ui";
+import { metricValue, metricSample } from "./insight-metrics";
+import styles from "../reports/insights.module.css";
+
+export function InsightTrend({ trend }: { trend: OperationalAnalyticsReport["trend"] }) {
+  return <details className={styles.surface}><summary>Conflict resolution and response over time</summary><p>Daily buckets up to 31 days, weekly up to 120 days, then calendar months. Each bucket uses its own outcome cutoff; later resolutions do not rewrite earlier buckets.</p><div className="table-scroll"><table><thead><tr><th>Period begins</th><th>Conflict resolution</th><th>Dependency response</th><th>Coordination turnaround</th><th>First-time completion</th></tr></thead><tbody>{trend.map(bucket => <tr key={bucket.from}><th>{new Date(bucket.from).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" })}</th>{["conflicts-resolved", "dependency-response-time", "coordination-turnaround", "first-time-completion"].map(key => { const m = bucket.metrics.find(m => m.key === key)!; return <td key={key}><strong>{metricValue(m.value, m.unit)}</strong><small>{metricSample(m)}</small>{m.limitedSample ? <small>Limited sample</small> : null}</td>; })}</tr>)}</tbody></table></div></details>;
+}
 
 export function VolumeChart({ title, rows }: { title: string; rows: MetricRow[] }) {
   const maximum = Math.max(1, ...rows.map((row) => row.total ?? 0));

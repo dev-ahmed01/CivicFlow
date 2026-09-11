@@ -1,8 +1,9 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { UserRole } from "db";
-import { analyticsFilterSchema, type AnalyticsReport, type MetricRow } from "@civicos/shared";
+import { analyticsFilterSchema, insightsPresetSchema, insightsPeriods, type AnalyticsReport, type MetricRow } from "@civicos/shared";
 import { requireAuth, requirePasswordResetComplete, requireRole } from "../auth/middleware";
 import { buildAnalyticsReport, buildPublicDashboard } from "./service";
+import { buildOperationalAnalytics } from "./operational-service";
 
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>;
 const asyncRoute = (handler: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => {
@@ -113,6 +114,18 @@ export function createAnalyticsRouter(): Router {
       return;
     }
     response.json(await buildAnalyticsReport({ ...parsed.data, agencyId: request.auth.agencyId }));
+  }));
+
+  router.get("/analytics/project-head/operations", requireAuth, requireRole(UserRole.PROJECT_HEAD), requirePasswordResetComplete, asyncRoute(async (request, response) => {
+    if (!request.auth?.agencyId) { response.status(403).json({ error: "Project Head account is missing an agency" }); return; }
+    const parsed = analyticsFilterSchema.safeParse({ wardId: request.query.wardId || undefined, categoryId: request.query.categoryId || undefined, from: request.query.from || undefined, to: request.query.to || undefined });
+    const preset = insightsPresetSchema.safeParse(request.query.preset || (request.query.from || request.query.to ? "custom" : "last7"));
+    if (!parsed.success || !preset.success) { response.status(400).json({ error: "Invalid Insights filter" }); return; }
+    const now = new Date();
+    try { insightsPeriods(preset.data, now, typeof request.query.from === "string" ? request.query.from : undefined, typeof request.query.to === "string" ? request.query.to : undefined); }
+    catch (error) { response.status(400).json({ error: error instanceof Error ? error.message : "Invalid period" }); return; }
+    response.setHeader("Cache-Control", "private, no-store");
+    response.json(await buildOperationalAnalytics({ ...parsed.data, agencyId: request.auth.agencyId }, now, preset.data));
   }));
 
   return router;

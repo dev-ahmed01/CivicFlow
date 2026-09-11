@@ -30,8 +30,8 @@ const hoursAgo = (n: number) => new Date(seedNow.getTime() - n * 3_600_000);
 const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
 const demoSeedMode = process.argv.includes("--reset") ? "reset" : process.env.DEMO_SEED_MODE ?? "if_empty";
 
-if (demoSeedMode !== "reset" && demoSeedMode !== "if_empty" && demoSeedMode !== "team_only") {
-  throw new Error("DEMO_SEED_MODE must be reset, if_empty, or team_only");
+if (!["reset", "if_empty", "team_only", "insights_only"].includes(demoSeedMode)) {
+  throw new Error("DEMO_SEED_MODE must be reset, if_empty, team_only, or insights_only");
 }
 
 if (process.env.NODE_ENV === "production" && demoInternalPassword === "CivicOS@123") {
@@ -121,6 +121,7 @@ const routingRules = [
 ] as const;
 
 const systemConfigs = [
+  { key: "analytics.limited_sample_threshold", value: 5, description: "Insights shows Limited sample below this denominator or sample size." },
   { key: "auth.otp_max_attempts", value: 5, description: "Maximum failed verification attempts for one OTP challenge" },
   // Delta §6 — inputs for the explicitly simulated restoration-savings formula.
   { key: "road.simulated_restoration_cost_per_meter", value: 1800, description: "Illustrative road restoration cost per affected metre in INR; never presented as measured" },
@@ -1120,7 +1121,73 @@ async function syncCampusDemo(): Promise<void> {
   }
 }
 
+// Insights §29: optional local-only demo records. Stable IDs + marker make this additive and idempotent.
+async function seedInsightsDemo(): Promise<void> {
+  await prisma.$queryRaw`SELECT pg_advisory_xact_lock(7240922)::text`;
+  if (await prisma.systemConfig.findUnique({ where: { key: "demo.insights.v1" } })) return;
+  const agencyId = ids.agencies.pwd;
+  const head = await prisma.user.findFirst({ where: { agencyId, role: "PROJECT_HEAD" } });
+  const engineer = await prisma.user.findFirst({ where: { agencyId, role: "ENGINEER" } });
+  const citizen = await prisma.user.findFirst({ where: { role: "CITIZEN" } });
+  const category = await prisma.category.findFirst({ where: { primaryAgencyId: agencyId } });
+  const ward = await prisma.ward.findFirst({ where: { id: demoWardIds.jakkasandra } });
+  const counterpart = await prisma.agency.findFirst({ where: { id: { not: agencyId } } });
+  if (!head || !engineer || !citizen || !category || !ward || !counterpart) throw new Error("Provision the normal local demo reference data before Insights demo records");
+  const key = (n: number) => `1d000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const shift = (date: Date, hours: number) => new Date(date.getTime() + hours * 3600000);
+  const segmentId = key(1);
+  await prisma.$executeRaw`INSERT INTO "RoadSegment" ("id", "roadName", "geometry", "wardId", "surfaceType") VALUES (${segmentId}::uuid, 'Insights demo — Jakkasandra service road', ST_GeomFromText('LINESTRING(77.439 12.638,77.442 12.639)',4326), ${ward.id}::uuid, 'Asphalt')`;
+  for (const [period, age] of [2, 9, 32].entries()) {
+    const event = daysAgo(age), early = shift(event, -96);
+    for (let index = 0; index < 4; index++) {
+      const serial = 100 + period * 100 + index * 20;
+      const projectId = key(serial), ticketId = key(serial + 1), interventionId = key(serial + 2), conflictId = key(serial + 3), roadId = key(serial + 4);
+      const isClosed = index < 2, rework = index === (period === 0 ? 2 : 1);
+      const title = `[Insights demo] ${["Jakkasandra drain restoration", "Service-road surface repair", "Culvert repair and inspection", "Utility crossing coordination"][index]}`;
+      const started = shift(event, index === 3 ? -12 : 2);
+      await prisma.$executeRaw`INSERT INTO "Ticket" ("id", "referenceNumber", "categoryId", "reporterId", "assignedAgencyId", "coordinates", "wardId", "state", "title", "address", "createdAt", "updatedAt") VALUES (${ticketId}::uuid, ${`INS-T-${period}-${index}`}, ${category.id}::uuid, ${citizen.id}::uuid, ${agencyId}::uuid, ST_SetSRID(ST_MakePoint(77.440,12.638),4326), ${ward.id}::uuid, ${isClosed ? "CLOSED" : "WORK_IN_PROGRESS"}::"TicketState", ${title}, 'Jakkasandra — deterministic demo record', ${early}, ${event})`;
+      await prisma.project.create({ data: { id: projectId, referenceNumber: `INS-W-${period}-${index}`, ticketId, categoryId: category.id, agencyId, ownerProjectHeadId: head.id, engineerId: engineer.id, wardId: ward.id, title, createdAt: early, state: isClosed ? "CLOSED" : "ACTIVE", actualStart: started, actualCompletion: isClosed ? shift(event, 8) : null, plannedStart: started, plannedEnd: shift(event, 24) } });
+      await prisma.projectStateTransition.createMany({ data: [
+        { projectId, toState: "CREATED", createdAt: early, reason: "INSIGHTS_DEMO", actedById: head.id },
+        { projectId, fromState: "CREATED", toState: "ACTIVE", createdAt: started, reason: "INSIGHTS_DEMO", actedById: engineer.id },
+        ...(isClosed ? [{ projectId, fromState: ProjectState.ACTIVE, toState: ProjectState.COMPLETED, createdAt: shift(event, 8), reason: "INSIGHTS_DEMO", actedById: engineer.id }, { projectId, fromState: ProjectState.COMPLETED, toState: ProjectState.CLOSED, createdAt: shift(event, 16), reason: "INSIGHTS_DEMO", actedById: head.id }] : []),
+      ] });
+      if (isClosed) await prisma.ticketStateTransition.createMany({ data: [{ ticketId, toState: "RESOLVED", reason: "INSIGHTS_DEMO", actedById: head.id, createdAt: shift(event, 14) }, { ticketId, fromState: "RESOLVED", toState: "CLOSED", reason: "INSIGHTS_DEMO", actedById: head.id, createdAt: shift(event, 16) }] });
+      await prisma.intervention.create({ data: { id: interventionId, projectId, segmentId, requestingAgencyId: agencyId, purpose: "resurfacing", plannedStart: started, plannedEnd: shift(event, 24), affectedLengthM: 75 + index * 23, startOffsetM: index * 100, createdAt: early } });
+      await prisma.roadConflictLog.create({ data: { id: roadId, projectId, segmentId, projectAgencyId: agencyId, type: index === 1 ? "DUPLICATE_INTERVENTION" : "REPEATED_EXCAVATION_RISK", severity: "MEDIUM", reason: "Deterministic demo: recently restored utility crossing requires coordination", fingerprint: serial.toString(16).padStart(64, "0"), createdAt: event } });
+      // A generic pair uses another scoped demo work only after it exists.
+      if (index > 0) await prisma.conflictLog.create({ data: { id: conflictId, projectId, conflictingProjectId: key(serial - 20), projectAgencyId: agencyId, conflictingAgencyId: agencyId, projectTimelineStart: early, projectTimelineEnd: shift(event, 24), conflictingTimelineStart: early, conflictingTimelineEnd: shift(event, 24), overlapStart: started, overlapEnd: shift(event, 24), locationDescription: "Insights demo shared service road", severity: "PROMINENT", timelineFingerprint: (serial + 1).toString(16).padStart(64, "0"), createdAt: event } });
+      const dependencyId = key(serial + 5), responseHours = (period === 0 ? 6 : 10) + index;
+      await prisma.dependency.create({ data: { id: dependencyId, projectId, requestingAgencyId: agencyId, respondingAgencyId: counterpart.id, state: index === 3 ? "PENDING_RESPONSE" : "FULFILLED", requirement: "Insights demo utility isolation and joint site visit", deadline: shift(event, 18), createdAt: event, respondedAt: index === 3 ? null : shift(event, responseHours) } });
+      await prisma.dependencyStateTransition.createMany({ data: [{ dependencyId, toState: "PENDING_RESPONSE", createdAt: event, actedById: head.id, reason: "INSIGHTS_DEMO" }, ...(index === 3 ? [] : [{ dependencyId, fromState: DependencyState.PENDING_RESPONSE, toState: DependencyState.ASSIGNED, createdAt: shift(event, responseHours), actedById: head.id, reason: "INSIGHTS_DEMO" }, { dependencyId, fromState: DependencyState.ASSIGNED, toState: DependencyState.FULFILLED, createdAt: shift(event, responseHours + 3), actedById: head.id, reason: "INSIGHTS_DEMO" }])] });
+      const requestId = key(serial + 6), resolved = index < (period === 0 ? 3 : 2), closedAt = resolved ? shift(event, responseHours + 5) : null;
+      await prisma.coordinationRequest.create({ data: { id: requestId, projectId, dependencyId, roadConflictLogId: roadId, conflictLogId: index > 0 ? conflictId : null, requestingAgencyId: agencyId, respondingAgencyId: counterpart.id, createdById: head.id, requestTypeKey: "SCHEDULE_ALIGNMENT", subject: "Insights demo joint execution window", details: "Deterministic demo coordination record", responseDeadline: shift(event, 18), status: resolved ? "CLOSED" : "SENT", sentAt: event, closedAt, createdAt: event } });
+      await prisma.coordinationEntry.create({ data: { requestId, senderId: head.id, senderAgencyId: agencyId, action: "SENT", toStatus: "SENT", createdAt: event } });
+      if (closedAt) await prisma.coordinationEntry.create({ data: { requestId, senderId: head.id, senderAgencyId: agencyId, action: "CLOSED", fromStatus: "SENT", toStatus: "CLOSED", createdAt: closedAt } });
+      if (index < 3) {
+        const evidenceId = key(serial + 7);
+        await prisma.completionEvidence.create({ data: { id: evidenceId, projectId, ticketId, submittedById: engineer.id, photoUrl: "https://example.invalid/insights-demo-evidence.jpg", objectKey: `insights-demo/${evidenceId}`, contentType: "image/jpeg", notes: "Demo evidence metadata; no real completion photograph. Illustrative workflow only.", createdAt: shift(event, 8), uploadedAt: shift(event, 9) } });
+        await prisma.completionVerification.create({ data: { completionEvidenceId: evidenceId, validatorId: citizen.id, decision: rework ? "REWORK_REQUESTED" : "VERIFIED", note: "Deterministic demo decision", createdAt: shift(event, 12) } });
+      }
+      if (index < 2) {
+        const recommendationId = key(serial + 8);
+        await prisma.sequencingRecommendation.create({ data: { id: recommendationId, segmentId, projectIds: [projectId], proposedOrder: [{ projectId, interventionId, purpose: "resurfacing" }], explanation: "Demo: coordinate utility isolation before final restoration", ruleTrace: [{ rule: 1, explanation: "Demo prerequisite completion before restoration" }], fingerprint: (serial + 2).toString(16).padStart(64, "0"), createdAt: event } });
+        await prisma.sequencingRecommendationLog.create({ data: { recommendationId, segmentId, proposedOrder: [{ projectId, interventionId, purpose: "resurfacing" }], outcome: "ACCEPTED", actedById: head.id, actedAt: shift(event, 4) } });
+      }
+    }
+  }
+  await prisma.systemConfig.upsert({ where: { key: "analytics.limited_sample_threshold" }, create: { key: "analytics.limited_sample_threshold", value: 5, description: "Insights limited sample denominator" }, update: {} });
+  await prisma.systemConfig.create({ data: { key: "demo.insights.v1", value: seedNow.toISOString(), description: "Additive Insights demo fixture timestamp; never present these as measured real-world impact" } });
+}
+
 async function main(): Promise<void> {
+  if (demoSeedMode === "insights_only") {
+    const host = new URL(process.env.DATABASE_URL ?? "").hostname;
+    if (!["localhost", "127.0.0.1", "[::1]"].includes(host) || process.env.NODE_ENV === "production") throw new Error("Insights demo records may only be added to a local demo database");
+    await client.$transaction(async transaction => { prisma = transaction; await seedInsightsDemo(); }, { timeout: 60000 });
+    console.log("Additive Insights demo provisioning complete; existing records preserved.");
+    return;
+  }
   if (demoSeedMode === "if_empty") {
     const occupied = await client.user.count() + await client.agency.count() + await client.ticket.count() + await client.project.count();
     if (occupied) {

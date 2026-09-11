@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-11T16:21:53.909Z",
+  "revision": "5c5faf0-working-tree",
+  "suites": [
+    {
+      "name": "Conflict detection",
+      "scope": "Generic production conflict engine against controlled PostGIS project pairs; date, radius, ward, state and geometry cases.",
+      "correct": 10,
+      "total": 10,
+      "cases": [
+        {
+          "name": "Near, full date overlap",
+          "expected": "true",
+          "actual": "true",
+          "passed": true
+        },
+        {
+          "name": "Near, partial date overlap",
+          "expected": "true",
+          "actual": "true",
+          "passed": true
+        },
+        {
+          "name": "Inclusive touching dates",
+          "expected": "true",
+          "actual": "true",
+          "passed": true
+        },
+        {
+          "name": "Near, disjoint dates",
+          "expected": "false",
+          "actual": "false",
+          "passed": true
+        },
+        {
+          "name": "Far, overlapping dates",
+          "expected": "false",
+          "actual": "false",
+          "passed": true
+        },
+        {
+          "name": "Far, same ward",
+          "expected": "true",
+          "actual": "true",
+          "passed": true
+        },
+        {
+          "name": "Cancelled candidate",
+          "expected": "false",
+          "actual": "false",
+          "passed": true
+        },
+        {
+          "name": "Missing candidate dates",
+          "expected": "false",
+          "actual": "false",
+          "passed": true
+        },
+        {
+          "name": "Outside radius",
+          "expected": "false",
+          "actual": "false",
+          "passed": true
+        },
+        {
+          "name": "Inside radius",
+          "expected": "true",
+          "actual": "true",
+          "passed": true
+        }
+      ],
+      "confusion": {
+        "tp": 5,
+        "fp": 0,
+        "tn": 5,
+        "fn": 0
+      }
+    },
+    {
+      "name": "Agency routing",
+      "scope": "Production category routing with persisted configured categories and ticket state transitions.",
+      "correct": 6,
+      "total": 6,
+      "cases": [
+        {
+          "name": "Configured category 1",
+          "expected": "[\"be000000-0000-4000-8000-000000000010\",\"be000000-0000-4000-8000-000000000010\",\"ROUTED_TO_AGENCY\"]",
+          "actual": "[\"be000000-0000-4000-8000-000000000010\",\"be000000-0000-4000-8000-000000000010\",\"ROUTED_TO_AGENCY\"]",
+          "passed": true
+        },
+        {
+          "name": "Configured category 2",
+          "expected": "[\"be000000-0000-4000-8000-000000000011\",\"be000000-0000-4000-8000-000000000011\",\"ROUTED_TO_AGENCY\"]",
+          "actual": "[\"be000000-0000-4000-8000-000000000011\",\"be000000-0000-4000-8000-000000000011\",\"ROUTED_TO_AGENCY\"]",
+          "passed": true
+        },
+        {
+          "name": "Configured category 3",
+          "expected": "[\"be000000-0000-4000-8000-000000000012\",\"be000000-0000-4000-8000-000000000012\",\"ROUTED_TO_AGENCY\"]",
+          "actual": "[\"be000000-0000-4000-8000-000000000012\",\"be000000-0000-4000-8000-000000000012\",\"ROUTED_TO_AGENCY\"]",
+          "passed": true
+        },
+        {
+          "name": "Configured category 4",
+          "expected": "[\"be000000-0000-4000-8000-000000000010\",\"be000000-0000-4000-8000-000000000010\",\"ROUTED_TO_AGENCY\"]",
+          "actual": "[\"be000000-0000-4000-8000-000000000010\",\"be000000-0000-4000-8000-000000000010\",\"ROUTED_TO_AGENCY\"]",
+          "passed": true
+        },
+        {
+          "name": "Configured category 5",
+          "expected": "[\"be000000-0000-4000-8000-000000000011\",\"be000000-0000-4000-8000-000000000011\",\"ROUTED_TO_AGENCY\"]",
+          "actual": "[\"be000000-0000-4000-8000-000000000011\",\"be000000-0000-4000-8000-000000000011\",\"ROUTED_TO_AGENCY\"]",
+          "passed": true
+        },
+        {
+          "name": "Configured category 6",
+          "expected": "[\"be000000-0000-4000-8000-000000000012\",\"be000000-0000-4000-8000-000000000012\",\"ROUTED_TO_AGENCY\"]",
+          "actual": "[\"be000000-0000-4000-8000-000000000012\",\"be000000-0000-4000-8000-000000000012\",\"ROUTED_TO_AGENCY\"]",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Road sequencing",
+      "scope": "Production deterministic recommendation builder; prerequisites, utility/restoration order and cancelled works.",
+      "correct": 6,
+      "total": 6,
+      "cases": [
+        {
+          "name": "Prerequisite precedes dependent",
+          "expected": "[\"be000000-0000-4000-8000-000000000160\",\"be000000-0000-4000-8000-000000000161\",\"be000000-0000-4000-8000-000000000162\"]",
+          "actual": "[\"be000000-0000-4000-8000-000000000160\",\"be000000-0000-4000-8000-000000000161\",\"be000000-0000-4000-8000-000000000162\"]",
+          "passed": true
+        },
+        {
+          "name": "Order independent of input arrangement",
+          "expected": "[\"be000000-0000-4000-8000-000000000160\",\"be000000-0000-4000-8000-000000000161\",\"be000000-0000-4000-8000-000000000162\"]",
+          "actual": "[\"be000000-0000-4000-8000-000000000160\",\"be000000-0000-4000-8000-000000000161\",\"be000000-0000-4000-8000-000000000162\"]",
+          "passed": true
+        },
+        {
+          "name": "Single utility then restoration",
+          "expected": "[\"be000000-0000-4000-8000-000000000160\",\"be000000-0000-4000-8000-000000000162\"]",
+          "actual": "[\"be000000-0000-4000-8000-000000000160\",\"be000000-0000-4000-8000-000000000162\"]",
+          "passed": true
+        },
+        {
+          "name": "No restoration, no recommendation",
+          "expected": "null",
+          "actual": "null",
+          "passed": true
+        },
+        {
+          "name": "No utility, no recommendation",
+          "expected": "null",
+          "actual": "null",
+          "passed": true
+        },
+        {
+          "name": "Cancelled utility excluded",
+          "expected": "null",
+          "actual": "null",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Spatial / ward resolution",
+      "scope": "Production planned-work ward resolver against controlled polygons using real PostGIS ST_Covers; synthetic geography, not a survey of Bengaluru boundary accuracy.",
+      "correct": 8,
+      "total": 8,
+      "cases": [
+        {
+          "name": "West interior",
+          "expected": "\"be000000-0000-4000-8000-000000000001\"",
+          "actual": "\"be000000-0000-4000-8000-000000000001\"",
+          "passed": true
+        },
+        {
+          "name": "East interior",
+          "expected": "\"be000000-0000-4000-8000-000000000002\"",
+          "actual": "\"be000000-0000-4000-8000-000000000002\"",
+          "passed": true
+        },
+        {
+          "name": "Outer boundary included",
+          "expected": "\"be000000-0000-4000-8000-000000000001\"",
+          "actual": "\"be000000-0000-4000-8000-000000000001\"",
+          "passed": true
+        },
+        {
+          "name": "Corner included",
+          "expected": "\"be000000-0000-4000-8000-000000000001\"",
+          "actual": "\"be000000-0000-4000-8000-000000000001\"",
+          "passed": true
+        },
+        {
+          "name": "Shared edge uses stable ID",
+          "expected": "\"be000000-0000-4000-8000-000000000001\"",
+          "actual": "\"be000000-0000-4000-8000-000000000001\"",
+          "passed": true
+        },
+        {
+          "name": "Outside both wards",
+          "expected": "null",
+          "actual": "null",
+          "passed": true
+        },
+        {
+          "name": "Outside above",
+          "expected": "null",
+          "actual": "null",
+          "passed": true
+        },
+        {
+          "name": "Just inside west edge",
+          "expected": "\"be000000-0000-4000-8000-000000000001\"",
+          "actual": "\"be000000-0000-4000-8000-000000000001\"",
+          "passed": true
+        }
+      ]
+    }
+  ]
+}

@@ -7,6 +7,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
+    "benchmark:insights": "pnpm --filter api benchmark:insights",
     "build": "turbo run build",
     "build:mobile:deps": "turbo run build --filter=mobile... --filter=!mobile",
     "infra:up": "docker compose up -d postgres minio minio-init",

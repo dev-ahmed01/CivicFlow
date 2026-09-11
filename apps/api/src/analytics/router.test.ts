@@ -33,6 +33,13 @@ vi.mock("./operational-service", () => ({
 
 import { createAnalyticsRouter, reportCsv, simplePdf } from "./router";
 import express from "express";
+import { buildOperationalAnalytics } from "./operational-service";
+
+function privateApp(role: "PROJECT_HEAD" | "ENGINEER" | "CITIZEN" = "PROJECT_HEAD", agencyId: string | null = "20000000-0000-4000-8000-000000000001", reset = false) {
+  const app = express();
+  app.use((req, _res, next) => { req.auth = { userId: "u", role, agencyId, wardId: null, mustResetPassword: reset }; next(); });
+  app.use(createAnalyticsRouter()); return app;
+}
 
 const report: AnalyticsReport = {
   generatedAt: publicDashboard.generatedAt,
@@ -64,6 +71,23 @@ describe("Phase 10 analytics surfaces", () => {
     const app = express(); app.use(createAnalyticsRouter());
     await request(app).get("/analytics/city-wide").expect(404);
     await request(app).get("/analytics/city-wide/operations").expect(404);
+  });
+
+  it("requires authentication, Project Head role, agency and completed password reset", async () => {
+    const anonymous = express(); anonymous.use(createAnalyticsRouter());
+    await request(anonymous).get("/analytics/project-head/operations").expect(401);
+    for (const app of [privateApp("ENGINEER"), privateApp("CITIZEN"), privateApp("PROJECT_HEAD", null), privateApp("PROJECT_HEAD", "a", true)]) await request(app).get("/analytics/project-head/operations").expect(403);
+    expect(buildOperationalAnalytics).not.toHaveBeenCalled();
+  });
+  it("overrides arbitrary browser agency scope with authenticated agency", async () => {
+    vi.mocked(buildOperationalAnalytics).mockResolvedValue({ metrics: [] } as unknown as Awaited<ReturnType<typeof buildOperationalAnalytics>>);
+    const response = await request(privateApp()).get("/analytics/project-head/operations?preset=last7&agencyId=foreign&wardId=10000000-0000-4000-8000-000000000001&categoryId=30000000-0000-4000-8000-000000000001").expect(200);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    expect(buildOperationalAnalytics).toHaveBeenCalledWith({ agencyId: "20000000-0000-4000-8000-000000000001", wardId: "10000000-0000-4000-8000-000000000001", categoryId: "30000000-0000-4000-8000-000000000001" }, expect.any(Date), "last7");
+  });
+  it.each(["preset=invalid", "wardId=invalid", "preset=custom&from=2026-02-30&to=2026-03-01", "preset=custom&from=2026-01-01", "preset=custom&from=2026-01-10&to=2026-01-01"])("rejects invalid Insights filter %s", async query => {
+    await request(privateApp()).get(`/analytics/project-head/operations?${query}`).expect(400);
+    expect(buildOperationalAnalytics).not.toHaveBeenCalled();
   });
 
   it("exports operational rows without a fabricated financial-savings claim", () => {
