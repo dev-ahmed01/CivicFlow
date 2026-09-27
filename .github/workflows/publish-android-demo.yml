@@ -1,0 +1,36 @@
+name: Publish City Connect SIH APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-android-demo.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download successful APK artifact
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download 36333370694             --repo "${{ github.repository }}"             --name City-Connect-SIH-Android             --dir dist
+          test -s dist/City-Connect-SIH.apk
+
+      - name: Publish demo release
+        run: |
+          set -euo pipefail
+          TAG="city-connect-sih-demo-2026-09-27"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/City-Connect-SIH.apk               --repo "${{ github.repository }}"               --clobber
+          else
+            gh release create "$TAG" dist/City-Connect-SIH.apk               --repo "${{ github.repository }}"               --title "City Connect SIH 2026 Demo APK"               --notes "Installable Android demo build for City Connect. This build uses the hosted Render backend and does not require Expo Go or a development server."
+          fi
