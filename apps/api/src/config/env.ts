@@ -108,16 +108,18 @@ const envSchema = baseEnvSchema.transform((env) => ({
   if (env.CLIP_MODE === "hosted" && !env.CLIP_INFERENCE_URL) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["CLIP_INFERENCE_URL"], message: "Hosted CLIP mode requires CLIP_INFERENCE_URL" });
   }
-  for (const [key, value] of [["S3_ENDPOINT", env.S3_ENDPOINT], ["S3_PUBLIC_BASE_URL", env.S3_PUBLIC_BASE_URL]] as const) {
-    const parsed = new URL(value);
-    const hostname = parsed.hostname.toLowerCase();
-    const privateIpv4 = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
-    if (parsed.protocol !== "https:" || hostname === "localhost" || privateIpv4) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} must be a public HTTPS URL in production` });
+  if (env.DEPLOYMENT_PROFILE === "production") {
+    for (const [key, value] of [["S3_ENDPOINT", env.S3_ENDPOINT], ["S3_PUBLIC_BASE_URL", env.S3_PUBLIC_BASE_URL]] as const) {
+      const parsed = new URL(value);
+      const hostname = parsed.hostname.toLowerCase();
+      const privateIpv4 = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+      if (parsed.protocol !== "https:" || hostname === "localhost" || privateIpv4) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} must be a public HTTPS URL in production` });
+      }
     }
-  }
-  if (env.S3_ACCESS_KEY_ID === "civicos-local" || env.S3_SECRET_ACCESS_KEY === "civicos-local-secret") {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["S3_ACCESS_KEY_ID"], message: "Local object-storage credentials are forbidden in production" });
+    if (env.S3_ACCESS_KEY_ID === "civicos-local" || env.S3_SECRET_ACCESS_KEY === "civicos-local-secret") {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["S3_ACCESS_KEY_ID"], message: "Local object-storage credentials are forbidden in production" });
+    }
   }
   if (env.CORS_ORIGINS) {
     for (const origin of env.CORS_ORIGINS.split(",").map((item) => item.trim())) {
@@ -131,8 +133,9 @@ const envSchema = baseEnvSchema.transform((env) => ({
 export type AppEnv = z.infer<typeof envSchema>;
 
 export function parseEnv(values: NodeJS.ProcessEnv): AppEnv {
-  if (values.NODE_ENV === "production" || values.DEPLOYMENT_PROFILE === "free_demo" || values.DEPLOYMENT_PROFILE === "production") {
-    // Presigning cannot safely use local defaults on Railway or another deployment.
+  const profile = values.DEPLOYMENT_PROFILE ?? (values.NODE_ENV === "production" ? "production" : "local");
+  if (profile === "production") {
+    // Production presigning must use explicitly configured remote object storage.
     deployedStorageEnvSchema.parse(values);
   }
   return envSchema.parse(values);
