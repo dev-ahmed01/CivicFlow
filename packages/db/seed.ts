@@ -31,7 +31,7 @@ const seedNow = new Date();
 const daysFromNow = (n: number) => new Date(seedNow.getTime() + n * 86_400_000);
 const daysAgo = (n: number) => daysFromNow(-n);
 const hoursAgo = (n: number) => new Date(seedNow.getTime() - n * 3_600_000);
-const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CivicOS@123";
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? (process.env.DEPLOYMENT_PROFILE === "free_demo" ? "CityConnectDemo@2026" : "CivicOS@123");
 const demoSeedMode = process.argv.includes("--reset") ? "reset" : process.env.DEMO_SEED_MODE ?? "if_empty";
 
 if (!["reset", "if_empty", "team_only", "insights_only", "road_scans_only"].includes(demoSeedMode)) {
@@ -1204,6 +1204,19 @@ async function main(): Promise<void> {
     if (occupied) {
       await client.$transaction(async (transaction) => { prisma = transaction; await syncCampusDemo(); }, { timeout: 30000 });
       console.log("Application seed skipped; additive campus demo reference data synchronized. Existing work preserved.");
+      return;
+    }
+
+    if (process.env.DEPLOYMENT_PROFILE === "free_demo") {
+      await client.$transaction(async (transaction) => {
+        prisma = transaction;
+        await transaction.$queryRaw`SELECT pg_advisory_xact_lock(7240911)::text`;
+        const stillEmpty = await transaction.user.count() + await transaction.agency.count() + await transaction.ticket.count() + await transaction.project.count() === 0;
+        if (!stillEmpty) return;
+        await seedDataset();
+        await syncCampusDemo();
+      }, { timeout: 120000, maxWait: 10000 });
+      console.log("Free-demo dataset provisioned into an empty database; existing data was not deleted.");
       return;
     }
   }
