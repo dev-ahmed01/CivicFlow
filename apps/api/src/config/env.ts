@@ -147,6 +147,11 @@ export function parseEnv(values: NodeJS.ProcessEnv): AppEnv {
         ...values,
         JWT_ACCESS_SECRET: values.JWT_ACCESS_SECRET ?? "city-connect-free-demo-access-secret-2026",
         JWT_REFRESH_SECRET: values.JWT_REFRESH_SECRET ?? "city-connect-free-demo-refresh-secret-2026",
+        OTP_PROVIDER: values.OTP_PROVIDER ?? "demo",
+        DEMO_AUTH_MODE: values.DEMO_AUTH_MODE ?? "fixed_otp",
+        DEMO_AUTH_CODE: values.DEMO_AUTH_CODE ?? "123456",
+        CLIP_MODE: values.CLIP_MODE ?? "demo_deterministic",
+        POTHOLE_SCAN_PROVIDER: values.POTHOLE_SCAN_PROVIDER ?? "demo",
       }
     : values;
 
