@@ -28,13 +28,26 @@ import type {
 import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "expo-secure-store";
 
+const hostedApiUrl = "https://city-connect-backend-ln7h.onrender.com";
+
 function resolveApiUrl(): string {
-  const configured = process.env.EXPO_PUBLIC_API_URL;
-  if (configured) return configured;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("EXPO_PUBLIC_API_URL is required for production mobile builds");
+  const configured = process.env.EXPO_PUBLIC_API_URL?.trim();
+  const allowLocal = process.env.EXPO_PUBLIC_ALLOW_LOCAL_API === "true";
+  if (!configured) return hostedApiUrl;
+
+  try {
+    const parsed = new URL(configured);
+    const hostname = parsed.hostname.toLowerCase();
+    const privateIpv4 = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+    const localAddress = hostname === "localhost" || privateIpv4;
+    const obsoleteRailway = hostname.endsWith(".railway.app") || hostname.endsWith(".up.railway.app");
+
+    if ((!allowLocal && localAddress) || obsoleteRailway) return hostedApiUrl;
+    if (process.env.NODE_ENV === "production" && parsed.protocol !== "https:") return hostedApiUrl;
+    return configured.replace(/\/$/, "");
+  } catch {
+    return hostedApiUrl;
   }
-  return "http://10.0.2.2:4000";
 }
 
 const apiUrl = resolveApiUrl();
