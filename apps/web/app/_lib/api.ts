@@ -1,6 +1,33 @@
 "use client";
 
-export const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const hostedApiUrl = "https://city-connect-backend-ln7h.onrender.com";
+
+function resolveApiUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (!configured) return hostedApiUrl;
+
+  try {
+    const parsed = new URL(configured);
+    const hostname = parsed.hostname.toLowerCase();
+    const privateIpv4 = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+    const obsoleteRailway = hostname.endsWith(".railway.app") || hostname.endsWith(".up.railway.app");
+
+    if (process.env.NODE_ENV === "production" && (
+      parsed.protocol !== "https:" ||
+      hostname === "localhost" ||
+      privateIpv4 ||
+      obsoleteRailway
+    )) {
+      return hostedApiUrl;
+    }
+
+    return configured.replace(/\/$/, "");
+  } catch {
+    return hostedApiUrl;
+  }
+}
+
+export const apiUrl = resolveApiUrl();
 
 type ApiErrorBody = { error?: string };
 
