@@ -13,7 +13,7 @@ import {
 import { createOtpProvider, type OtpProvider } from "./auth/otp-provider";
 import { getEnv } from "./config/env";
 import { createImageRelevanceService, type ImageRelevanceService } from "./images/relevance";
-import { S3CompatibleStorage, type ImageStorage } from "./images/storage";
+import { EphemeralDemoStorage, S3CompatibleStorage, type ImageStorage } from "./images/storage";
 import { createTicketsRouter } from "./tickets/router";
 import { createValidationJobsRouter, createValidationsRouter } from "./validations/router";
 import { createAgencyRouter } from "./agency/router";
@@ -86,7 +86,48 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   app.get("/workflow-options", requireAuth, requireRole(UserRole.PROJECT_HEAD, UserRole.ENGINEER), (request, response, next) => {
     void demoWorkflowEnabled().then((demoDefaults) => response.json({ demoDefaults })).catch(next);
   });
-  const imageStorage = resolvedDependencies.imageStorage ?? new S3CompatibleStorage(env);
+  const imageStorage = resolvedDependencies.imageStorage ?? (
+    env.DEPLOYMENT_PROFILE === "free_demo"
+      ? new EphemeralDemoStorage(env.PUBLIC_API_URL, env.JWT_ACCESS_SECRET)
+      : new S3CompatibleStorage(env)
+  );
+
+  if (imageStorage instanceof EphemeralDemoStorage) {
+    app.use("/demo-storage", express.raw({ type: "*/*", limit: "20mb" }), (request, response) => {
+      const objectKey = decodeURIComponent(request.path.replace(/^\//, ""));
+      if (!objectKey) { response.sendStatus(404); return; }
+
+      if (request.method === "PUT") {
+        const contentType = request.query.contentType;
+        const expires = Number(request.query.expires);
+        const token = request.query.token;
+        if (typeof contentType !== "string" || typeof token !== "string" || !Buffer.isBuffer(request.body)) {
+          response.status(400).json({ error: "Invalid demo upload request" });
+          return;
+        }
+        const accepted = imageStorage.acceptUpload(objectKey, contentType, expires, token, new Uint8Array(request.body));
+        if (!accepted) { response.status(403).json({ error: "Invalid or expired upload" }); return; }
+        response.sendStatus(200);
+        return;
+      }
+
+      if (request.method === "GET") {
+        const expires = Number(request.query.expires);
+        const token = request.query.token;
+        if (typeof token !== "string") { response.sendStatus(403); return; }
+        const stored = imageStorage.readObject(objectKey, expires, token);
+        if (!stored) { response.sendStatus(404); return; }
+        response.setHeader("Content-Type", stored.contentType);
+        response.setHeader("Cache-Control", "private, max-age=300");
+        response.send(Buffer.from(stored.bytes));
+        return;
+      }
+
+      response.setHeader("Allow", "PUT, GET");
+      response.sendStatus(405);
+    });
+  }
+
   app.use(createTicketsRouter(
     resolvedDependencies.imageRelevance ?? createImageRelevanceService(env),
     imageStorage,
