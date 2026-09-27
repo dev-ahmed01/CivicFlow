@@ -138,7 +138,19 @@ export function parseEnv(values: NodeJS.ProcessEnv): AppEnv {
     // Production presigning must use explicitly configured remote object storage.
     deployedStorageEnvSchema.parse(values);
   }
-  return envSchema.parse(values);
+
+  // The free-demo profile is intentionally self-contained so the public demo
+  // can boot on ephemeral/free infrastructure without copying production
+  // secrets between providers. Production never receives these fallbacks.
+  const resolvedValues = profile === "free_demo"
+    ? {
+        ...values,
+        JWT_ACCESS_SECRET: values.JWT_ACCESS_SECRET ?? "city-connect-free-demo-access-secret-2026",
+        JWT_REFRESH_SECRET: values.JWT_REFRESH_SECRET ?? "city-connect-free-demo-refresh-secret-2026",
+      }
+    : values;
+
+  return envSchema.parse(resolvedValues);
 }
 
 let cachedEnv: AppEnv | undefined;
