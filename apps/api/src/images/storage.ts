@@ -216,6 +216,81 @@ export function inspectUploadBytes(bytes: Uint8Array, contentType: string): bool
   return inspectImageBytes(bytes, normalizedType);
 }
 
+
+interface DemoStoredObject {
+  bytes: Uint8Array;
+  contentType: string;
+}
+
+export class EphemeralDemoStorage implements ImageStorage {
+  private readonly objects = new Map<string, DemoStoredObject>();
+
+  constructor(
+    private readonly publicApiUrl: string,
+    private readonly secret: string,
+    private readonly now = () => Date.now(),
+  ) {}
+
+  private token(value: string): string {
+    return createHmac("sha256", this.secret).update(value).digest("hex");
+  }
+
+  private baseUrl(): string {
+    return this.publicApiUrl.replace(/\/$/, "");
+  }
+
+  async createUpload(objectKey: string, contentType: string): Promise<PresignedUpload> {
+    const expiresInSeconds = 900;
+    const expires = this.now() + expiresInSeconds * 1000;
+    const token = this.token(`PUT\n${objectKey}\n${contentType}\n${expires}`);
+    const query = new URLSearchParams({ contentType, expires: String(expires), token });
+    return {
+      uploadUrl: `${this.baseUrl()}/demo-storage/${encodePath(objectKey)}?${query.toString()}`,
+      publicUrl: `${this.baseUrl()}/demo-storage/${encodePath(objectKey)}`,
+      headers: { "Content-Type": contentType },
+      expiresInSeconds,
+    };
+  }
+
+  createDownload(objectKey: string): string {
+    const expires = this.now() + 15 * 60 * 1000;
+    const token = this.token(`GET\n${objectKey}\n${expires}`);
+    const query = new URLSearchParams({ expires: String(expires), token });
+    return `${this.baseUrl()}/demo-storage/${encodePath(objectKey)}?${query.toString()}`;
+  }
+
+  verifyUpload(objectKey: string, contentType: string): Promise<boolean> {
+    const stored = this.objects.get(objectKey);
+    return Promise.resolve(Boolean(
+      stored &&
+      normalizeContentType(stored.contentType) === normalizeContentType(contentType) &&
+      inspectUploadBytes(stored.bytes, contentType),
+    ));
+  }
+
+  acceptUpload(
+    objectKey: string,
+    contentType: string,
+    expires: number,
+    token: string,
+    bytes: Uint8Array,
+  ): boolean {
+    if (!Number.isFinite(expires) || expires < this.now()) return false;
+    const expected = this.token(`PUT\n${objectKey}\n${contentType}\n${expires}`);
+    if (token !== expected || bytes.byteLength <= 0 || bytes.byteLength > 20 * 1024 * 1024) return false;
+    if (!inspectUploadBytes(bytes, contentType)) return false;
+    this.objects.set(objectKey, { bytes: new Uint8Array(bytes), contentType });
+    return true;
+  }
+
+  readObject(objectKey: string, expires: number, token: string): DemoStoredObject | undefined {
+    if (!Number.isFinite(expires) || expires < this.now()) return undefined;
+    const expected = this.token(`GET\n${objectKey}\n${expires}`);
+    if (token !== expected) return undefined;
+    return this.objects.get(objectKey);
+  }
+}
+
 export class S3CompatibleStorage implements ImageStorage {
   private readonly client: S3Client;
 
