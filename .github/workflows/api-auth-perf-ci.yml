@@ -1,0 +1,30 @@
+name: API Auth Performance CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/api-auth-perf-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  api-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build API
+        run: pnpm --filter api build
+      - name: Run auth tests
+        run: pnpm --filter api exec vitest run src/auth/routes.test.ts src/auth/otp-service.test.ts src/auth/otp-provider.test.ts
