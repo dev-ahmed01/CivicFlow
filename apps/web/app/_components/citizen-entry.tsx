@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { citizenApiFetch, clearCitizenSession, getCitizenSession } from "../_lib/citizen-auth";
+import { getCitizenSession } from "../_lib/citizen-auth";
 import { CitizenHome } from "./citizen-home";
 
 export function CitizenEntry() {
@@ -14,17 +14,12 @@ export function CitizenEntry() {
       router.replace("/login");
       return;
     }
-    let active = true;
-    void citizenApiFetch<{ auth?: { role?: string } }>("/protected/me")
-      .then((body) => {
-        if (body.auth?.role !== "CITIZEN") throw new Error("Citizen session expired");
-        if (active) setAuthenticated(true);
-      })
-      .catch(() => {
-        clearCitizenSession();
-        if (active) router.replace("/login");
-      });
-    return () => { active = false; };
+
+    // Login already returned a signed access token. Do not block the citizen
+    // home page on an immediate second /protected/me round trip. Every protected
+    // API call still validates the JWT and the shared API client clears/redirects
+    // the session on 401, so security enforcement remains server-side.
+    setAuthenticated(true);
   }, [router]);
 
   if (!authenticated) {
