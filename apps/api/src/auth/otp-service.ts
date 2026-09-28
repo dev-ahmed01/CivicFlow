@@ -1,5 +1,5 @@
 import { timed } from "../http/timing";
-import { randomInt } from "node:crypto";
+import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import bcrypt from "bcrypt";
 import { prisma, UserRole } from "db";
 import { getEnv } from "../config/env";
@@ -15,6 +15,19 @@ export function resolveOtpCode(env: OtpCodeEnvironment, generate = () => randomI
     return env.DEMO_AUTH_CODE;
   }
   return env.OTP_MOCK_CODE ?? generate();
+}
+
+const demoHashPrefix = "demo-sha256:";
+
+function demoCodeHash(code: string): string {
+  return `${demoHashPrefix}${createHash("sha256").update(code).digest("hex")}`;
+}
+
+function verifyDemoCode(code: string, storedHash: string): boolean {
+  const expected = demoCodeHash(code);
+  const left = Buffer.from(expected);
+  const right = Buffer.from(storedHash);
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 async function configuredMaxAttempts(): Promise<number> {
@@ -43,7 +56,9 @@ export async function requestCitizenOtp(
   }
 
   const code = resolveOtpCode(env);
-  const codeHash = await bcrypt.hash(code, 10);
+  const codeHash = env.DEMO_AUTH_MODE === "fixed_otp"
+    ? demoCodeHash(code)
+    : await bcrypt.hash(code, 10);
   const expiresAt = new Date(Date.now() + env.OTP_TTL_MINUTES * 60_000);
 
   await prisma.$transaction([
@@ -82,7 +97,12 @@ export async function verifyCitizenOtp(phone: string, code: string) {
     throw new Error("Invalid or expired OTP");
   }
 
-  const valid = await timed("otp_compare", () => bcrypt.compare(code, challenge.codeHash));
+  const valid = await timed("otp_compare", async () => {
+    if (getEnv().DEMO_AUTH_MODE === "fixed_otp" && challenge.codeHash.startsWith(demoHashPrefix)) {
+      return verifyDemoCode(code, challenge.codeHash);
+    }
+    return bcrypt.compare(code, challenge.codeHash);
+  });
   if (!valid) {
     await prisma.otpChallenge.update({
       where: { id: challenge.id },
