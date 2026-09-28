@@ -45,19 +45,22 @@ jobs:
             test "$ok" -eq 1
           done
 
-      - name: Accept real pothole photo
+      - name: Accept multiple real road-damage photos
         shell: bash
         run: |
           set -euo pipefail
-          IMAGE_URL="https://raw.githubusercontent.com/dev-ahmed01/CivicFlow/main/packages/db/demo/road-scans/real_sample_01.jpg"
-          started="$(date +%s%3N)"
-          body="$(curl --fail --silent --show-error --max-time 30             -H 'Content-Type: application/json'             -d "{\"imageUrl\":\"$IMAGE_URL\",\"categoryId\":\"$ROAD_CATEGORY_ID\"}"             "$CLIP_URL/infer")"
-          ended="$(date +%s%3N)"
-          elapsed="$((ended-started))"
-          printf '%s' "$body" | jq '{score,pass,reason,model,processingMs}'
-          echo "wall latency ms: $elapsed"
-          printf '%s' "$body" | jq -e '.pass == true and .reason == "MATCH"' >/dev/null
-          test "$elapsed" -lt 15000
+          for sample in real_sample_01 real_sample_02 real_sample_07; do
+            IMAGE_URL="https://raw.githubusercontent.com/dev-ahmed01/CivicFlow/main/packages/db/demo/road-scans/${sample}.jpg"
+            started="$(date +%s%3N)"
+            body="$(curl --fail --silent --show-error --max-time 30 -H 'Content-Type: application/json' -d "{\"imageUrl\":\"$IMAGE_URL\",\"categoryId\":\"$ROAD_CATEGORY_ID\"}" "$CLIP_URL/infer")"
+            ended="$(date +%s%3N)"
+            elapsed="$((ended-started))"
+            echo "$sample"
+            printf '%s' "$body" | jq '{score,pass,reason,model,processingMs}'
+            echo "wall latency ms: $elapsed"
+            printf '%s' "$body" | jq -e '.pass == true and .reason == "MATCH"' >/dev/null
+            test "$elapsed" -lt 15000
+          done
 
       - name: Reject obvious UI screenshot
         shell: bash
