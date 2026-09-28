@@ -1,0 +1,75 @@
+name: City Connect Mobile Photo E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mobile-photo-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  photo-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run mobile photo/report flow
+        shell: bash
+        env:
+          API: https://city-connect-backend-ln7h.onrender.com
+          CATEGORY_ID: 30000000-0000-4000-8000-000000000001
+        run: |
+          set -euo pipefail
+
+          for url in "$API/health" "https://city-connect-clip.onrender.com/health"; do
+            for i in $(seq 1 12); do
+              if curl --fail --silent --show-error --max-time 30 "$url" >/dev/null; then break; fi
+              sleep 8
+            done
+          done
+
+          auth="$(curl --fail --silent --show-error             -H 'Content-Type: application/json'             -d '{"userId":"citizen.jayanagar@cityconnect.local","password":"CityConnectDemo@2026"}'             "$API/auth/citizen/login")"
+          token="$(printf '%s' "$auth" | jq -r '.accessToken')"
+          test -n "$token" && test "$token" != "null"
+
+          presign="$(curl --fail --silent --show-error             -H "Authorization: Bearer $token"             -H 'Content-Type: application/json'             -d "{\"action\":\"presign\",\"categoryId\":\"$CATEGORY_ID\",\"fileName\":\"real-road-damage.jpg\",\"contentType\":\"image/jpeg\"}"             "$API/tickets/image-relevance")"
+          objectKey="$(printf '%s' "$presign" | jq -r '.objectKey')"
+          uploadUrl="$(printf '%s' "$presign" | jq -r '.upload.uploadUrl')"
+          test -n "$objectKey" && test "$objectKey" != "null"
+          test -n "$uploadUrl" && test "$uploadUrl" != "null"
+
+          curl --fail --silent --show-error             -X PUT             -H 'Content-Type: image/jpeg'             --data-binary @packages/db/demo/road-scans/real_sample_01.jpg             "$uploadUrl" >/dev/null
+
+          started="$(date +%s%3N)"
+          validation="$(curl --fail --silent --show-error --max-time 45             -H "Authorization: Bearer $token"             -H 'Content-Type: application/json'             -d "{\"action\":\"complete\",\"categoryId\":\"$CATEGORY_ID\",\"objectKey\":\"$objectKey\",\"fileName\":\"real-road-damage.jpg\",\"contentType\":\"image/jpeg\",\"attempt\":1}"             "$API/tickets/image-relevance")"
+          ended="$(date +%s%3N)"
+          validationMs="$((ended-started))"
+          printf '%s' "$validation" | jq '{relevant,confidence,reason,attemptsRemaining}'
+          echo "photo validation latency: ${validationMs}ms"
+          printf '%s' "$validation" | jq -e '.relevant == true and .reason == "MATCH" and (.validationToken | length > 20)' >/dev/null
+          test "$validationMs" -lt 25000
+          validationToken="$(printf '%s' "$validation" | jq -r '.validationToken')"
+
+          payload="$(jq -nc --arg category "$CATEGORY_ID" --arg validated "$validationToken" '{
+            categoryId:$category,
+            channel:"MOBILE",
+            title:"E2E road damage test",
+            address:"Jayanagar 4th Block, Bengaluru",
+            latitude:12.9299,
+            longitude:77.5844,
+            note:"Automated hosted end-to-end validation",
+            primaryImage:{validationToken:$validated}
+          }')"
+
+          started="$(date +%s%3N)"
+          ticket="$(curl --fail --silent --show-error --max-time 30             -H "Authorization: Bearer $token"             -H 'Content-Type: application/json'             -d "$payload"             "$API/tickets")"
+          ended="$(date +%s%3N)"
+          submitMs="$((ended-started))"
+          echo "ticket submission latency: ${submitMs}ms"
+          printf '%s' "$ticket" | jq '{ticketId,prevalidated,state,statusLabel}'
+          printf '%s' "$ticket" | jq -e '.ticketId != null and .prevalidated == true' >/dev/null
+          test "$submitMs" -lt 12000
