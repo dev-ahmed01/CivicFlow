@@ -459,6 +459,7 @@ export function createTicketsRouter(
           objectKey: input.objectKey,
           fileName: input.fileName,
           contentType: input.contentType,
+          confidence: decision.confidence,
         }),
       } : {}),
     });
@@ -496,16 +497,12 @@ export function createTicketsRouter(
           response.status(422).json({ error: "The validated photo is no longer available. Please choose it again." });
           return;
         }
-        const imageUrl = storage.createDownload(claims.objectKey);
-        const check = await relevance.checkImageRelevance(imageUrl, input.categoryId);
-        const threshold = await getConfigNumber("ai_relevance.pass_threshold");
-        const decision = decideImageRelevance(check, threshold);
-        if (!decision.relevant) {
-          response.status(422).json({ error: "This photo doesn’t appear to match the selected issue.", code: decision.reason });
-          return;
-        }
-        relevanceScore = decision.confidence;
-        relevanceEmbedding = await relevance.getImageEmbedding(imageUrl);
+        // The preflight validation token is signed by this API, bound to the
+        // citizen/category/object, and expires quickly. Do not run the same ML
+        // inference a second time during ticket creation; that doubled mobile
+        // latency and could produce inconsistent decisions for the same photo.
+        relevanceScore = claims.confidence ?? 1;
+        relevanceEmbedding = null;
         primary = claims;
       } catch (error) {
         response.status(422).json({ error: error instanceof Error && error.message === "Invalid image validation token" ? "The photo validation has expired. Please check the photo again." : "We could not check this photo right now. Please try again." });
