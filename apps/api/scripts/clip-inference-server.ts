@@ -1,4 +1,4 @@
-import { AutoProcessor, AutoTokenizer, CLIPModel, RawImage, env as transformersEnv } from "@huggingface/transformers";
+import { pipeline, RawImage, env as transformersEnv } from "@huggingface/transformers";
 import express from "express";
 
 type Category = { id: string; name: string; prompt: string };
@@ -37,29 +37,12 @@ function promptsForCategory(selected: Category): string[] {
   ];
 }
 
-function softmax(values: number[]): number[] {
-  if (!values.length) return [];
-  const max = Math.max(...values);
-  const exps = values.map((value) => Math.exp(value - max));
-  const total = exps.reduce((sum, value) => sum + value, 0);
-  return exps.map((value) => value / total);
-}
-
-function normalize(values: number[]): number[] {
-  const norm = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0));
-  return norm > 0 ? values.map((value) => value / norm) : [];
-}
-
 function relativeConfidence(selected: number, competitor: number): number {
   const total = selected + competitor;
   return total > 0 ? selected / total : 0;
 }
 
-const runtimePromise = Promise.all([
-  AutoTokenizer.from_pretrained(modelId),
-  AutoProcessor.from_pretrained(modelId),
-  CLIPModel.from_pretrained(modelId, { dtype: "q8" }),
-]);
+const runtimePromise = pipeline("zero-shot-image-classification", modelId, { dtype: "q8" });
 
 let ready = false;
 let warmupError: string | null = null;
@@ -106,7 +89,7 @@ app.post("/infer", async (request, response) => {
 
   try {
     const startedAt = Date.now();
-    const [tokenizer, processor, model] = await runtimePromise;
+    const classifier = await runtimePromise;
     const selectedCategory = categories[selectedIndex]!;
     const prompts = promptsForCategory(selectedCategory);
     const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(6000) });
@@ -117,15 +100,9 @@ app.post("/infer", async (request, response) => {
     if (!bytes.byteLength || bytes.byteLength > 20 * 1024 * 1024) throw new Error("image is empty or too large");
 
     const raw = await RawImage.fromBlob(new Blob([bytes], { type: contentType }));
-    const textInputs = tokenizer(prompts, { padding: true, truncation: true });
-    const imageInputs = await processor(raw);
-    const output = await model({ ...textInputs, ...imageInputs }) as unknown as {
-      logits_per_image: { data: ArrayLike<number> };
-      image_embeds: { data: ArrayLike<number> };
-    };
-
-    const scores = softmax(Array.from(output.logits_per_image.data));
-    const embedding = normalize(Array.from(output.image_embeds.data));
+    const ranked = await classifier(raw, prompts) as unknown as Array<{ label: string; score: number }>;
+    const scoreByPrompt = new Map(ranked.map((item) => [item.label, item.score]));
+    const scores = prompts.map((prompt) => scoreByPrompt.get(prompt) ?? 0);
     const selectedScore = scores[0] ?? 0;
     const bestOtherCategory = scores[1] ?? 0;
     const bestUnrelated = Math.max(0, ...scores.slice(2));
@@ -144,7 +121,6 @@ app.post("/infer", async (request, response) => {
       score,
       pass,
       reason,
-      embedding,
       model: modelId,
       processingMs: Date.now() - startedAt,
     };
