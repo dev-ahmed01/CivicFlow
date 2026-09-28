@@ -51,6 +51,23 @@ function resolveApiUrl(): string {
 }
 
 const apiUrl = resolveApiUrl();
+
+export async function warmApi(): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    await fetch(`${apiUrl}/health`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+  } catch {
+    // Warming is best-effort. The real request still reports actionable errors.
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 let accessToken = process.env.EXPO_PUBLIC_ACCESS_TOKEN ?? "";
 let refreshToken = "";
 let currentAuth: CurrentAuth | undefined;
@@ -234,10 +251,10 @@ export type CurrentAuth = {
 
 export async function loadCurrentAuth(): Promise<CurrentAuth> {
   await hydrateSession();
-  if (!accessToken) throw new Error("No saved session");
-  const result = await apiFetch<{ auth: CurrentAuth; user?: { phone: string | null; email: string | null } }>("/protected/me");
-  currentAuth = { ...result.auth, ...result.user };
-  await persistSession();
+  if (!accessToken || !currentAuth) throw new Error("No saved session");
+  // The signed API token is still enforced on every protected request. Returning
+  // the already-encrypted SecureStore profile here avoids blocking app entry on
+  // an extra /protected/me round-trip, especially while a free host wakes up.
   return currentAuth;
 }
 
