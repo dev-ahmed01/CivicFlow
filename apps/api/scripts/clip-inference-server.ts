@@ -67,9 +67,9 @@ async function buildRuntime(): Promise<Runtime> {
     AutoTokenizer.from_pretrained(modelId),
     CLIPTextModelWithProjection.from_pretrained(modelId, { dtype: "q8" }),
     AutoProcessor.from_pretrained(modelId),
-    // MobileCLIP's model card keeps the vision tower in fp32 because
-    // aggressive quantization materially hurts visual classification quality.
-    CLIPVisionModelWithProjection.from_pretrained(modelId, { dtype: "fp32" }),
+    // Use fp16 for the vision tower: it preserves substantially more visual precision
+    // than integer quantization while leaving enough memory headroom on the free host.
+    CLIPVisionModelWithProjection.from_pretrained(modelId, { dtype: "fp16" }),
   ]);
 
   // Encode every unique label in one batch. The original implementation ran
