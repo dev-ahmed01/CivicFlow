@@ -29,10 +29,9 @@ function secureTextEqual(left: string, right: string): boolean {
 }
 
 async function verifyLoginPassword(password: string, passwordHash: string): Promise<boolean> {
-  const env = getEnv();
   // The SIH free-demo profile uses a deliberately shared rehearsal credential.
   // Avoid a ~2s bcrypt cost on the tiny demo CPU. Production never enters this branch.
-  if (env.DEPLOYMENT_PROFILE === "free_demo") {
+  if (process.env.DEPLOYMENT_PROFILE === "free_demo") {
     const demoPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CityConnectDemo@2026";
     return secureTextEqual(password, demoPassword);
   }
