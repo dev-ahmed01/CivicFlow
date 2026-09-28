@@ -19,7 +19,7 @@ const [tokenizer, textModel, processor, visionModel] = await Promise.all([
   AutoTokenizer.from_pretrained(modelId),
   CLIPTextModelWithProjection.from_pretrained(modelId, { dtype: "q8" }),
   AutoProcessor.from_pretrained(modelId),
-  CLIPVisionModelWithProjection.from_pretrained(modelId, { dtype: "fp32" }),
+  CLIPVisionModelWithProjection.from_pretrained(modelId, { dtype: "fp16" }),
 ]);
 
 void tokenizer;
