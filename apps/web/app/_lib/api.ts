@@ -29,6 +29,23 @@ function resolveApiUrl(): string {
 
 export const apiUrl = resolveApiUrl();
 
+export async function warmApi(): Promise<void> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8_000);
+  try {
+    await fetch(`${apiUrl}/health`, {
+      method: "GET",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+  } catch {
+    // Best-effort wake-up only; login requests still surface real errors.
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 type ApiErrorBody = { error?: string };
 
 export class ApiRequestError extends Error {
