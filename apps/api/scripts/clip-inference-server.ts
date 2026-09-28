@@ -29,10 +29,13 @@ const modelId = process.env.CLIP_LOCAL_MODEL || "Xenova/clip-vit-base-patch32";
 const cacheDir = process.env.CLIP_LOCAL_CACHE_DIR || ".cache/clip";
 transformersEnv.cacheDir = cacheDir;
 
-const prompts = [
-  ...categories.map((category) => `${category.name}: ${category.prompt}`),
-  ...unrelatedPrompts,
-];
+function promptsForCategory(selected: Category): string[] {
+  return [
+    `${selected.name}: ${selected.prompt}`,
+    "a different civic infrastructure issue than the selected category, such as garbage, streetlight, water leak, drain, electrical hazard, public toilet, tree, stray animal, construction, or traffic signage",
+    ...unrelatedPrompts,
+  ];
+}
 
 function softmax(values: number[]): number[] {
   if (!values.length) return [];
@@ -104,6 +107,8 @@ app.post("/infer", async (request, response) => {
   try {
     const startedAt = Date.now();
     const [tokenizer, processor, model] = await runtimePromise;
+    const selectedCategory = categories[selectedIndex]!;
+    const prompts = promptsForCategory(selectedCategory);
     const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(6000) });
     if (!imageResponse.ok) throw new Error(`image download returned ${imageResponse.status}`);
     const contentType = imageResponse.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() || "";
@@ -121,10 +126,9 @@ app.post("/infer", async (request, response) => {
 
     const scores = softmax(Array.from(output.logits_per_image.data));
     const embedding = normalize(Array.from(output.image_embeds.data));
-    const selectedScore = scores[selectedIndex] ?? 0;
-    const otherCategories = scores.slice(0, categories.length).filter((_value, index) => index !== selectedIndex);
-    const bestOtherCategory = Math.max(0, ...otherCategories);
-    const bestUnrelated = Math.max(0, ...scores.slice(categories.length));
+    const selectedScore = scores[0] ?? 0;
+    const bestOtherCategory = scores[1] ?? 0;
+    const bestUnrelated = Math.max(0, ...scores.slice(2));
     const strongestCompetitor = Math.max(bestOtherCategory, bestUnrelated);
     const score = relativeConfidence(selectedScore, strongestCompetitor);
 
