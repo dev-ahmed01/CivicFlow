@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { CitizenHeader } from "../_components/citizen-header";
 import { RequiredPasswordReset } from "../_components/required-password-reset";
 import { CitizenHeroBackdrop, CitizenIcon } from "../_components/ui";
-import { ApiRequestError, fetchApiJson } from "../_lib/api";
+import { ApiRequestError, fetchApiJson, warmApi } from "../_lib/api";
 import { saveCitizenSession } from "../_lib/citizen-auth";
 import { saveSession as saveProjectHeadSession } from "../project-head/_lib/api";
 import { saveSession as saveEngineerSession } from "../engineer/_lib/api";
@@ -53,6 +53,10 @@ export default function CitizenLoginPage() {
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [resetToken, setResetToken] = useState<string>();
+
+  useEffect(() => {
+    void warmApi();
+  }, []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
