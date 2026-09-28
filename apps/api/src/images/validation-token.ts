@@ -6,6 +6,7 @@ export type ValidatedImageClaims = {
   objectKey: string;
   fileName: string;
   contentType: "image/jpeg" | "image/png" | "image/webp" | "image/heic";
+  confidence?: number;
 };
 
 const issuer = "civicos-api";
@@ -13,7 +14,7 @@ const audience = "civicos-image-relevance";
 
 export function issueValidatedImageToken(secret: string, claims: ValidatedImageClaims): string {
   return jwt.sign(
-    { categoryId: claims.categoryId, objectKey: claims.objectKey, fileName: claims.fileName, contentType: claims.contentType },
+    { categoryId: claims.categoryId, objectKey: claims.objectKey, fileName: claims.fileName, contentType: claims.contentType, ...(claims.confidence !== undefined ? { confidence: claims.confidence } : {}) },
     secret,
     { subject: claims.userId, issuer, audience, expiresIn: "15m" },
   );
@@ -35,5 +36,6 @@ export function verifyValidatedImageToken(secret: string, token: string): Valida
     objectKey: decoded.objectKey,
     fileName: decoded.fileName,
     contentType: decoded.contentType as ValidatedImageClaims["contentType"],
+    ...(typeof decoded.confidence === "number" && Number.isFinite(decoded.confidence) ? { confidence: Math.max(0, Math.min(1, decoded.confidence)) } : {}),
   };
 }
