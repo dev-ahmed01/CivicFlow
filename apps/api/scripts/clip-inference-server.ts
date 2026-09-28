@@ -72,18 +72,32 @@ async function buildRuntime(): Promise<Runtime> {
     CLIPVisionModelWithProjection.from_pretrained(modelId, { dtype: "fp32" }),
   ]);
 
+  // Encode every unique label in one batch. The original implementation ran
+  // the text tower once per category, which made every cold start unnecessarily
+  // expensive on a small Render instance.
+  const allPrompts = [
+    ...categories.map((category) => `${category.name}: ${category.prompt}`),
+    differentCivicIssue,
+    ...unrelatedPrompts,
+  ];
+  const textInputs = tokenizer(allPrompts, { padding: "max_length", truncation: true });
+  const { text_embeds } = await textModel(textInputs);
+  const normalized = text_embeds.normalize().tolist() as number[][];
+  const byPrompt = new Map(allPrompts.map((prompt, index) => [prompt, normalized[index]!]));
+
   const textEmbeddings = new Map<string, number[][]>();
   for (const category of categories) {
-    const prompts = promptsForCategory(category);
-    const textInputs = tokenizer(prompts, { padding: "max_length", truncation: true });
-    const { text_embeds } = await textModel(textInputs);
-    textEmbeddings.set(category.id, text_embeds.normalize().tolist() as number[][]);
+    textEmbeddings.set(
+      category.id,
+      promptsForCategory(category).map((prompt) => byPrompt.get(prompt)!),
+    );
   }
 
   // Text embeddings are now cached as tiny vectors. Release the text tower so
   // hosted inference keeps only the vision tower resident in memory.
   await textModel.dispose?.();
 
+  console.log(`[clip] cached text embeddings for ${categories.length} categories`);
   return { processor, visionModel, textEmbeddings };
 }
 
