@@ -22,7 +22,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build API
-        run: pnpm --filter api build
+      - name: Build API and workspace dependencies
+        run: pnpm --filter api... build
       - name: Run auth tests
         run: pnpm --filter api exec vitest run src/auth/routes.test.ts src/auth/otp-service.test.ts src/auth/otp-provider.test.ts
