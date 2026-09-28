@@ -4,7 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
 import { ActivityIndicator, Alert, AppState, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, logoutSession, raiseCitizenGrievance, resolveReportingArea, submitReport, updateCitizenLocation, validateReportImage, validateTicket, verifyCompletion, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
+import { loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, logoutSession, raiseCitizenGrievance, resolveReportingArea, submitReport, updateCitizenLocation, validateReportImage, validateTicket, verifyCompletion, warmApi, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
 import { EngineerLoginScreen, EngineerProjectsApp } from "./src/engineer-projects";
 import { CategoryScreen, CitizenLoginScreen, CitizenProfileScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, GrievanceScreen, HomeScreen, LocationConfirmScreen, LocationDetectScreen, RetakeScreen, ReviewReportScreen, Shell, SplashScreen, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, WelcomeScreen, type CitizenHomeSummary, type ConfirmedLocation } from "./src/screens";
 import { NotificationsScreen } from "./src/notifications";
@@ -80,6 +80,9 @@ function AppContent() {
   }, [citizenAuth]);
 
   useEffect(() => {
+    // Start waking the hosted API immediately instead of waiting for the user
+    // to press "Continue" or submit credentials.
+    void warmApi();
     void (async () => {
       try {
         const auth = await loadCurrentAuth();
