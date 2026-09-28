@@ -1,0 +1,41 @@
+name: CLIP Hosted Inference Smoke Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/clip-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Wait for CLIP model readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 18); do
+            body="$(curl --silent --show-error --max-time 30 https://city-connect-clip.onrender.com/health || true)"
+            echo "$body"
+            if printf '%s' "$body" | jq -e '.status == "ok"' >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "CLIP service did not become ready"
+          exit 1
+
+      - name: Run real road-damage photo inference
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --show-error --silent --max-time 90             -H 'Content-Type: application/json'             -d '{"imageUrl":"https://raw.githubusercontent.com/dev-ahmed01/CivicFlow/main/packages/db/demo/road-scans/real_sample_01.jpg","categoryId":"30000000-0000-4000-8000-000000000001"}'             https://city-connect-clip.onrender.com/infer)"
+          echo "$response" | jq '{score,pass,reason,model,processingMs}'
+          echo "$response" | jq -e '.model == "Xenova/clip-vit-base-patch32"' >/dev/null
+          echo "$response" | jq -e '.score >= 0 and .score <= 1' >/dev/null
+          echo "$response" | jq -e '.processingMs < 15000' >/dev/null
