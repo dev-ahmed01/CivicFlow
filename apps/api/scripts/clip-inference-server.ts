@@ -1,4 +1,13 @@
-import { pipeline, RawImage, env as transformersEnv } from "@huggingface/transformers";
+import {
+  AutoProcessor,
+  AutoTokenizer,
+  CLIPTextModelWithProjection,
+  CLIPVisionModelWithProjection,
+  RawImage,
+  dot,
+  softmax,
+  env as transformersEnv,
+} from "@huggingface/transformers";
 import express from "express";
 
 type Category = { id: string; name: string; prompt: string };
@@ -23,16 +32,19 @@ const unrelatedPrompts = [
   "a selfie, portrait, face, or posed photo of a person",
   "food, a meal, a drink, groceries, or a restaurant dish",
   "a screenshot, meme, poster, document, advertisement, or computer interface",
-];
+] as const;
 
-const modelId = process.env.CLIP_LOCAL_MODEL || "Xenova/clip-vit-base-patch32";
+const differentCivicIssue =
+  "a different civic infrastructure issue than the selected category, such as garbage, streetlight, water leak, drain, electrical hazard, public toilet, tree, stray animal, construction, or traffic signage";
+
+const modelId = process.env.CLIP_LOCAL_MODEL || "Xenova/mobileclip_s0";
 const cacheDir = process.env.CLIP_LOCAL_CACHE_DIR || ".cache/clip";
 transformersEnv.cacheDir = cacheDir;
 
 function promptsForCategory(selected: Category): string[] {
   return [
     `${selected.name}: ${selected.prompt}`,
-    "a different civic infrastructure issue than the selected category, such as garbage, streetlight, water leak, drain, electrical hazard, public toilet, tree, stray animal, construction, or traffic signage",
+    differentCivicIssue,
     ...unrelatedPrompts,
   ];
 }
@@ -42,7 +54,40 @@ function relativeConfidence(selected: number, competitor: number): number {
   return total > 0 ? selected / total : 0;
 }
 
-const runtimePromise = pipeline("zero-shot-image-classification", modelId, { dtype: "q8" });
+type Runtime = {
+  processor: Awaited<ReturnType<typeof AutoProcessor.from_pretrained>>;
+  visionModel: Awaited<ReturnType<typeof CLIPVisionModelWithProjection.from_pretrained>>;
+  textEmbeddings: Map<string, number[][]>;
+};
+
+async function buildRuntime(): Promise<Runtime> {
+  console.log(`[clip] loading compact MobileCLIP runtime: ${modelId}`);
+
+  const [tokenizer, textModel, processor, visionModel] = await Promise.all([
+    AutoTokenizer.from_pretrained(modelId),
+    CLIPTextModelWithProjection.from_pretrained(modelId, { dtype: "q8" }),
+    AutoProcessor.from_pretrained(modelId),
+    // MobileCLIP's model card keeps the vision tower in fp32 because
+    // aggressive quantization materially hurts visual classification quality.
+    CLIPVisionModelWithProjection.from_pretrained(modelId, { dtype: "fp32" }),
+  ]);
+
+  const textEmbeddings = new Map<string, number[][]>();
+  for (const category of categories) {
+    const prompts = promptsForCategory(category);
+    const textInputs = tokenizer(prompts, { padding: "max_length", truncation: true });
+    const { text_embeds } = await textModel(textInputs);
+    textEmbeddings.set(category.id, text_embeds.normalize().tolist() as number[][]);
+  }
+
+  // Text embeddings are now cached as tiny vectors. Release the text tower so
+  // hosted inference keeps only the vision tower resident in memory.
+  await textModel.dispose?.();
+
+  return { processor, visionModel, textEmbeddings };
+}
+
+const runtimePromise = buildRuntime();
 
 let ready = false;
 let warmupError: string | null = null;
@@ -74,8 +119,8 @@ app.post("/infer", async (request, response) => {
 
   const imageUrl = typeof request.body?.imageUrl === "string" ? request.body.imageUrl : "";
   const categoryId = typeof request.body?.categoryId === "string" ? request.body.categoryId : "";
-  const selectedIndex = categories.findIndex((category) => category.id === categoryId);
-  if (!imageUrl || selectedIndex < 0) {
+  const selectedCategory = categories.find((category) => category.id === categoryId);
+  if (!imageUrl || !selectedCategory) {
     response.status(400).json({ error: "imageUrl and a supported categoryId are required" });
     return;
   }
@@ -89,9 +134,7 @@ app.post("/infer", async (request, response) => {
 
   try {
     const startedAt = Date.now();
-    const classifier = await runtimePromise;
-    const selectedCategory = categories[selectedIndex]!;
-    const prompts = promptsForCategory(selectedCategory);
+    const { processor, visionModel, textEmbeddings } = await runtimePromise;
     const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(6000) });
     if (!imageResponse.ok) throw new Error(`image download returned ${imageResponse.status}`);
     const contentType = imageResponse.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() || "";
@@ -100,16 +143,20 @@ app.post("/infer", async (request, response) => {
     if (!bytes.byteLength || bytes.byteLength > 20 * 1024 * 1024) throw new Error("image is empty or too large");
 
     const raw = await RawImage.fromBlob(new Blob([bytes], { type: contentType }));
-    const ranked = await classifier(raw, prompts) as unknown as Array<{ label: string; score: number }>;
-    const scoreByPrompt = new Map(ranked.map((item) => [item.label, item.score]));
-    const scores = prompts.map((prompt) => scoreByPrompt.get(prompt) ?? 0);
+    const imageInputs = await processor(raw);
+    const { image_embeds } = await visionModel(imageInputs);
+    const normalizedImage = (image_embeds.normalize().tolist() as number[][])[0];
+    const normalizedTexts = textEmbeddings.get(categoryId);
+    if (!normalizedImage || !normalizedTexts) throw new Error("missing normalized CLIP embeddings");
+
+    const scores = softmax(normalizedTexts.map((textEmbedding) => 100 * dot(normalizedImage, textEmbedding)));
     const selectedScore = scores[0] ?? 0;
     const bestOtherCategory = scores[1] ?? 0;
     const bestUnrelated = Math.max(0, ...scores.slice(2));
     const strongestCompetitor = Math.max(bestOtherCategory, bestUnrelated);
     const score = relativeConfidence(selectedScore, strongestCompetitor);
 
-    let pass = selectedScore >= strongestCompetitor;
+    const pass = selectedScore >= strongestCompetitor;
     let reason: "MATCH" | "CATEGORY_MISMATCH" | "UNRELATED_CONTENT" | "LOW_CONFIDENCE" = "MATCH";
     if (!pass) {
       const competitorConfidence = 1 - score;
@@ -121,9 +168,12 @@ app.post("/infer", async (request, response) => {
       score,
       pass,
       reason,
+      // Preserve the normalized image embedding for duplicate-image analysis.
+      embedding: normalizedImage,
       model: modelId,
       processingMs: Date.now() - startedAt,
     };
+
     if (cache.size >= 128) cache.delete(cache.keys().next().value!);
     cache.set(cacheKey, { expiresAt: Date.now() + 5 * 60_000, body });
     response.json(body);
