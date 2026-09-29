@@ -130,6 +130,10 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
         const stored = await imageStorage.readObject(objectKey, expires, token);
         if (!stored) { response.sendStatus(404); return; }
         response.setHeader("Content-Type", stored.contentType);
+        // Helmet defaults Cross-Origin-Resource-Policy to same-origin. These
+        // signed evidence URLs are intentionally rendered by the Vercel portal,
+        // so allow cross-origin embedding while the HMAC URL still controls access.
+        response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
         response.setHeader("Cache-Control", "private, max-age=300");
         response.send(Buffer.from(stored.bytes));
         return;
