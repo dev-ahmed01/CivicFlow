@@ -3,6 +3,7 @@ import { createHash, createHmac } from "node:crypto";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { AppEnv } from "../config/env";
+import { prisma } from "db";
 
 export interface PresignedUpload {
   uploadUrl: string;
@@ -259,35 +260,63 @@ export class EphemeralDemoStorage implements ImageStorage {
     return `${this.baseUrl()}/demo-storage/${encodePath(objectKey)}?${query.toString()}`;
   }
 
-  verifyUpload(objectKey: string, contentType: string): Promise<boolean> {
-    const stored = this.objects.get(objectKey);
-    return Promise.resolve(Boolean(
-      stored &&
-      normalizeContentType(stored.contentType) === normalizeContentType(contentType) &&
-      inspectUploadBytes(stored.bytes, contentType),
-    ));
+  async verifyUpload(objectKey: string, contentType: string): Promise<boolean> {
+    const cached = this.objects.get(objectKey);
+    if (cached) {
+      return normalizeContentType(cached.contentType) === normalizeContentType(contentType)
+        && inspectUploadBytes(cached.bytes, contentType);
+    }
+
+    const stored = await prisma.demoUpload.findUnique({
+      where: { objectKey },
+      select: { contentType: true, bytes: true },
+    });
+    if (!stored) return false;
+    const bytes = new Uint8Array(stored.bytes);
+    if (normalizeContentType(stored.contentType) !== normalizeContentType(contentType)) return false;
+    if (!inspectUploadBytes(bytes, contentType)) return false;
+    this.objects.set(objectKey, { bytes, contentType: stored.contentType });
+    return true;
   }
 
-  acceptUpload(
+  async acceptUpload(
     objectKey: string,
     contentType: string,
     expires: number,
     token: string,
     bytes: Uint8Array,
-  ): boolean {
+  ): Promise<boolean> {
     if (!Number.isFinite(expires) || expires < this.now()) return false;
     const expected = this.token(`PUT\n${objectKey}\n${contentType}\n${expires}`);
     if (token !== expected || bytes.byteLength <= 0 || bytes.byteLength > 20 * 1024 * 1024) return false;
     if (!inspectUploadBytes(bytes, contentType)) return false;
-    this.objects.set(objectKey, { bytes: new Uint8Array(bytes), contentType });
+
+    const stableBytes = new Uint8Array(bytes);
+    await prisma.demoUpload.upsert({
+      where: { objectKey },
+      update: { contentType, bytes: Buffer.from(stableBytes) },
+      create: { objectKey, contentType, bytes: Buffer.from(stableBytes) },
+    });
+    this.objects.set(objectKey, { bytes: stableBytes, contentType });
     return true;
   }
 
-  readObject(objectKey: string, expires: number, token: string): DemoStoredObject | undefined {
+  async readObject(objectKey: string, expires: number, token: string): Promise<DemoStoredObject | undefined> {
     if (!Number.isFinite(expires) || expires < this.now()) return undefined;
     const expected = this.token(`GET\n${objectKey}\n${expires}`);
     if (token !== expected) return undefined;
-    return this.objects.get(objectKey);
+
+    const cached = this.objects.get(objectKey);
+    if (cached) return cached;
+
+    const stored = await prisma.demoUpload.findUnique({
+      where: { objectKey },
+      select: { contentType: true, bytes: true },
+    });
+    if (!stored) return undefined;
+    const hydrated = { bytes: new Uint8Array(stored.bytes), contentType: stored.contentType };
+    this.objects.set(objectKey, hydrated);
+    return hydrated;
   }
 }
 
