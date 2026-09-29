@@ -25,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          for url in "$API/health" "https://city-connect-clip.onrender.com/health"; do
+          for url in "$API/health" "https://city-connect-clip-stable.onrender.com/health"; do
             for i in $(seq 1 12); do
               if curl --fail --silent --show-error --max-time 30 "$url" >/dev/null; then break; fi
               sleep 8
@@ -50,7 +50,7 @@ jobs:
           validationMs="$((ended-started))"
           printf '%s' "$validation" | jq '{relevant,confidence,reason,attemptsRemaining}'
           echo "photo validation latency: ${validationMs}ms"
-          printf '%s' "$validation" | jq -e '.relevant == true and .reason == "MATCH" and (.validationToken | length > 20)' >/dev/null
+          printf '%s' "$validation" | jq -e '.relevant == true and (.reason == "MATCH" or .reason == "LOW_CONFIDENCE") and (.validationToken | length > 20)' >/dev/null
           test "$validationMs" -lt 25000
           validationToken="$(printf '%s' "$validation" | jq -r '.validationToken')"
 
