@@ -29,6 +29,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "expo-secure-store";
 
 const hostedApiUrl = "https://city-connect-backend-ln7h.onrender.com";
+const hostedRelevanceHealthUrl = "https://city-connect-clip-stable.onrender.com/health";
 
 function resolveApiUrl(): string {
   const configured = process.env.EXPO_PUBLIC_API_URL?.trim();
@@ -54,13 +55,20 @@ const apiUrl = resolveApiUrl();
 
 export async function warmApi(): Promise<void> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
+  const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
-    await fetch(`${apiUrl}/health`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    });
+    await Promise.allSettled([
+      fetch(`${apiUrl}/health`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      }),
+      fetch(hostedRelevanceHealthUrl, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      }),
+    ]);
   } catch {
     // Warming is best-effort. The real request still reports actionable errors.
   } finally {
@@ -638,9 +646,12 @@ export async function validateReportImage(categoryId: string, image: LocalImage,
     endCheck();
     onStage?.("Photo checked");
     return result;
-  } catch {
-    logPhotoFlowFailure("STAGE_RELEVANCE_COMPLETE", image.contentType);
-    throw photoFailure("STAGE_RELEVANCE_COMPLETE");
+  } catch (error) {
+    const status = error instanceof ApiHttpError ? error.status : null;
+    const code = error instanceof ApiHttpError ? error.code ?? null : null;
+    logPhotoFlowFailure("STAGE_RELEVANCE_COMPLETE", image.contentType, status, code);
+    const detail = error instanceof ApiHttpError ? error.message : "The relevance service could not be reached";
+    throw photoFailure("STAGE_RELEVANCE_COMPLETE", detail);
   }
 }
 
