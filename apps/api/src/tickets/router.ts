@@ -113,7 +113,7 @@ type TicketRow = {
   manualReviewRecommended: boolean;
 };
 
-type NearbyTicket = { id: string; createdAt: Date; distanceMeters: number };
+type NearbyTicket = { id: string; state: TicketState; createdAt: Date; distanceMeters: number };
 
 function configNumber(value: Prisma.JsonValue, key: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -261,7 +261,7 @@ async function finalizeNewTicket(
 
   // Part III §8.2 — PostGIS is authoritative for distance; visual similarity never changes this matrix.
   const nearby = await prisma.$queryRaw<NearbyTicket[]>`
-    SELECT candidate."id", candidate."createdAt",
+    SELECT candidate."id", candidate."state", candidate."createdAt",
       ST_Distance(candidate."coordinates"::geography, current."coordinates"::geography) AS "distanceMeters"
     FROM "Ticket" candidate
     JOIN "Ticket" current ON current."id" = ${ticketId}::uuid
@@ -287,14 +287,20 @@ async function finalizeNewTicket(
   }
 
   if (candidate) {
-    if (recentCandidate) {
+    const mergeableState =
+      preValidationStates.includes(candidate.state) ||
+      candidate.state === TicketState.PENDING_VALIDATION;
+
+    if (recentCandidate && mergeableState) {
       const observation = await prisma.observation.findFirstOrThrow({ where: { ticketId } });
       await prisma.$transaction(async (transaction) => {
         await transaction.observation.update({ where: { id: observation.id }, data: { ticketId: candidate.id } });
         await transaction.ticket.delete({ where: { id: ticketId } });
         const existing = await transaction.ticket.update({ where: { id: candidate.id }, data: { updatedAt: new Date() }, select: { state: true } });
         if (preValidationStates.includes(existing.state)) {
-          // Part III §§8.2–9 — a valid new observation must recover a stalled shared report.
+          // A duplicate report may join an existing report only while that shared
+          // report is still before or inside citizen validation. Never attach a new
+          // citizen submission directly to an already-routed agency workflow.
           await enterPendingValidation(transaction, candidate.id, existing.state, new Date(), actedById);
         }
       });
@@ -454,19 +460,13 @@ export function createTicketsRouter(
         error: error instanceof Error ? error.message : "Unknown relevance error",
       });
 
-      if (deploymentProfile !== "free_demo") {
-        response.status(502).json({ error: "We could not check this photo right now. Please try again." });
-        return;
-      }
-
-      // The demo must not turn an optional AI assist into a hard blocker.
-      // Preserve the uploaded evidence, mark it low-confidence, and let the
-      // responsible human workflow review it. Production remains fail-closed.
-      decision = {
-        relevant: true,
-        confidence: 0,
-        reason: "LOW_CONFIDENCE" as const,
-      };
+      // Relevance is a gate, not an auto-approval hint. If inference is unavailable,
+      // do not issue a validation token and do not let the report advance.
+      response.status(503).json({
+        error: "Photo validation is temporarily unavailable. Please retry in a few seconds.",
+        code: "IMAGE_RELEVANCE_TEMPORARILY_UNAVAILABLE",
+      });
+      return;
     }
     response.json({
       ...decision,
