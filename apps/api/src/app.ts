@@ -105,7 +105,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   );
 
   if (imageStorage instanceof EphemeralDemoStorage) {
-    app.use("/demo-storage", express.raw({ type: "*/*", limit: "20mb" }), (request, response) => {
+    app.use("/demo-storage", express.raw({ type: "*/*", limit: "20mb" }), async (request, response) => {
       const objectKey = decodeURIComponent(request.path.replace(/^\//, ""));
       if (!objectKey) { response.sendStatus(404); return; }
 
@@ -117,7 +117,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
           response.status(400).json({ error: "Invalid demo upload request" });
           return;
         }
-        const accepted = imageStorage.acceptUpload(objectKey, contentType, expires, token, new Uint8Array(request.body));
+        const accepted = await imageStorage.acceptUpload(objectKey, contentType, expires, token, new Uint8Array(request.body));
         if (!accepted) { response.status(403).json({ error: "Invalid or expired upload" }); return; }
         response.sendStatus(200);
         return;
@@ -127,7 +127,7 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
         const expires = Number(request.query.expires);
         const token = request.query.token;
         if (typeof token !== "string") { response.sendStatus(403); return; }
-        const stored = imageStorage.readObject(objectKey, expires, token);
+        const stored = await imageStorage.readObject(objectKey, expires, token);
         if (!stored) { response.sendStatus(404); return; }
         response.setHeader("Content-Type", stored.contentType);
         response.setHeader("Cache-Control", "private, max-age=300");
