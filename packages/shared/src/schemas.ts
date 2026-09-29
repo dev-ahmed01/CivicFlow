@@ -822,7 +822,7 @@ export const projectHeadTicketDetailSchema = citizenTicketSummarySchema.extend({
   assignedAgency: agencySchema.pick({ id: true, name: true }).nullable(),
   ward: wardSummarySchema,
   description: z.string().nullable(),
-  evidence: z.array(z.object({ id: idSchema, url: z.string().url(), uploadedAt: dateSchema.nullable() })),
+  evidence: z.array(z.object({ id: idSchema, url: z.string().url(), contentType: z.string().nullable(), uploadedAt: dateSchema.nullable() })),
   inspectionReports: z.array(inspectionReportSummarySchema),
   project: z.object({
     id: idSchema,
