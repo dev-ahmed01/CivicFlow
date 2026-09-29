@@ -1357,3 +1357,14 @@ model PotholeVerificationScan {
   project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   @@index([projectId])
 }
+
+
+model DemoUpload {
+  objectKey   String   @id
+  contentType String
+  bytes       Bytes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([createdAt])
+}
