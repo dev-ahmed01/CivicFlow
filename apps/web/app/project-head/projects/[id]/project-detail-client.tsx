@@ -11,6 +11,7 @@ import { notifyPortalDataChanged, usePortalPolling } from "../../../_lib/portal-
 import { CompactAlert, projectWorkStage, RecordTabs, SectionHeader, WorkLifecycle, WorkStatus } from "../../_components/work-ui";
 import { CoordinationComposer, type CoordinationPrefill } from "../../_components/coordination-composer";
 import { apiFetch } from "../../_lib/api";
+import { EvidenceGallery } from "../../../_components/operational-ui";
 
 const emptyRoadData: RoadIntelligenceData = { conflicts: [], recommendations: [], segment: null, interventionHistory: [] };
 type RecordTab = "OVERVIEW" | "ACTIVITY" | "COORDINATION" | "DOCUMENTS";
@@ -173,6 +174,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       <section className="ph-record-group"><SectionHeader title="Work progress" description="The operational lifecycle from report to closure." /><WorkLifecycle current={projectWorkStage(project.state)} /></section>
       {project.grievance ? <CompactAlert title="Citizen issue" tone="danger" action={<NextActionButton href={`/project-head/grievances?grievance=${project.grievance.id}`}>Review issue</NextActionButton>}>{label(project.grievance.reason)} · opened {new Date(project.grievance.createdAt).toLocaleDateString("en-IN")}</CompactAlert> : null}
       <section className="ph-record-group"><SectionHeader title="Work details" /><dl className="ph-detail-grid"><div><dt>Location</dt><dd>{project.locationLabel ?? project.ticket?.address ?? "Not recorded"}</dd></div><div><dt>Ward</dt><dd>{project.ticket?.ward.name ?? "Not recorded"}</dd></div><div><dt>Agency</dt><dd>{project.agency.name}</dd></div><div><dt>Source</dt><dd>{project.origin === "CITIZEN_REPORTED" ? "Citizen reported" : label(project.origin)}</dd></div><div><dt>Linked ticket</dt><dd>{project.ticket ? <Link href={`/project-head/tickets/${project.ticket.id}`}>{project.ticket.title}</Link> : "Standalone agency work"}</dd></div><div><dt>Priority</dt><dd>{label(project.priority)}</dd></div></dl>{project.workDescription || project.ticket?.address ? <div className="ph-scope"><h3>Scope</h3><p>{project.workDescription ?? project.ticket?.address}</p></div> : null}</section>
+      {project.ticket?.observations.length ? <section className="ph-record-group"><SectionHeader title="Original complaint evidence" description="Citizen-submitted evidence linked to this civic work." /><EvidenceGallery items={project.ticket.observations.map((item, index) => ({ id: `reported-${index}`, url: item.imageUrl, kind: "Reported" as const, caption: item.note ?? `Citizen evidence ${index + 1}` }))} /></section> : null}
       <section className="ph-record-group"><SectionHeader title="Schedule and responsibility" /><dl className="ph-detail-grid"><div><dt>Planned start</dt><dd>{project.plannedStart ? new Date(project.plannedStart).toLocaleDateString("en-IN") : "Not set"}</dd></div><div><dt>Planned end</dt><dd>{project.plannedEnd ? new Date(project.plannedEnd).toLocaleDateString("en-IN") : "Not set"}</dd></div><div><dt>Engineer</dt><dd>{project.engineer?.email ?? "Unassigned"}</dd></div><div><dt>Response deadline</dt><dd className={project.action && new Date(project.action.deadline).getTime() < Date.now() ? "deadline-overdue" : ""}>{project.action ? deadlineText(project.action.deadline) : "No pending response"}</dd></div><div><dt>Actual start</dt><dd>{project.actualStart ? new Date(project.actualStart).toLocaleDateString("en-IN") : "Not recorded"}</dd></div><div><dt>Completion</dt><dd>{project.actualCompletion ? new Date(project.actualCompletion).toLocaleDateString("en-IN") : "Not recorded"}</dd></div></dl></section>
     </div> : null}
 
@@ -192,15 +194,14 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
 
     {tab === "DOCUMENTS" ? <section className="ph-record-group" role="tabpanel">
       <SectionHeader title="Documents and evidence" description="Inspection reports, site evidence, completion evidence, and coordination attachments." />
-      {documentCount ? <div className="ph-document-list">
-        {project.ticket?.observations.map((item, index) => <a href={item.imageUrl} key={`observation-${index}`} rel="noreferrer" target="_blank"><span><strong>Reported evidence {index + 1}</strong><small>{item.note ?? "Citizen or agency evidence"}</small></span><span>Open ↗</span></a>)}
+      {documentCount ? <><EvidenceGallery items={(project.ticket?.observations ?? []).map((item, index) => ({ id: `reported-${index}`, url: item.imageUrl, kind: "Reported" as const, caption: item.note ?? `Citizen evidence ${index + 1}` }))} /><div className="ph-document-list">
         {project.ticket?.inspectionReports.flatMap((report, reportIndex) => [
           ...(report.fileUrl ? [<a href={report.fileUrl} key={`${report.id}-legacy`} rel="noreferrer" target="_blank"><span><strong>Inspection report {reportIndex + 1}</strong><small>{report.notes ?? report.contentType ?? "Legacy inspection file"}</small></span><span>Open ↗</span></a>] : []),
           ...report.evidence.map((evidence, evidenceIndex) => <a href={evidence.fileUrl} key={evidence.id} rel="noreferrer" target="_blank"><span><strong>Inspection evidence {reportIndex + 1}.{evidenceIndex + 1}</strong><small>{evidence.contentType}</small></span><span>Open ↗</span></a>),
         ])}
         {project.completionEvidence.map((item, index) => <a href={item.photoUrl} key={item.id} rel="noreferrer" target="_blank"><span><strong>Completion evidence {index + 1}</strong><small>{item.notes}</small></span><span>Open ↗</span></a>)}
         {requests.flatMap((request) => request.entries.flatMap((entry) => entry.attachments.map((attachment) => <a href={attachment.url} key={attachment.id} rel="noreferrer" target="_blank"><span><strong>{attachment.fileName}</strong><small>{request.subject} · {attachment.contentType}</small></span><span>Open ↗</span></a>)))}
-      </div> : <p className="portal-muted">No documents are available on this record.</p>}
+      </div></> : <p className="portal-muted">No documents are available on this record.</p>}
     </section> : null}
   </div>;
 }
