@@ -836,7 +836,7 @@ export function createTicketsRouter(
           take: 1,
           select: {
             note: true,
-            images: { where: { uploadedAt: { not: null } }, orderBy: { createdAt: "asc" }, select: { id: true, url: true, objectKey: true, uploadedAt: true } },
+            images: { where: { uploadedAt: { not: null } }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }], select: { id: true, url: true, objectKey: true, contentType: true, uploadedAt: true } },
           },
         },
         inspectionReports: {
