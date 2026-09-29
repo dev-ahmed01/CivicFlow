@@ -20,7 +20,7 @@ function timelineDate(value: Date | string): string {
 
 function reportedEvidence(ticket: ProjectHeadTicketDetail | EngineerProjectDetail["ticket"]): EvidenceItem[] {
   if (!ticket) return [];
-  if ("evidence" in ticket) return ticket.evidence.map((item, index) => ({ id: item.id, url: item.url, kind: "Reported", caption: `Citizen evidence ${index + 1}`, timestamp: item.uploadedAt }));
+  if ("evidence" in ticket) return ticket.evidence.map((item, index) => ({ id: item.id, url: item.url, kind: "Reported", caption: `Citizen evidence ${index + 1}`, timestamp: item.uploadedAt, contentType: item.contentType }));
   return ticket.observations.map((item, index) => ({ id: `reported-${index}`, url: item.imageUrl, kind: "Reported", caption: item.note }));
 }
 
