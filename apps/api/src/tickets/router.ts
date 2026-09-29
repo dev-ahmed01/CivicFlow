@@ -437,18 +437,37 @@ export function createTicketsRouter(
       response.status(422).json({ error: "The image could not be read. Choose a valid photo and try again." });
       return;
     }
-    let check;
-    try {
-      check = await relevance.checkImageRelevance(storage.createDownload(input.objectKey), input.categoryId);
-    } catch {
-      response.status(502).json({ error: "We could not check this photo right now. Please try again." });
-      return;
-    }
     const [threshold, maxRetries] = await Promise.all([
       getConfigNumber("ai_relevance.pass_threshold"),
       getConfigNumber("ai_relevance.max_retries"),
     ]);
-    const decision = decideImageRelevance(check, threshold);
+
+    let decision;
+    try {
+      const check = await relevance.checkImageRelevance(storage.createDownload(input.objectKey), input.categoryId);
+      decision = decideImageRelevance(check, threshold);
+    } catch (error) {
+      console.warn("[tickets.image-relevance.complete] hosted inference unavailable", {
+        deploymentProfile,
+        userId: request.auth!.userId,
+        categoryId: input.categoryId,
+        error: error instanceof Error ? error.message : "Unknown relevance error",
+      });
+
+      if (deploymentProfile !== "free_demo") {
+        response.status(502).json({ error: "We could not check this photo right now. Please try again." });
+        return;
+      }
+
+      // The demo must not turn an optional AI assist into a hard blocker.
+      // Preserve the uploaded evidence, mark it low-confidence, and let the
+      // responsible human workflow review it. Production remains fail-closed.
+      decision = {
+        relevant: true,
+        confidence: 0,
+        reason: "LOW_CONFIDENCE" as const,
+      };
+    }
     response.json({
       ...decision,
       attemptsRemaining: Math.max(0, maxRetries - input.attempt),
