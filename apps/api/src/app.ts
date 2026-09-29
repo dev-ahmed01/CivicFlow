@@ -73,6 +73,18 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
 
   app.get("/health", (_request, response) => {
     response.json({ status: "ok" });
+
+    // The mobile/web clients call /health during entry. Use that otherwise-idle
+    // moment to wake the hosted relevance model in parallel so the citizen does
+    // not pay a free-host cold-start penalty after choosing a photo.
+    if (env.CLIP_MODE === "hosted" && env.CLIP_INFERENCE_URL) {
+      try {
+        const clipHealthUrl = new URL("/health", env.CLIP_INFERENCE_URL).toString();
+        void fetch(clipHealthUrl, { signal: AbortSignal.timeout(20_000) }).catch(() => undefined);
+      } catch {
+        // Health warming is best-effort and must never affect API availability.
+      }
+    }
   });
 
   // Part III §19.2 — mount the analytics router before any root router whose
