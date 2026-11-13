@@ -266,6 +266,30 @@ export async function loadCurrentAuth(): Promise<CurrentAuth> {
   return currentAuth;
 }
 
+// Auto-enrol the app in an isolated demo-only citizen session without OTP.
+export async function startDemoGuestSession(): Promise<CurrentAuth> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25_000);
+  try {
+    const result = await apiFetch<{
+      user: { id: string; role: UserRole; phone: string | null };
+      accessToken: string;
+      refreshToken: string;
+    }>("/auth/citizen/demo-guest", { method: "POST", signal: controller.signal });
+    if (result.user.role !== "CITIZEN") throw new Error("Guest access was not granted");
+    accessToken = result.accessToken;
+    refreshToken = result.refreshToken;
+    currentAuth = { userId: result.user.id, role: "CITIZEN", agencyId: null, wardId: null, mustResetPassword: false, phone: result.user.phone };
+    await persistSession();
+    return currentAuth;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("The demo backend is offline. Citizen preview remains available.");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function internalLogin(email: string, password: string): Promise<CurrentAuth> {
   const result = await apiFetch<{
     user: { id: string; role: UserRole; agencyId: string | null };
