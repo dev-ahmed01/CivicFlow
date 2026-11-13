@@ -85,7 +85,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="city-connect-otp-fix-2026-11-13"
+          TAG="city-connect-citizen-no-login-2026-11-13"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" artifacts/City-Connect-SIH.apk \
               --repo "${{ github.repository }}" --clobber
@@ -93,6 +93,6 @@ jobs:
             gh release create "$TAG" artifacts/City-Connect-SIH.apk \
               --repo "${{ github.repository }}" \
               --target "${{ github.sha }}" \
-              --title "City Connect Android APK - OTP reliability fix" \
-              --notes "Android demo build with bounded OTP requests and error-aware retry. Uses the hosted Render API; backend and database must be online."
+              --title "City Connect Android APK - Citizen guest access" \
+              --notes "Citizen demo opens directly without phone login or OTP. Project Head sign-in opens the protected web portal. Live reporting still requires a healthy hosted API and database."
           fi
