@@ -38,7 +38,7 @@ export function CitizenLoginScreen({ onAuthenticated, onBack }: { onAuthenticate
     if (busy) return;
     setBusy(true);
     setError(undefined);
-    const normalizedPhone = phone.replace(/[\\s()-]/g, "");
+    const normalizedPhone = phone.replaceAll(" ", "");
     try {
       if (step === "phone" || resend) {
         const result = await requestCitizenOtp(normalizedPhone);
