@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/api-auth-perf-ci.yml"
+      - "apps/api/src/auth/**"
+      - "apps/api/src/config/**"
   workflow_dispatch:
 
 permissions:
