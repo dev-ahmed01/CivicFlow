@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { notificationPresentation, relativeNotificationTime } from "@civicos/shared";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { requestCitizenOtp, verifyCitizenOtp, type CurrentAuth, type MobileNotification } from "./api";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { type CurrentAuth, type MobileNotification } from "./api";
 import { AppIcon, BrandLockup, Card, NotificationRow, PrimaryButton, ScreenHeader, SecondaryButton } from "./components";
 import { Shell, useResponsiveMetrics } from "./screen-shell";
 import { colors, fontWeights, radii, typeScale } from "./theme";
@@ -26,40 +26,6 @@ export function WelcomeScreen({ onCitizen, onStaff }: { onCitizen: () => void; o
   </ScrollView></Shell>;
 }
 
-export function CitizenLoginScreen({ onAuthenticated, onBack }: { onAuthenticated: (auth: CurrentAuth) => void; onBack: () => void }) {
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [step, setStep] = useState<"phone" | "code">("phone");
-  const [demoMode, setDemoMode] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const { horizontalPadding } = useResponsiveMetrics();
-  const submit = async (resend = false) => {
-    if (busy) return;
-    setBusy(true);
-    setError(undefined);
-    const normalizedPhone = phone.replaceAll(" ", "");
-    try {
-      if (step === "phone" || resend) {
-        const result = await requestCitizenOtp(normalizedPhone);
-        setDemoMode(result.demoMode);
-        if (resend) setCode("");
-        setStep("code");
-      } else {
-        onAuthenticated(await verifyCitizenOtp(normalizedPhone, code));
-      }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not sign in");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return <Shell includeBottom><ScrollView contentContainerStyle={[styles.authContent, { paddingHorizontal: horizontalPadding }]} keyboardShouldPersistTaps="handled"><BrandLockup compact /><ScreenHeader eyebrow={step === "phone" ? "Citizen access" : "Phone verification"} title={step === "phone" ? "Sign in with your phone" : "Enter your 6-digit code"} subtitle={step === "phone" ? "New phone numbers automatically create a secure citizen account." : demoMode ? "Demo mode is active. Enter the rehearsal OTP supplied by the presenter." : `We sent a one-time code to ${phone}.`} onBack={step === "code" ? () => setStep("phone") : onBack} />
-    <Card style={styles.authCard}>{step === "phone" ? <><Text style={styles.inputLabel}>Mobile number</Text><TextInput accessibilityLabel="Mobile number" autoComplete="tel" keyboardType="phone-pad" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" placeholderTextColor={colors.muted} style={styles.input} /></> : <><Text style={styles.inputLabel}>One-time password</Text><TextInput accessibilityLabel="One-time code" autoComplete="one-time-code" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} placeholder="000000" placeholderTextColor={colors.muted} style={[styles.input, styles.otpInput]} /></>}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (step === "phone" ? phone.replace(/\D/g, "").length < 10 : code.length !== 6)} onPress={() => void submit()}>{busy ? (step === "phone" ? "Sending code..." : "Signing in...") : step === "phone" ? "Send OTP" : "Verify and continue"}</PrimaryButton>{step === "code" ? <SecondaryButton disabled={busy} onPress={() => void submit(true)}>Send a new code</SecondaryButton> : null}</Card>
-    <Text style={styles.privacy}>Your phone number is used only to secure your City Connect account and connect you to your reports.</Text>
-  </ScrollView></Shell>;
-}
-
 export type CitizenHomeSummary = {
   pendingValidations: number;
   pendingCompletions: number;
@@ -68,14 +34,18 @@ export type CitizenHomeSummary = {
   recentNotifications: MobileNotification[];
 };
 
-export function HomeScreen({ auth, unread, summary, loading, onReport, onNearby, onTickets, onValidations, onCompletionValidations, onNotifications, onProfile, onOpenNotification }: {
-  auth: CurrentAuth; unread: number; summary: CitizenHomeSummary; loading: boolean; onReport: () => void; onNearby: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void; onCompletionValidations: () => void; onNotifications: () => void; onProfile: () => void; onOpenNotification: (notification: MobileNotification) => void;
+export function HomeScreen({ auth, unread, summary, loading, serverStatus, onRetryConnection, onProjectHeadLogin, onReport, onNearby, onTickets, onValidations, onCompletionValidations, onNotifications, onProfile, onOpenNotification }: {
+  auth: CurrentAuth; unread: number; summary: CitizenHomeSummary; loading: boolean;
+  serverStatus: "connecting" | "ready" | "unavailable";
+  onRetryConnection: () => void; onProjectHeadLogin: () => void;
+  onReport: () => void; onNearby: () => void; onTickets: (filter: "ongoing" | "past") => void; onValidations: () => void; onCompletionValidations: () => void; onNotifications: () => void; onProfile: () => void; onOpenNotification: (notification: MobileNotification) => void;
 }) {
   const attention = summary.pendingValidations + summary.pendingCompletions;
   const phoneTail = auth.phone?.slice(-4);
   const { horizontalPadding, narrow } = useResponsiveMetrics();
   return <Shell><ScrollView contentContainerStyle={[styles.homeContent, { paddingHorizontal: horizontalPadding }]}>
-    <View style={[styles.homeHeader, narrow && styles.homeHeaderNarrow]}><View><BrandLockup compact /><Text style={styles.greeting}>{phoneTail ? `Welcome back · •••• ${phoneTail}` : "Welcome back"}</Text></View><View style={styles.headerActions}><Pressable accessibilityLabel="Open notifications" accessibilityRole="button" onPress={onNotifications} style={styles.iconButton}><AppIcon color={colors.ink} name="notifications-outline" size={22} />{unread > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{unread > 9 ? "9+" : unread}</Text></View> : null}</Pressable><Pressable accessibilityLabel="Open profile" accessibilityRole="button" onPress={onProfile} style={styles.avatar}><AppIcon color={colors.primary} name="person" size={20} /></Pressable></View></View>
+    <View style={[styles.homeHeader, narrow && styles.homeHeaderNarrow]}><View><BrandLockup compact /><Text style={styles.greeting}>{phoneTail ? `Welcome back · •••• ${phoneTail}` : "Explore your city without signing in"}</Text></View><View style={styles.headerActions}><Pressable accessibilityLabel="Project Head sign in" accessibilityRole="button" onPress={onProjectHeadLogin} style={styles.headLogin}><Text style={styles.headLoginText}>Project Head</Text></Pressable><Pressable accessibilityLabel="Open notifications" accessibilityRole="button" onPress={onNotifications} style={styles.iconButton}><AppIcon color={colors.ink} name="notifications-outline" size={22} />{unread > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{unread > 9 ? "9+" : unread}</Text></View> : null}</Pressable><Pressable accessibilityLabel="Open profile" accessibilityRole="button" onPress={onProfile} style={styles.avatar}><AppIcon color={colors.primary} name="person" size={20} /></Pressable></View></View>
+    {serverStatus !== "ready" ? <View style={styles.connectionBanner}><Text style={styles.connectionText}>{serverStatus === "connecting" ? "Connecting to demo services…" : "Demo server unavailable. Explore the app; live reports need the server."}</Text>{serverStatus === "unavailable" ? <Pressable accessibilityRole="button" onPress={onRetryConnection}><Text style={styles.retryText}>Retry</Text></Pressable> : null}</View> : null}
     <View style={styles.hero}><View style={styles.heroGlow} /><Text style={styles.heroEyebrow}>CITY CONNECT</Text><Text style={styles.heroTitle}>Spot a civic issue?</Text><Text style={styles.heroBody}>Report it with a photo and location. We’ll help take it from report to resolution.</Text><Pressable accessibilityRole="button" onPress={onReport} style={styles.heroButton}><AppIcon color={colors.hero} name="add-circle" size={21} /><Text style={styles.heroButtonText}>Report an Issue</Text><AppIcon color={colors.hero} name="arrow-forward" size={18} /></Pressable></View>
     <Pressable accessibilityRole="button" onPress={onNearby} style={styles.nearbyCard}><View style={styles.nearbyIcon}><AppIcon color={colors.surface} name="map" size={25} /></View><View style={styles.taskCopy}><Text style={styles.taskTitle}>What’s happening here?</Text><Text style={styles.taskSubtitle}>See public civic works and progress near you</Text></View><AppIcon color={colors.primary} name="arrow-forward-circle" size={25} /></Pressable>
     {loading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -90,6 +60,8 @@ const styles = StyleSheet.create({
   welcome: { flexGrow: 1, gap: 28, justifyContent: "space-between", padding: 24, paddingBottom: 32, paddingTop: 28 }, welcomeCompact: { gap: 20, paddingBottom: 20, paddingTop: 18 }, welcomeTop: { gap: 40 }, welcomeArt: { alignItems: "center", height: 190, justifyContent: "center" }, cityCircle: { alignItems: "center", backgroundColor: colors.primary, borderRadius: 70, height: 140, justifyContent: "center", width: 140 }, roadLine: { backgroundColor: colors.lime, borderRadius: 4, bottom: 16, height: 8, position: "absolute", transform: [{ rotate: "-8deg" }], width: 230 }, welcomeCopy: { gap: 13 }, welcomeTitle: { color: colors.ink, fontSize: 34, fontWeight: fontWeights.bold, letterSpacing: -1.5, lineHeight: 40 }, welcomeSubtitle: { color: colors.muted, fontSize: 16, lineHeight: 25 }, welcomeActions: { gap: 14 }, staffLink: { alignItems: "center", flexDirection: "row", gap: 7, justifyContent: "center", minHeight: 44 }, staffLinkText: { color: colors.muted, fontSize: 14, fontWeight: fontWeights.semibold }, secureNote: { color: colors.muted, fontSize: 11, textAlign: "center" },
   authContent: { flexGrow: 1, gap: 24, padding: 22, paddingBottom: 40, paddingTop: 24 }, authCard: { gap: 14 }, inputLabel: { color: colors.ink, fontSize: 13, fontWeight: fontWeights.semibold }, input: { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.ink, fontSize: 16, minHeight: 52, paddingHorizontal: 16 }, otpInput: { fontSize: 24, letterSpacing: 8, textAlign: "center" }, error: { color: colors.danger, fontSize: 14, lineHeight: 20 }, privacy: { color: colors.muted, fontSize: 12, lineHeight: 18, textAlign: "center" },
   homeContent: { gap: 20, padding: 18, paddingBottom: 34, paddingTop: 18 }, homeHeader: { alignItems: "center", flexDirection: "row", gap: 10, justifyContent: "space-between" }, homeHeaderNarrow: { alignItems: "flex-start", flexWrap: "wrap" }, greeting: { color: colors.muted, fontSize: 11, marginLeft: 53, marginTop: 2 }, headerActions: { alignItems: "center", flexDirection: "row", gap: 9 }, iconButton: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, height: 44, justifyContent: "center", width: 44 }, avatar: { alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 22, height: 44, justifyContent: "center", width: 44 }, badge: { alignItems: "center", backgroundColor: colors.danger, borderColor: colors.surface, borderRadius: 9, borderWidth: 1.5, minHeight: 18, justifyContent: "center", minWidth: 18, position: "absolute", right: -3, top: -4 }, badgeText: { color: colors.surface, fontSize: 9, fontWeight: fontWeights.bold },
+  headLogin: { borderColor: colors.border, borderRadius: 10, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 9 }, headLoginText: { color: colors.primary, fontSize: 10, fontWeight: fontWeights.semibold },
+  connectionBanner: { alignItems: "center", backgroundColor: colors.infoBg, borderRadius: 10, flexDirection: "row", gap: 8, paddingHorizontal: 12, paddingVertical: 11 }, connectionText: { color: colors.infoText, flex: 1, fontSize: 11, lineHeight: 16 }, retryText: { color: colors.primary, fontSize: 12, fontWeight: fontWeights.bold },
   hero: { backgroundColor: colors.hero, borderRadius: 10, gap: 12, overflow: "hidden", padding: 20 }, heroGlow: { display: "none" }, heroEyebrow: { color: colors.lime, fontSize: 11, fontWeight: fontWeights.bold, letterSpacing: 1.2 }, heroTitle: { color: colors.surface, fontSize: 25, fontWeight: fontWeights.bold, letterSpacing: -0.6 }, heroBody: { color: colors.heroMuted, fontSize: 14, lineHeight: 21, maxWidth: "94%" }, heroButton: { alignItems: "center", alignSelf: "flex-start", backgroundColor: colors.lime, borderRadius: 8, flexDirection: "row", gap: 9, marginTop: 7, minHeight: 48, paddingHorizontal: 15 }, heroButtonText: { color: colors.hero, fontSize: 15, fontWeight: fontWeights.bold },
   nearbyCard: { alignItems: "center", backgroundColor: colors.surface, borderBottomColor: colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 12, minHeight: 72, paddingVertical: 12 }, nearbyIcon: { alignItems: "center", backgroundColor: colors.primary, borderRadius: 6, height: 40, justifyContent: "center", width: 40 },
   journeyCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: 13, padding: 15 }, sectionKicker: { color: colors.primary, fontSize: 10, fontWeight: fontWeights.bold, letterSpacing: 1 }, journey: { flexDirection: "row" }, journeyItem: { alignItems: "center", flex: 1, gap: 5 }, journeyIcon: { alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 18, height: 36, justifyContent: "center", width: 36 }, journeyLabel: { color: colors.muted, fontSize: 9, lineHeight: 12, textAlign: "center" }, journeyLine: { backgroundColor: colors.border, height: 1, left: "70%", position: "absolute", top: 18, width: "60%" },
