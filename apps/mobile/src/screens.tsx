@@ -34,17 +34,28 @@ export function CitizenLoginScreen({ onAuthenticated, onBack }: { onAuthenticate
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const { horizontalPadding } = useResponsiveMetrics();
-  const submit = async () => {
+  const submit = async (resend = false) => {
     if (busy) return;
-    setBusy(true); setError(undefined);
+    setBusy(true);
+    setError(undefined);
+    const normalizedPhone = phone.replace(/[\\s()-]/g, "");
     try {
-      if (step === "phone") { const result = await requestCitizenOtp(phone.replaceAll(" ", "")); setDemoMode(result.demoMode); setStep("code"); }
-      else onAuthenticated(await verifyCitizenOtp(phone.replaceAll(" ", ""), code));
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not sign in"); }
-    finally { setBusy(false); }
+      if (step === "phone" || resend) {
+        const result = await requestCitizenOtp(normalizedPhone);
+        setDemoMode(result.demoMode);
+        if (resend) setCode("");
+        setStep("code");
+      } else {
+        onAuthenticated(await verifyCitizenOtp(normalizedPhone, code));
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not sign in");
+    } finally {
+      setBusy(false);
+    }
   };
   return <Shell includeBottom><ScrollView contentContainerStyle={[styles.authContent, { paddingHorizontal: horizontalPadding }]} keyboardShouldPersistTaps="handled"><BrandLockup compact /><ScreenHeader eyebrow={step === "phone" ? "Citizen access" : "Phone verification"} title={step === "phone" ? "Sign in with your phone" : "Enter your 6-digit code"} subtitle={step === "phone" ? "New phone numbers automatically create a secure citizen account." : demoMode ? "Demo mode is active. Enter the rehearsal OTP supplied by the presenter." : `We sent a one-time code to ${phone}.`} onBack={step === "code" ? () => setStep("phone") : onBack} />
-    <Card style={styles.authCard}>{step === "phone" ? <><Text style={styles.inputLabel}>Mobile number</Text><TextInput accessibilityLabel="Mobile number" autoComplete="tel" keyboardType="phone-pad" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" placeholderTextColor={colors.muted} style={styles.input} /></> : <><Text style={styles.inputLabel}>One-time password</Text><TextInput accessibilityLabel="One-time code" autoComplete="one-time-code" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} placeholder="000000" placeholderTextColor={colors.muted} style={[styles.input, styles.otpInput]} /></>}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (step === "phone" ? phone.replace(/\D/g, "").length < 10 : code.length !== 6)} onPress={() => void submit()}>{busy ? (step === "phone" ? "Sending code..." : "Signing in...") : step === "phone" ? "Send OTP" : "Verify and continue"}</PrimaryButton>{step === "code" ? <SecondaryButton disabled={busy} onPress={() => void requestCitizenOtp(phone.replaceAll(" ", ""))}>Send a new code</SecondaryButton> : null}</Card>
+    <Card style={styles.authCard}>{step === "phone" ? <><Text style={styles.inputLabel}>Mobile number</Text><TextInput accessibilityLabel="Mobile number" autoComplete="tel" keyboardType="phone-pad" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" placeholderTextColor={colors.muted} style={styles.input} /></> : <><Text style={styles.inputLabel}>One-time password</Text><TextInput accessibilityLabel="One-time code" autoComplete="one-time-code" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} placeholder="000000" placeholderTextColor={colors.muted} style={[styles.input, styles.otpInput]} /></>}{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton disabled={busy || (step === "phone" ? phone.replace(/\D/g, "").length < 10 : code.length !== 6)} onPress={() => void submit()}>{busy ? (step === "phone" ? "Sending code..." : "Signing in...") : step === "phone" ? "Send OTP" : "Verify and continue"}</PrimaryButton>{step === "code" ? <SecondaryButton disabled={busy} onPress={() => void submit(true)}>Send a new code</SecondaryButton> : null}</Card>
     <Text style={styles.privacy}>Your phone number is used only to secure your City Connect account and connect you to your reports.</Text>
   </ScrollView></Shell>;
 }
