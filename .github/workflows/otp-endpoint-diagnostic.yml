@@ -1,0 +1,43 @@
+name: Diagnose City Connect OTP endpoint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/otp-endpoint-diagnostic.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  otp-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check DNS and health endpoint after cold start
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST=city-connect-backend-ln7h.onrender.com
+          echo "Checking DNS for $HOST"
+          getent ahostsv4 "$HOST" | head -n 3 || true
+          code=$(curl -sS -L --retry 2 --retry-delay 15 --retry-all-errors --max-time 90 \
+            -o /tmp/city-connect-health.json -w '%{http_code}' \
+            "https://$HOST/health") || { echo "Health endpoint: network or timeout error"; exit 1; }
+          echo "Health HTTP status: $code"
+          head -c 400 /tmp/city-connect-health.json; echo
+          test "$code" = "200"
+
+      - name: Confirm seeded citizen can request a demo OTP
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -L --max-time 90 \
+            -H 'Content-Type: application/json' \
+            --data '{"phone":"+919876500001"}' \
+            -o /tmp/city-connect-otp.json -w '%{http_code}' \
+            'https://city-connect-backend-ln7h.onrender.com/auth/citizen/request-otp') || { echo "OTP endpoint: network or timeout error"; exit 1; }
+          echo "OTP HTTP status: $code"
+          head -c 400 /tmp/city-connect-otp.json; echo
+          test "$code" = "202"
