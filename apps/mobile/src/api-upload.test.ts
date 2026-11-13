@@ -207,7 +207,7 @@ describe("Android presigned image upload", () => {
     await expect(validateReportImage("category-id", image("file:///camera/IMG_1234.jpg", "image/jpeg"), 1)).rejects.toThrow("Photo upload failed [STAGE_RELEVANCE_COMPLETE]");
     expect(fileSystem.uploadAsync).toHaveBeenCalledOnce();
     expect(apiRequest).toHaveBeenCalledTimes(2);
-    expect(warning).toHaveBeenCalledWith("[City Connect] Photo flow failed", { stage: "STAGE_RELEVANCE_COMPLETE", contentType: "image/jpeg", status: null, code: null });
+    expect(warning).toHaveBeenCalledWith("[City Connect] Photo flow failed", { stage: "STAGE_RELEVANCE_COMPLETE", contentType: "image/jpeg", status: 502, code: null });
   });
 });
 
