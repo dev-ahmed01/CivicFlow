@@ -41,6 +41,27 @@ async function verifyLoginPassword(password: string, passwordHash: string): Prom
 export function createAuthRouter(otpProvider: OtpProvider): Router {
   const router = Router();
 
+  // Isolated SIH demo only. Citizens can enter the demo without a phone or OTP.
+  // Production must never issue anonymous sessions; internal role auth is unchanged.
+  router.post("/citizen/demo-guest", async (_request: Request, response: Response) => {
+    if (getEnv().DEPLOYMENT_PROFILE !== "free_demo") {
+      response.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const user = await prisma.user.create({
+        data: { role: UserRole.CITIZEN, displayName: "Demo Guest" },
+      });
+      response.json({
+        user: { id: user.id, role: user.role, phone: user.phone },
+        ...(await issueTokens(user)),
+      });
+    } catch (error) {
+      console.error("[demo-guest] Unable to create guest session", error);
+      response.status(503).json({ error: "Demo service is unavailable. Please try again." });
+    }
+  });
+
   router.post("/citizen/request-otp", async (request: Request, response: Response) => {
     const parsed = requestOtpSchema.safeParse(request.body);
     if (!parsed.success) {
