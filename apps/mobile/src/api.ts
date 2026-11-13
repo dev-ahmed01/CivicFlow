@@ -281,8 +281,27 @@ export async function internalLogin(email: string, password: string): Promise<Cu
   return currentAuth;
 }
 
+// The free demo backend can take about a minute to wake after idle.
+// Give OTP requests a bounded startup window instead of leaving the login screen stuck forever.
+const OTP_REQUEST_TIMEOUT_MS = 75_000;
+
 export async function requestCitizenOtp(phone: string): Promise<{ demoMode: boolean }> {
-  return apiFetch<{ demoMode: boolean }>("/auth/citizen/request-otp", { method: "POST", body: JSON.stringify({ phone }) });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), OTP_REQUEST_TIMEOUT_MS);
+  try {
+    return await apiFetch<{ demoMode: boolean }>("/auth/citizen/request-otp", {
+      method: "POST",
+      body: JSON.stringify({ phone }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("The City Connect demo server did not respond. Check that the backend is online, then retry.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function verifyCitizenOtp(phone: string, code: string): Promise<CurrentAuth> {
