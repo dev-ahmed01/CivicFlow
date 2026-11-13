@@ -4,13 +4,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.hoisted(() => vi.fn());
 const findFirst = vi.hoisted(() => vi.fn());
+const createGuest = vi.hoisted(() => vi.fn());
+const deployment = vi.hoisted(() => ({ profile: "production" }));
 const rotateRefreshToken = vi.hoisted(() => vi.fn());
 const revokeRefreshToken = vi.hoisted(() => vi.fn());
 
 vi.mock("db", () => ({
-  prisma: { user: { findFirst, findUnique } },
+  prisma: { user: { findFirst, findUnique, create: createGuest } },
   UserRole: { CITIZEN: "CITIZEN", PROJECT_HEAD: "PROJECT_HEAD", ENGINEER: "ENGINEER" },
 }));
+
+vi.mock("../config/env", () => ({ getEnv: () => ({ DEPLOYMENT_PROFILE: deployment.profile }) }));
 
 vi.mock("bcrypt", () => ({
   default: { compare: vi.fn(async () => true) },
@@ -32,8 +36,23 @@ describe("internal role login", () => {
   beforeEach(() => {
     findFirst.mockReset();
     findUnique.mockReset();
+    createGuest.mockReset();
+    deployment.profile = "production";
     rotateRefreshToken.mockReset();
     revokeRefreshToken.mockReset();
+  });
+
+  it("never issues guest citizen access in production", async () => {
+    await request(app).post("/auth/citizen/demo-guest").expect(404);
+    expect(createGuest).not.toHaveBeenCalled();
+  });
+
+  it("issues a citizen-only demo guest token without an OTP in the free demo profile", async () => {
+    deployment.profile = "free_demo";
+    createGuest.mockResolvedValue({ id: "guest-1", role: "CITIZEN", phone: null });
+    const response = await request(app).post("/auth/citizen/demo-guest").expect(200);
+    expect(createGuest).toHaveBeenCalledWith({ data: { role: "CITIZEN", displayName: "Demo Guest" } });
+    expect(response.body).toMatchObject({ user: { id: "guest-1", role: "CITIZEN" }, accessToken: "access" });
   });
 
   it("authenticates a citizen by a non-email User ID", async () => {
