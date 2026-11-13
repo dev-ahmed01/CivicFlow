@@ -2,11 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import type { CategorySummary, CitizenGrievanceReason, CitizenTicketDetail, CitizenTicketSummary, CitizenTicketTimelineResponse, CompletionVerificationDecision, PendingCompletionVerification, PendingValidation, ValidationVote } from "@civicos/shared";
 import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
-import { ActivityIndicator, Alert, AppState, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, Linking, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, logoutSession, raiseCitizenGrievance, resolveReportingArea, submitReport, updateCitizenLocation, validateReportImage, validateTicket, verifyCompletion, warmApi, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
-import { EngineerLoginScreen, EngineerProjectsApp } from "./src/engineer-projects";
-import { CategoryScreen, CitizenLoginScreen, CitizenProfileScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, GrievanceScreen, HomeScreen, LocationConfirmScreen, LocationDetectScreen, RetakeScreen, ReviewReportScreen, Shell, SplashScreen, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, WelcomeScreen, type CitizenHomeSummary, type ConfirmedLocation } from "./src/screens";
+import { clearInternalSession, loadCategories, loadCurrentAuth, loadMyTickets, loadNotifications, loadPendingCompletionVerifications, loadPendingValidations, loadTicket, raiseCitizenGrievance, resolveReportingArea, startDemoGuestSession, submitReport, updateCitizenLocation, validateReportImage, validateTicket, verifyCompletion, warmApi, type CurrentAuth, type DraftReport, type LocalImage, type MobileNotification } from "./src/api";
+import { CategoryScreen, CitizenProfileScreen, CompletionVerificationListScreen, CompletionVerificationScreen, ConfirmationScreen, EvidenceScreen, GrievanceScreen, HomeScreen, LocationConfirmScreen, LocationDetectScreen, RetakeScreen, ReviewReportScreen, Shell, SplashScreen, TicketDetailScreen, TicketsScreen, VerificationListScreen, VerificationRequestScreen, type CitizenHomeSummary, type ConfirmedLocation } from "./src/screens";
 import { NotificationsScreen } from "./src/notifications";
 import { registerForPushNotifications, subscribeToPushNavigation, subscribeToPushReceipt } from "./src/push-notifications";
 import { DesignSystemProvider, MobileTabBar, type MobileTab } from "./src/components";
@@ -14,20 +13,21 @@ import { colors } from "./src/theme";
 import { nextScreenAfterPhotoCheck, photoRejectionMessage } from "./src/photo-flow";
 import { NearbyWorksScreen } from "./src/nearby-works";
 
-type Viewer = "LOADING" | "SIGNED_OUT" | "CITIZEN" | "ENGINEER";
-type Screen = "welcome" | "citizen-login" | "engineer-login" | "home" | "nearby-works" | "category" | "evidence" | "location-detect" | "location-confirm" | "review" | "feedback" | "confirmation" | "detail" | "grievance" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "profile";
+type Screen = "home" | "nearby-works" | "category" | "evidence" | "location-detect" | "location-confirm" | "review" | "feedback" | "confirmation" | "detail" | "grievance" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "profile";
 
 const emptyHomeSummary: CitizenHomeSummary = { pendingValidations: 0, pendingCompletions: 0, ongoingReports: 0, resolvedReports: 0, recentNotifications: [] };
+const demoPreviewAuth: CurrentAuth = { userId: "demo-preview", role: "CITIZEN", agencyId: null, wardId: null, mustResetPassword: false, phone: null };
+const projectHeadLoginUrl = "https://city-connect-web-jet.vercel.app/project-head/login";
 
 export default function App() {
   return <SafeAreaProvider><AppContent /></SafeAreaProvider>;
 }
 
 function AppContent() {
-  const [viewer, setViewer] = useState<Viewer>("LOADING");
-  const [engineerAuth, setEngineerAuth] = useState<CurrentAuth>();
-  const [citizenAuth, setCitizenAuth] = useState<CurrentAuth>();
-  const [screen, setScreen] = useState<Screen>("welcome");
+  // The citizen demo opens immediately, even when the remote backend is unavailable.
+  const [citizenAuth, setCitizenAuth] = useState<CurrentAuth>(demoPreviewAuth);
+  const [guestStatus, setGuestStatus] = useState<"connecting" | "ready" | "unavailable">("connecting");
+  const [screen, setScreen] = useState<Screen>("home");
   const [notificationUnread, setNotificationUnread] = useState(0);
   const [homeSummary, setHomeSummary] = useState<CitizenHomeSummary>(emptyHomeSummary);
   const [homeLoading, setHomeLoading] = useState(false);
@@ -67,7 +67,7 @@ function AppContent() {
   const [grievanceSubmitting, setGrievanceSubmitting] = useState(false);
 
   const refreshHome = useCallback(async () => {
-    if (!citizenAuth) return;
+    if (citizenAuth.userId === "demo-preview") return;
     setHomeLoading(true);
     try {
       const [pendingValidations, pendingCompletions, ongoing, resolved, notifications] = await Promise.all([
@@ -79,22 +79,30 @@ function AppContent() {
     finally { setHomeLoading(false); }
   }, [citizenAuth]);
 
-  useEffect(() => {
-    // Start waking the hosted API immediately instead of waiting for the user
-    // to press "Continue" or submit credentials.
-    void warmApi();
-    void (async () => {
-      try {
-        const auth = await loadCurrentAuth();
-        if (auth.role === "ENGINEER") { setEngineerAuth(auth); setViewer("ENGINEER"); return; }
-        if (auth.role === "CITIZEN") { setCitizenAuth(auth); setViewer("CITIZEN"); setScreen("home"); return; }
-      } catch { /* Missing or expired sessions continue to Welcome. */ }
-      setViewer("SIGNED_OUT"); setScreen("welcome");
-    })();
+  const connectDemoCitizen = useCallback(async (reset = false) => {
+    setGuestStatus("connecting");
+    try {
+      if (reset) await clearInternalSession();
+      let auth = await loadCurrentAuth().catch(() => undefined);
+      if (auth?.role !== "CITIZEN") {
+        await clearInternalSession();
+        auth = await startDemoGuestSession();
+      }
+      setCitizenAuth(auth);
+      setGuestStatus("ready");
+    } catch {
+      setGuestStatus("unavailable");
+    }
   }, []);
 
   useEffect(() => {
-    if (!citizenAuth) return;
+    // API startup is best-effort; no citizen login or network wait blocks the home screen.
+    void warmApi();
+    void connectDemoCitizen();
+  }, [connectDemoCitizen]);
+
+  useEffect(() => {
+    if (citizenAuth.userId === "demo-preview") return;
     void loadCategories().then((result) => { setCategories(result); setCategoryError(undefined); }).catch((error: unknown) => setCategoryError(error instanceof Error ? error.message : "Could not load issue types"));
     void registerForPushNotifications().catch(() => { /* In-app notifications remain available if push permission is denied. */ });
     void (async () => {
@@ -111,7 +119,7 @@ function AppContent() {
   }, [citizenAuth, refreshHome]);
 
   useEffect(() => {
-    if (!citizenAuth || viewer !== "CITIZEN") return;
+    if (citizenAuth.userId === "demo-preview") return;
     const refreshPending = () => {
       void Promise.all([loadPendingValidations(), loadPendingCompletionVerifications(), loadNotifications(true)])
         .then(([pendingValidations, pendingCompletions, notifications]) => {
@@ -134,7 +142,7 @@ function AppContent() {
       unsubscribePush();
       appState.remove();
     };
-  }, [citizenAuth, viewer]);
+  }, [citizenAuth]);
 
   const openTicketById = useCallback(async (ticketId: string) => {
     setScreen("detail"); setTicketDetailLoading(true); setTicketDetailError(undefined);
@@ -167,13 +175,13 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (!citizenAuth || viewer !== "CITIZEN") return;
+    if (citizenAuth.userId === "demo-preview") return;
     return subscribeToPushNavigation((data) => {
       if (data.type === "VALIDATION_REQUEST") { openValidations(typeof data.ticketId === "string" ? data.ticketId : undefined); return; }
       if (data.type === "COMPLETION_VERIFICATION_REQUEST") { openCompletionValidations(typeof data.evidenceId === "string" ? data.evidenceId : undefined); return; }
       if (typeof data.ticketId === "string") void openTicketById(data.ticketId);
     });
-  }, [citizenAuth, openCompletionValidations, openTicketById, openValidations, viewer]);
+  }, [citizenAuth, openCompletionValidations, openTicketById, openValidations]);
 
   const resetReport = () => { setScreen("home"); setSelectedCategory(undefined); setImages([]); setLocation(undefined); setConfirmedLocation(undefined); setDraftTicketId(undefined); setImageValidationToken(undefined); setImageCheckError(undefined); setPhotoAttempt(0); setSubmitted(undefined); void refreshHome(); };
   const openTickets = (filter: "ongoing" | "past") => {
@@ -273,15 +281,9 @@ function AppContent() {
     } catch (error) { Alert.alert("Couldn’t submit grievance", error instanceof Error ? error.message : "Please try again."); }
     finally { setGrievanceSubmitting(false); }
   };
-  const signOut = () => { void logoutSession(); setCitizenAuth(undefined); setEngineerAuth(undefined); setViewer("SIGNED_OUT"); setScreen("welcome"); setHomeSummary(emptyHomeSummary); };
-
-  if (viewer === "LOADING") return <DesignSystemProvider theme="citizen"><StatusBar style="light" /><SplashScreen /></DesignSystemProvider>;
-  if (viewer === "ENGINEER" && engineerAuth) return <DesignSystemProvider theme="internal"><StatusBar style="dark" /><EngineerProjectsApp auth={engineerAuth} onLogout={signOut} /></DesignSystemProvider>;
-  if (viewer === "SIGNED_OUT") {
-    const entry = screen === "citizen-login" ? <CitizenLoginScreen onAuthenticated={(auth) => { setCitizenAuth(auth); setViewer("CITIZEN"); setScreen("home"); }} onBack={() => setScreen("welcome")} /> : screen === "engineer-login" ? <EngineerLoginScreen onCancel={() => setScreen("welcome")} onLogin={(auth) => { setEngineerAuth(auth); setViewer("ENGINEER"); }} /> : <WelcomeScreen onCitizen={() => setScreen("citizen-login")} onStaff={() => setScreen("engineer-login")} />;
-    return <DesignSystemProvider theme={screen === "engineer-login" ? "internal" : "citizen"}><StatusBar style="dark" />{entry}</DesignSystemProvider>;
-  }
-  if (!citizenAuth) return <DesignSystemProvider theme="citizen"><StatusBar style="dark" /><SplashScreen /></DesignSystemProvider>;
+  const openProjectHeadLogin = () => {
+    void Linking.openURL(projectHeadLoginUrl).catch(() => Alert.alert("Cannot open Project Head login", projectHeadLoginUrl));
+  };
 
   let content;
   if (screen === "category") content = <CategoryScreen categories={categories} loading={!categoryError && categories.length === 0} error={categoryError} selectedId={selectedCategory?.id} onBack={() => setScreen("home")} onSelect={(category) => { setSelectedCategory(category); setImageValidationToken(undefined); setImageCheckError(undefined); setScreen("evidence"); }} />;
@@ -300,9 +302,9 @@ function AppContent() {
   else if (screen === "completion-validations") content = <CompletionVerificationListScreen completions={completionValidations} loading={completionLoading} error={completionError} onBack={() => setScreen("home")} onOpen={(completion) => { setSelectedCompletion(completion); setScreen("completion-verification"); }} />;
   else if (screen === "completion-verification" && selectedCompletion) content = <CompletionVerificationScreen completion={selectedCompletion} submitting={completionSubmitting} onBack={() => setScreen("completion-validations")} onSubmit={(decision) => void submitCompletionVote(decision)} />;
   else if (screen === "notifications") content = <NotificationsScreen role="CITIZEN" onBack={() => setScreen("home")} onOpen={openNotification} onViewed={setNotificationUnread} />;
-  else if (screen === "profile") content = <CitizenProfileScreen auth={citizenAuth} onSignOut={signOut} />;
+  else if (screen === "profile") content = <CitizenProfileScreen auth={citizenAuth} onProjectHeadLogin={openProjectHeadLogin} />;
   else if (screen === "nearby-works") content = <NearbyWorksScreen onBack={() => setScreen("home")} />;
-  else content = <HomeScreen auth={citizenAuth} unread={notificationUnread} summary={homeSummary} loading={homeLoading} onReport={() => setScreen("category")} onNearby={() => setScreen("nearby-works")} onTickets={openTickets} onValidations={() => openValidations()} onCompletionValidations={() => openCompletionValidations()} onNotifications={() => setScreen("notifications")} onProfile={() => setScreen("profile")} onOpenNotification={openNotification} />;
+  else content = <HomeScreen auth={citizenAuth} unread={notificationUnread} summary={homeSummary} loading={homeLoading} serverStatus={guestStatus} onRetryConnection={() => void connectDemoCitizen(true)} onProjectHeadLogin={openProjectHeadLogin} onReport={() => setScreen("category")} onNearby={() => setScreen("nearby-works")} onTickets={openTickets} onValidations={() => openValidations()} onCompletionValidations={() => openCompletionValidations()} onNotifications={() => setScreen("notifications")} onProfile={() => setScreen("profile")} onOpenNotification={openNotification} />;
 
   const tabs: MobileTab[] = [
     { id: "report", label: "Report", icon: "add-circle-outline", activeIcon: "add-circle" },
