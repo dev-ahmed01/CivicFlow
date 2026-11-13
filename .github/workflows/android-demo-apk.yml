@@ -85,7 +85,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="city-connect-citizen-no-login-2026-11-13"
+          TAG="city-connect-citizen-no-login-final-2026-11-13"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" artifacts/City-Connect-SIH.apk \
               --repo "${{ github.repository }}" --clobber
