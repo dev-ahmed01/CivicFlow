@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android-apk:
@@ -54,6 +54,11 @@ jobs:
         working-directory: apps/mobile
         run: pnpm exec expo prebuild --platform android --clean --no-install
 
+      - name: Check mobile TypeScript and regression tests
+        run: |
+          pnpm --filter mobile build
+          pnpm --filter mobile test
+
       - name: Build installable release APK
         working-directory: apps/mobile/android
         run: ./gradlew assembleRelease --no-daemon
@@ -70,3 +75,20 @@ jobs:
           path: artifacts/City-Connect-SIH.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish fixed Android demo APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="city-connect-otp-fix-2026-11-13"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/City-Connect-SIH.apk \
+              --repo "${{ github.repository }}" --clobber
+          else
+            gh release create "$TAG" artifacts/City-Connect-SIH.apk \
+              --repo "${{ github.repository }}" \
+              --target "${{ github.sha }}" \
+              --title "City Connect Android APK - OTP reliability fix" \
+              --notes "Android demo build with bounded OTP requests and error-aware retry. Uses the hosted Render API; backend and database must be online."
+          fi
