@@ -394,6 +394,13 @@ body:not(:has(.portal-shell, .login-shell)) .cv-primary-button { background: var
 .cf-login-options input { accent-color: var(--cf-accent-green); height: 17px; width: 17px; }
 .cf-login-options a { color: var(--cf-accent-green); font-size: 13px; text-decoration: none; }
 .cf-login-submit { justify-content: space-between; padding: 0 17px 0 calc(50% - 26px); }
+.cf-guest-login { border-top: 1px solid #e5e9e5; margin-top: 22px; padding-top: 18px; text-align: center; }
+.cf-guest-login p { color: var(--cf-text-muted); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+.cf-login-guest-button { align-items: center; background: white; border: 1px solid var(--cf-accent-green); border-radius: 8px; color: var(--cf-accent-green); cursor: pointer; display: flex; font-size: 14px; font-weight: 700; gap: 12px; justify-content: center; min-height: 47px; width: 100%; }
+.cf-login-guest-button:hover { background: #eff9f1; }
+.cf-login-guest-button:focus-visible { outline: 3px solid rgb(31 122 60 / 25%); outline-offset: 2px; }
+.cf-login-guest-button:disabled { cursor: not-allowed; opacity: .6; }
+.cf-guest-login small { color: var(--cf-text-muted); display: block; font-size: 11px; margin-top: 10px; }
 .cf-secure-line { align-items: center; color: var(--cf-text-muted); display: flex; gap: 12px; justify-content: center; margin: 26px auto 0; }
 .cf-secure-line svg { color: var(--cf-accent-green); }
 .cf-secure-line span { color: var(--cf-accent-green); }
