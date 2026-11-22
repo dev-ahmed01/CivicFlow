@@ -55,6 +55,31 @@ describe("internal role login", () => {
     expect(response.body).toMatchObject({ user: { id: "guest-1", role: "CITIZEN" }, accessToken: "access" });
   });
 
+  it("never accepts a repository demo password when the hosted secret is missing", async () => {
+    const previousProfile = process.env.DEPLOYMENT_PROFILE;
+    const previousPassword = process.env.DEMO_INTERNAL_PASSWORD;
+    try {
+      process.env.DEPLOYMENT_PROFILE = "free_demo";
+      delete process.env.DEMO_INTERNAL_PASSWORD;
+      findFirst.mockResolvedValue({
+        id: "citizen-1", role: "CITIZEN", phone: "+919876500001", passwordHash: "hash",
+      });
+      await request(app).post("/auth/citizen/login").send({
+        userId: "+919876500001", password: "CityConnectDemo@2026",
+      }).expect(401);
+
+      process.env.DEMO_INTERNAL_PASSWORD = "explicit-demo-password-at-least-16-characters";
+      await request(app).post("/auth/citizen/login").send({
+        userId: "+919876500001", password: process.env.DEMO_INTERNAL_PASSWORD,
+      }).expect(200);
+    } finally {
+      if (previousProfile === undefined) delete process.env.DEPLOYMENT_PROFILE;
+      else process.env.DEPLOYMENT_PROFILE = previousProfile;
+      if (previousPassword === undefined) delete process.env.DEMO_INTERNAL_PASSWORD;
+      else process.env.DEMO_INTERNAL_PASSWORD = previousPassword;
+    }
+  });
+
   it("authenticates a citizen by a non-email User ID", async () => {
     findFirst.mockResolvedValue({
       id: "citizen-1",
