@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const store = vi.hoisted(() => ({ getItemAsync: vi.fn(async () => null), setItemAsync: vi.fn(), deleteItemAsync: vi.fn() }));
 vi.mock("expo-secure-store", () => store);
 vi.mock("expo-file-system/legacy", () => ({}));
-import { clearInternalSession, internalLogin, loadEngineerProjects, loadMyTickets, startDemoGuestSession } from "./api";
+import { clearInternalSession, internalLogin, loadEngineerProjects, loadMyTickets, requestCitizenOtp, startDemoGuestSession, verifyCitizenOtp } from "./api";
 
 describe("mobile login and collection contracts", () => {
   beforeEach(async () => { await clearInternalSession(); vi.clearAllMocks(); });
