@@ -2,7 +2,7 @@ name: API Auth Performance CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/cityconnect-render-recovery-20261122]
     paths:
       - ".github/workflows/api-auth-perf-ci.yml"
       - "apps/api/src/auth/**"
