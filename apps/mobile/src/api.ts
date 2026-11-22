@@ -201,13 +201,18 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
         response = await request(accessToken);
       }
       if (response.status === 401 && refreshToken) {
-        const tokenToRotate = refreshToken;
-        refreshInFlight ??= rawTokenRequest("/auth/refresh", { refreshToken: tokenToRotate }).finally(() => { refreshInFlight = undefined; });
-        const rotated = await refreshInFlight;
-        accessToken = rotated.accessToken;
-        refreshToken = rotated.refreshToken;
-        await persistSession();
-        response = await request(accessToken);
+        try {
+          const tokenToRotate = refreshToken;
+          refreshInFlight ??= rawTokenRequest("/auth/refresh", { refreshToken: tokenToRotate }).finally(() => { refreshInFlight = undefined; });
+          const rotated = await refreshInFlight;
+          accessToken = rotated.accessToken;
+          refreshToken = rotated.refreshToken;
+          await persistSession();
+          response = await request(accessToken);
+        } catch {
+          // Expired or revoked refresh tokens should not strand demo guests.
+          // A phone-verified user must explicitly authenticate again instead.
+        }
       }
       if (response.status === 401 && currentAuth?.role === "CITIZEN" && !currentAuth.phone) {
         // Anonymous demo sessions can be replaced safely; never replace a
