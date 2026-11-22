@@ -82,6 +82,7 @@ let currentAuth: CurrentAuth | undefined;
 const sessionKey = "civicos.mobile.session.v1";
 let hydration: Promise<void> | undefined;
 let refreshInFlight: Promise<TokenResponse> | undefined;
+let demoRecoveryInFlight: Promise<CurrentAuth> | undefined;
 
 type LocalImage = { uri: string; fileName: string; contentType: "image/jpeg" | "image/png" | "image/webp" | "image/heic" };
 type UploadTarget = { uploadUrl: string; headers: { "Content-Type": string }; diagnostic?: "free_demo" };
@@ -189,22 +190,43 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   });
+  const originalToken = accessToken;
   let response: Response;
-  try { response = await request(accessToken); }
+  try { response = await request(originalToken); }
   catch (cause) { throw new Error("City Connect is unreachable. Check your connection and try again.", { cause }); }
-  if (response.status === 401 && refreshToken && !path.startsWith("/auth/")) {
+  if (response.status === 401 && !path.startsWith("/auth/")) {
     try {
-      const tokenToRotate = refreshToken;
-      refreshInFlight ??= rawTokenRequest("/auth/refresh", { refreshToken: tokenToRotate }).finally(() => { refreshInFlight = undefined; });
-      const rotated = await refreshInFlight;
-      accessToken = rotated.accessToken;
-      refreshToken = rotated.refreshToken;
-      await persistSession();
-      response = await request(accessToken);
-    } catch {
-      await clearInternalSession();
-      const body = await response.json().catch(() => ({})) as ApiErrorBody;
-      throw new ApiHttpError(body.error ?? "Your session expired. Please sign in again.", response.status, body.code, body.diagnostic);
+      // A parallel screen may already have renewed the session. Reuse that token.
+      if (accessToken && accessToken !== originalToken) {
+        response = await request(accessToken);
+      }
+      if (response.status === 401 && refreshToken) {
+        const tokenToRotate = refreshToken;
+        refreshInFlight ??= rawTokenRequest("/auth/refresh", { refreshToken: tokenToRotate }).finally(() => { refreshInFlight = undefined; });
+        const rotated = await refreshInFlight;
+        accessToken = rotated.accessToken;
+        refreshToken = rotated.refreshToken;
+        await persistSession();
+        response = await request(accessToken);
+      }
+      if (response.status === 401 && currentAuth?.role === "CITIZEN" && !currentAuth.phone) {
+        // Anonymous demo sessions can be replaced safely; never replace a
+        // phone-verified citizen's identity or silently lose their reports.
+        demoRecoveryInFlight ??= (async () => {
+          await clearInternalSession();
+          return startDemoGuestSession();
+        })().finally(() => { demoRecoveryInFlight = undefined; });
+        await demoRecoveryInFlight;
+        response = await request(accessToken);
+      }
+      if (response.status === 401) {
+        await clearInternalSession();
+        throw new Error("Your session expired. Please sign in with your phone again.");
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("sign in with your phone")) throw error;
+      if (currentAuth?.phone) await clearInternalSession();
+      throw error;
     }
   }
   const body = await response.json().catch(() => ({})) as T & ApiErrorBody;
@@ -269,7 +291,7 @@ export async function loadCurrentAuth(): Promise<CurrentAuth> {
 // Auto-enrol the app in an isolated demo-only citizen session without OTP.
 export async function startDemoGuestSession(): Promise<CurrentAuth> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25_000);
+  const timer = setTimeout(() => controller.abort(), 75_000);
   try {
     const result = await apiFetch<{
       user: { id: string; role: UserRole; phone: string | null };
