@@ -47,25 +47,25 @@ jobs:
           categories_response="$(mktemp)"
           tickets_response="$(mktemp)"
           trap 'rm -f "$guest_response" "$categories_response" "$tickets_response"' EXIT
-          status="$(curl --show-error --silent --location \\
-            --retry 4 --retry-delay 8 --retry-all-errors \\
-            --connect-timeout 15 --max-time 90 \\
-            -H 'Content-Type: application/json' \\
-            -d '{}' -o "$guest_response" -w '%{http_code}' \\
+          status="$(curl --show-error --silent --location \
+            --retry 4 --retry-delay 8 --retry-all-errors \
+            --connect-timeout 15 --max-time 90 \
+            -H 'Content-Type: application/json' \
+            -d '{}' -o "$guest_response" -w '%{http_code}' \
             "$API_BASE/auth/citizen/demo-guest")"
           test "$status" = "200"
           token="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).accessToken || ""' "$guest_response")"
           test -n "$token"
-          curl --fail --show-error --silent --location \\
-            --retry 3 --retry-delay 8 --retry-all-errors \\
-            --connect-timeout 15 --max-time 90 \\
-            -H "Authorization: Bearer $token" \\
+          curl --fail --show-error --silent --location \
+            --retry 3 --retry-delay 8 --retry-all-errors \
+            --connect-timeout 15 --max-time 90 \
+            -H "Authorization: Bearer $token" \
             "$API_BASE/categories" -o "$categories_response"
           node -e 'const d=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); if(!Array.isArray(d.categories)||d.categories.length<12)process.exit(1)' "$categories_response"
-          curl --fail --show-error --silent --location \\
-            --retry 3 --retry-delay 8 --retry-all-errors \\
-            --connect-timeout 15 --max-time 90 \\
-            -H "Authorization: Bearer $token" \\
+          curl --fail --show-error --silent --location \
+            --retry 3 --retry-delay 8 --retry-all-errors \
+            --connect-timeout 15 --max-time 90 \
+            -H "Authorization: Bearer $token" \
             "$API_BASE/citizens/me/tickets?filter=ongoing" -o "$tickets_response"
           test -s "$tickets_response"
 
