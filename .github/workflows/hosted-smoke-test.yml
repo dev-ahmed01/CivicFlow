@@ -13,31 +13,55 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    env:
+      API_BASE: https://city-connect-backend-ln7h.onrender.com
+      WEB_BASE: https://city-connect-web.onrender.com
+
     steps:
       - name: Check canonical backend health
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --show-error --silent --location             --retry 8 --retry-delay 10 --retry-all-errors             --max-time 90             https://city-connect-backend-ln7h.onrender.com/health | tee /tmp/health.json
+          curl --fail --show-error --silent --location \
+            --retry 8 --retry-delay 10 --retry-all-errors \
+            --connect-timeout 15 --max-time 90 \
+            "$API_BASE/health" -o /tmp/city-connect-health.json
+          node -e "if (require('/tmp/city-connect-health.json').status !== 'ok') process.exit(1)"
 
-      - name: Check legacy API compatibility endpoint
+      - name: Check laptop web application
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --show-error --silent --location             --retry 8 --retry-delay 10 --retry-all-errors             --max-time 90             https://city-connect-api-wi71.onrender.com/health | tee /tmp/legacy-health.json
-
-      - name: Check web deployment
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl --fail --show-error --silent --location             --retry 5 --retry-delay 5 --retry-all-errors             --max-time 60             --output /tmp/city-connect-web.html             https://city-connect-web-jet.vercel.app/
+          curl --fail --show-error --silent --location \
+            --retry 6 --retry-delay 10 --retry-all-errors \
+            --connect-timeout 15 --max-time 90 \
+            "$WEB_BASE/" -o /tmp/city-connect-web.html
           test -s /tmp/city-connect-web.html
+          grep -Eiq 'City Connect|CityConnect' /tmp/city-connect-web.html
 
-      - name: Check production CORS
+      - name: Check web-to-API CORS preflight
         shell: bash
         run: |
           set -euo pipefail
           headers="$(mktemp)"
-          curl --fail --show-error --silent             --retry 5 --retry-delay 5 --retry-all-errors             --max-time 60             -X OPTIONS             -H 'Origin: https://city-connect-web-jet.vercel.app'             -H 'Access-Control-Request-Method: GET'             -D "$headers"             -o /dev/null             https://city-connect-backend-ln7h.onrender.com/agencies
-          tr -d '\r' < "$headers" | grep -i '^access-control-allow-origin: https://city-connect-web-jet.vercel.app$'
+          curl --fail --show-error --silent \
+            --retry 5 --retry-delay 10 --retry-all-errors \
+            --connect-timeout 15 --max-time 90 \
+            -X OPTIONS \
+            -H "Origin: $WEB_BASE" \
+            -H 'Access-Control-Request-Method: GET' \
+            -D "$headers" -o /dev/null \
+            "$API_BASE/agencies"
+          tr -d '\r' < "$headers" | grep -Fi "access-control-allow-origin: $WEB_BASE"
+
+      - name: Verify unauthenticated protected endpoints remain blocked
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --show-error --silent --location \
+            --retry 4 --retry-delay 10 --retry-all-errors \
+            --connect-timeout 15 --max-time 90 \
+            -o /tmp/protected-response -w '%{http_code}' \
+            "$API_BASE/protected/me")"
+          test "$code" = "401"
