@@ -1,5 +1,5 @@
 import { timed } from "../http/timing";
-import { timingSafeEqual } from "node:crypto";
+import { randomInt, timingSafeEqual } from "node:crypto";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import bcrypt from "bcrypt";
@@ -50,11 +50,15 @@ export function createAuthRouter(otpProvider: OtpProvider): Router {
       return;
     }
     try {
+      // The database requires a unique identity for every citizen. Use an
+      // unreachable, demo-only +999 synthetic number rather than a real mobile
+      // number. This account never receives an OTP or impersonates a seed user.
+      const guestPhone = `+999${randomInt(0, 1_000_000_000_000).toString().padStart(12, "0")}`;
       const user = await prisma.user.create({
-        data: { role: UserRole.CITIZEN, displayName: "Demo Guest" },
+        data: { role: UserRole.CITIZEN, displayName: "Demo Guest", phone: guestPhone },
       });
       response.json({
-        user: { id: user.id, role: user.role, phone: user.phone },
+        user: { id: user.id, role: user.role, phone: null },
         ...(await issueTokens(user)),
       });
     } catch (error) {
