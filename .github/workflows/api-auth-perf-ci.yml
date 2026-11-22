@@ -2,7 +2,7 @@ name: API Auth Performance CI
 
 on:
   push:
-    branches: [main, fix/cityconnect-render-recovery-20261122]
+    branches: [main, fix/cityconnect-web-guest-20261122]
     paths:
       - ".github/workflows/api-auth-perf-ci.yml"
       - "apps/api/src/auth/**"
@@ -30,3 +30,8 @@ jobs:
         run: pnpm --filter api... build
       - name: Run auth tests
         run: pnpm --filter api exec vitest run src/app.test.ts src/auth/routes.test.ts src/auth/otp-service.test.ts src/auth/otp-provider.test.ts
+      - name: Build laptop web portal with citizen guest entry
+        env:
+          NEXT_PUBLIC_API_URL: https://city-connect-backend-ln7h.onrender.com
+          NEXT_PUBLIC_ENABLE_GUEST_DEMO: "true"
+        run: pnpm --filter web... build
