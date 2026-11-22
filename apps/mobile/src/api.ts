@@ -225,8 +225,14 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
         response = await request(accessToken);
       }
       if (response.status === 401) {
-        await clearInternalSession();
-        throw new Error("Your session expired. Please sign in with your phone again.");
+        if (currentAuth?.phone) {
+          await clearInternalSession();
+          throw new Error("Your session expired. Please sign in with your phone again.");
+        }
+        // Preserve structured storage diagnostics for unauthenticated presign
+        // attempts; do not hide the server's 401 behind a generic error.
+        const denied = await response.json().catch(() => ({})) as ApiErrorBody;
+        throw new ApiHttpError(denied.error ?? "Authentication required", response.status, denied.code, denied.diagnostic);
       }
     } catch (error) {
       if (error instanceof Error && error.message.includes("sign in with your phone")) throw error;
