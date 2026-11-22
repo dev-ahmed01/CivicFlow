@@ -2,7 +2,7 @@ name: City Connect Hosted Smoke Test
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/cityconnect-web-guest-20261122]
     paths:
       - ".github/workflows/hosted-smoke-test.yml"
   workflow_dispatch:
