@@ -62,7 +62,7 @@ describe("free-demo environment", () => {
     DEPLOYMENT_PROFILE: "free_demo",
     OTP_PROVIDER: "demo",
     DEMO_AUTH_MODE: "fixed_otp",
-    DEMO_AUTH_CODE: "123456",
+    DEMO_AUTH_CODE: "1234",
     TWILIO_ACCOUNT_SID: undefined,
     TWILIO_AUTH_TOKEN: undefined,
     TWILIO_FROM_NUMBER: undefined,
@@ -78,6 +78,7 @@ describe("free-demo environment", () => {
     const parsed = parseEnv(freeDemoEnv);
     expect(parsed.DEPLOYMENT_PROFILE).toBe("free_demo");
     expect(parsed.DEMO_AUTH_MODE).toBe("fixed_otp");
+    expect(parsed.DEMO_AUTH_CODE).toBe("1234");
     expect(parsed.CLIP_MODE).toBe("local_clip");
     expect(parsed.CLIP_LOCAL_MODEL).toBe("Xenova/clip-vit-base-patch32");
   });
