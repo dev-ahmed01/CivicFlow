@@ -48,6 +48,8 @@ export function createApp(dependencies: AppDependencies | OtpProvider = {}): Exp
   const configuredOrigins = env.CORS_ORIGINS?.split(",").map((origin) => origin.trim()).filter(Boolean) ?? [];
   const allowedOrigins = new Set([
     ...configuredOrigins,
+    // Canonical browser portal must work even when legacy origin settings predate its deployment.
+    "https://city-connect-web.onrender.com",
     ...(env.NODE_ENV === "production" ? [] : [3000, 3001, 3002].flatMap((port) => [
       `http://localhost:${port}`,
       `http://127.0.0.1:${port}`,
