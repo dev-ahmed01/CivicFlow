@@ -31,15 +31,15 @@ const seedNow = new Date();
 const daysFromNow = (n: number) => new Date(seedNow.getTime() + n * 86_400_000);
 const daysAgo = (n: number) => daysFromNow(-n);
 const hoursAgo = (n: number) => new Date(seedNow.getTime() - n * 3_600_000);
-const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD ?? (process.env.DEPLOYMENT_PROFILE === "free_demo" ? "CityConnectDemo@2026" : "CivicOS@123");
+const demoInternalPassword = process.env.DEMO_INTERNAL_PASSWORD?.trim() || (process.env.NODE_ENV === "production" ? "" : process.env.DEPLOYMENT_PROFILE === "free_demo" ? "CityConnectDemo@2026" : "CivicOS@123");
 const demoSeedMode = process.argv.includes("--reset") ? "reset" : process.env.DEMO_SEED_MODE ?? "if_empty";
 
 if (!["reset", "if_empty", "team_only", "insights_only", "road_scans_only"].includes(demoSeedMode)) {
   throw new Error("DEMO_SEED_MODE must be reset, if_empty, team_only, or insights_only");
 }
 
-if (process.env.NODE_ENV === "production" && demoInternalPassword === "CivicOS@123") {
-  throw new Error("DEMO_INTERNAL_PASSWORD must replace the local demo password in production");
+if (process.env.NODE_ENV === "production" && demoInternalPassword.length < 16) {
+  throw new Error("DEMO_INTERNAL_PASSWORD must be explicitly configured with at least 16 characters for production seeding");
 }
 
 const ids = {
