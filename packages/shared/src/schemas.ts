@@ -1383,7 +1383,7 @@ export const requestOtpSchema = z.object({
 });
 
 export const verifyOtpSchema = requestOtpSchema.extend({
-  code: z.string().regex(/^\d{6}$/),
+  code: z.string().regex(/^(?:\d{4}|\d{6})$/),
 });
 
 export const citizenLoginSchema = z.object({
