@@ -14,10 +14,20 @@ import {
   listCivicWorksQuerySchema,
   nearbyCivicWorksQuerySchema,
   requestOtpSchema,
+  verifyOtpSchema,
   submitValidationSchema,
   ticketStateSchema,
   toCitizenTicketState,
 } from "./schemas";
+
+describe("citizen OTP contract", () => {
+  it("supports a 4-digit demo code and a 6-digit production code", () => {
+    expect(verifyOtpSchema.safeParse({ phone: "+919876543210", code: "1234" }).success).toBe(true);
+    expect(verifyOtpSchema.safeParse({ phone: "+919876543210", code: "123456" }).success).toBe(true);
+    expect(verifyOtpSchema.safeParse({ phone: "+919876543210", code: "12345" }).success).toBe(false);
+    expect(verifyOtpSchema.safeParse({ phone: "+919876543210", code: "123" }).success).toBe(false);
+  });
+});
 
 describe("shared schemas", () => {
   it("accepts a citizen phone in E.164 format", () => {
