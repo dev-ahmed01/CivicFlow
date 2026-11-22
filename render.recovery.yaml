@@ -10,12 +10,9 @@ services:
     repo: https://github.com/dev-ahmed01/CivicFlow
     branch: main
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter api... build
-    startCommand: >-
-      sh -c 'pnpm --filter db exec prisma migrate deploy &&
-      if [ "$DEPLOYMENT_PROFILE" = "free_demo" ]; then
-      DEMO_SEED_MODE=if_empty pnpm --filter db exec prisma db seed;
-      fi &&
-      pnpm --filter api start'
+    # Demo seed was applied once through a guarded recovery sync.
+    # Keep normal startup short and never reset or seed on each cold start.
+    startCommand: pnpm --filter db exec prisma migrate deploy && pnpm --filter api start
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
