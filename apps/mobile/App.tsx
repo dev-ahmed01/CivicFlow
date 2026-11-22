@@ -12,12 +12,13 @@ import { DesignSystemProvider, MobileTabBar, type MobileTab } from "./src/compon
 import { colors } from "./src/theme";
 import { nextScreenAfterPhotoCheck, photoRejectionMessage } from "./src/photo-flow";
 import { NearbyWorksScreen } from "./src/nearby-works";
+import { PhoneLoginScreen } from "./src/phone-login";
 
-type Screen = "home" | "nearby-works" | "category" | "evidence" | "location-detect" | "location-confirm" | "review" | "feedback" | "confirmation" | "detail" | "grievance" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "profile";
+type Screen = "home" | "phone-login" | "nearby-works" | "category" | "evidence" | "location-detect" | "location-confirm" | "review" | "feedback" | "confirmation" | "detail" | "grievance" | "tickets" | "validations" | "verification" | "completion-validations" | "completion-verification" | "notifications" | "profile";
 
 const emptyHomeSummary: CitizenHomeSummary = { pendingValidations: 0, pendingCompletions: 0, ongoingReports: 0, resolvedReports: 0, recentNotifications: [] };
 const demoPreviewAuth: CurrentAuth = { userId: "demo-preview", role: "CITIZEN", agencyId: null, wardId: null, mustResetPassword: false, phone: null };
-const projectHeadLoginUrl = "https://city-connect-web-jet.vercel.app/project-head/login";
+const projectHeadLoginUrl = "https://city-connect-web.onrender.com/project-head/login";
 
 export default function App() {
   return <SafeAreaProvider><AppContent /></SafeAreaProvider>;
@@ -88,7 +89,13 @@ function AppContent() {
         await clearInternalSession();
         auth = await startDemoGuestSession();
       }
-      setCitizenAuth(auth);
+      // A SecureStore entry is not proof that the server still accepts its token.
+      // The first protected request refreshes or repairs an expired demo session.
+      const availableCategories = await loadCategories();
+      const verifiedAuth = await loadCurrentAuth();
+      setCategories(availableCategories);
+      setCategoryError(undefined);
+      setCitizenAuth(verifiedAuth);
       setGuestStatus("ready");
     } catch {
       setGuestStatus("unavailable");
@@ -103,8 +110,7 @@ function AppContent() {
 
   useEffect(() => {
     if (citizenAuth.userId === "demo-preview") return;
-    void loadCategories().then((result) => { setCategories(result); setCategoryError(undefined); }).catch((error: unknown) => setCategoryError(error instanceof Error ? error.message : "Could not load issue types"));
-    void registerForPushNotifications().catch(() => { /* In-app notifications remain available if push permission is denied. */ });
+     void registerForPushNotifications().catch(() => { /* In-app notifications remain available if push permission is denied. */ });
     void (async () => {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (!permission.granted) return;
@@ -285,8 +291,19 @@ function AppContent() {
     void Linking.openURL(projectHeadLoginUrl).catch(() => Alert.alert("Cannot open Project Head login", projectHeadLoginUrl));
   };
 
+  const onPhoneSignedIn = (auth: CurrentAuth) => {
+    setCitizenAuth(auth);
+    setGuestStatus("ready");
+    setHomeSummary(emptyHomeSummary);
+    setCategories([]);
+    setCategoryError(undefined);
+    setScreen("home");
+    void loadCategories().then(setCategories).catch((error: unknown) => setCategoryError(error instanceof Error ? error.message : "Could not load issue types"));
+  };
+
   let content;
-  if (screen === "category") content = <CategoryScreen categories={categories} loading={guestStatus !== "unavailable" && !categoryError && categories.length === 0} error={categoryError ?? (guestStatus === "unavailable" ? "The demo server is offline. Live reporting requires an active backend." : undefined)} selectedId={selectedCategory?.id} onBack={() => setScreen("home")} onSelect={(category) => { setSelectedCategory(category); setImageValidationToken(undefined); setImageCheckError(undefined); setScreen("evidence"); }} />;
+  if (screen === "phone-login") content = <PhoneLoginScreen onBack={() => setScreen("home")} onSignedIn={onPhoneSignedIn} />;
+  else if (screen === "category") content = <CategoryScreen categories={categories} loading={guestStatus !== "unavailable" && !categoryError && categories.length === 0} error={categoryError ?? (guestStatus === "unavailable" ? "The demo server is offline. Live reporting requires an active backend." : undefined)} selectedId={selectedCategory?.id} onBack={() => setScreen("home")} onSelect={(category) => { setSelectedCategory(category); setImageValidationToken(undefined); setImageCheckError(undefined); setScreen("evidence"); }} />;
   else if (screen === "evidence") content = <EvidenceScreen images={images} checking={imageChecking} stage={photoStage} checkError={imageCheckError} onChange={(next) => { setImages(next); setImageValidationToken(undefined); setImageCheckError(undefined); }} onBack={() => setScreen("category")} onNext={() => void continueAfterPhotoCheck()} />;
   else if (screen === "location-detect") content = <LocationDetectScreen onBack={() => setScreen("evidence")} onDetected={(next) => { setLocation(next); setConfirmedLocation(undefined); setScreen("location-confirm"); }} />;
   else if (screen === "location-confirm" && location) content = <LocationConfirmScreen value={location} confirming={confirmingLocation} onChange={(next) => { setLocation(next); setConfirmedLocation(undefined); }} onBack={() => setScreen("evidence")} onRetry={() => setScreen("location-detect")} onNext={() => void confirmReportLocation()} />;
@@ -302,9 +319,9 @@ function AppContent() {
   else if (screen === "completion-validations") content = <CompletionVerificationListScreen completions={completionValidations} loading={completionLoading} error={completionError} onBack={() => setScreen("home")} onOpen={(completion) => { setSelectedCompletion(completion); setScreen("completion-verification"); }} />;
   else if (screen === "completion-verification" && selectedCompletion) content = <CompletionVerificationScreen completion={selectedCompletion} submitting={completionSubmitting} onBack={() => setScreen("completion-validations")} onSubmit={(decision) => void submitCompletionVote(decision)} />;
   else if (screen === "notifications") content = <NotificationsScreen role="CITIZEN" onBack={() => setScreen("home")} onOpen={openNotification} onViewed={setNotificationUnread} />;
-  else if (screen === "profile") content = <CitizenProfileScreen auth={citizenAuth} onProjectHeadLogin={openProjectHeadLogin} />;
+  else if (screen === "profile") content = <CitizenProfileScreen auth={citizenAuth} onPhoneLogin={() => setScreen("phone-login")} onProjectHeadLogin={openProjectHeadLogin} />;
   else if (screen === "nearby-works") content = <NearbyWorksScreen onBack={() => setScreen("home")} />;
-  else content = <HomeScreen auth={citizenAuth} unread={notificationUnread} summary={homeSummary} loading={homeLoading} serverStatus={guestStatus} onRetryConnection={() => void connectDemoCitizen(true)} onProjectHeadLogin={openProjectHeadLogin} onReport={() => setScreen("category")} onNearby={() => setScreen("nearby-works")} onTickets={openTickets} onValidations={() => openValidations()} onCompletionValidations={() => openCompletionValidations()} onNotifications={() => setScreen("notifications")} onProfile={() => setScreen("profile")} onOpenNotification={openNotification} />;
+  else content = <HomeScreen auth={citizenAuth} unread={notificationUnread} summary={homeSummary} loading={homeLoading} serverStatus={guestStatus} onRetryConnection={() => void connectDemoCitizen(true)} onProjectHeadLogin={openProjectHeadLogin} onPhoneLogin={() => setScreen("phone-login")} onReport={() => setScreen("category")} onNearby={() => setScreen("nearby-works")} onTickets={openTickets} onValidations={() => openValidations()} onCompletionValidations={() => openCompletionValidations()} onNotifications={() => setScreen("notifications")} onProfile={() => setScreen("profile")} onOpenNotification={openNotification} />;
 
   const tabs: MobileTab[] = [
     { id: "report", label: "Report", icon: "add-circle-outline", activeIcon: "add-circle" },
@@ -317,7 +334,7 @@ function AppContent() {
     else if (id === "tickets") openTickets("ongoing");
     else if (id === "nearby") setScreen("nearby-works");
   };
-  return <DesignSystemProvider theme="citizen"><StatusBar style="dark" /><View style={styles.app}><View style={styles.stage}>{content}</View><View style={styles.tabInset}><MobileTabBar active={activeTab} items={tabs} onSelect={selectTab} /></View></View></DesignSystemProvider>;
+  return <DesignSystemProvider theme="citizen"><StatusBar style="dark" /><View style={styles.app}><View style={styles.stage}>{content}</View>{screen !== "phone-login" && guestStatus === "unavailable" ? <Text onPress={() => void connectDemoCitizen(true)} style={styles.reconnect}>Session unavailable · Tap to reconnect</Text> : null}{screen !== "phone-login" ? <View style={styles.tabInset}><MobileTabBar active={activeTab} items={tabs} onSelect={selectTab} /></View> : null}</View></DesignSystemProvider>;
 }
 
-const styles = StyleSheet.create({ app: { backgroundColor: colors.canvas, flex: 1 }, stage: { flex: 1 }, tabInset: { backgroundColor: colors.surface }, loading: { alignItems: "center", flex: 1, gap: 15, justifyContent: "center", padding: 30 }, loadingText: { color: colors.ink, fontSize: 15, textAlign: "center" } });
+const styles = StyleSheet.create({ app: { backgroundColor: colors.canvas, flex: 1 }, stage: { flex: 1 }, tabInset: { backgroundColor: colors.surface }, reconnect: { backgroundColor: colors.primarySoft, color: colors.primary, fontSize: 13, padding: 12, textAlign: "center" }, loading: { alignItems: "center", flex: 1, gap: 15, justifyContent: "center", padding: 30 }, loadingText: { color: colors.ink, fontSize: 15, textAlign: "center" } });

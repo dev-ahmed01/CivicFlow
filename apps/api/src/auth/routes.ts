@@ -94,6 +94,10 @@ export function createAuthRouter(otpProvider: OtpProvider): Router {
       return;
     }
 
+    if (getEnv().DEMO_AUTH_MODE !== "fixed_otp" && parsed.data.code.length !== 6) {
+      response.status(400).json({ error: "A six-digit OTP is required" });
+      return;
+    }
     try {
       const result = await verifyCitizenOtp(parsed.data.phone, parsed.data.code);
       response.json({

@@ -2,13 +2,15 @@ name: API Auth Performance CI
 
 on:
   push:
-    branches: [main, fix/cityconnect-web-guest-20261122]
+    branches: [main, fix/mobile-session-otp-20261122]
     paths:
       - ".github/workflows/api-auth-perf-ci.yml"
       - "apps/api/src/auth/**"
       - "apps/api/src/app.ts"
       - "apps/api/src/app.test.ts"
       - "apps/api/src/config/**"
+      - "apps/mobile/**"
+      - "packages/shared/**"
   workflow_dispatch:
 
 permissions:
@@ -29,7 +31,18 @@ jobs:
       - name: Build API and workspace dependencies
         run: pnpm --filter api... build
       - name: Run auth tests
-        run: pnpm --filter api exec vitest run src/app.test.ts src/auth/routes.test.ts src/auth/otp-service.test.ts src/auth/otp-provider.test.ts
+        run: pnpm --filter api exec vitest run src/app.test.ts src/auth/routes.test.ts src/auth/otp-service.test.ts src/auth/otp-provider.test.ts src/config/env.test.ts
+      - name: Validate shared OTP schema
+        run: pnpm --filter @civicos/shared test
+
+      - name: Validate Android session recovery and phone login
+        env:
+          EXPO_PUBLIC_API_URL: https://city-connect-backend-ln7h.onrender.com
+          EXPO_PUBLIC_DEMO_OTP: "true"
+        run: |
+          pnpm --filter mobile build
+          EXPO_PUBLIC_API_URL=http://10.0.2.2:4000 EXPO_PUBLIC_ALLOW_LOCAL_API=true pnpm --filter mobile test
+
       - name: Build laptop web portal with citizen guest entry
         env:
           NEXT_PUBLIC_API_URL: https://city-connect-backend-ln7h.onrender.com

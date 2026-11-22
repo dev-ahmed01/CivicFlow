@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const store = vi.hoisted(() => ({ getItemAsync: vi.fn(async () => null), setItemAsync: vi.fn(), deleteItemAsync: vi.fn() }));
 vi.mock("expo-secure-store", () => store);
 vi.mock("expo-file-system/legacy", () => ({}));
-import { clearInternalSession, internalLogin, loadEngineerProjects, loadMyTickets, startDemoGuestSession } from "./api";
+import { clearInternalSession, internalLogin, loadEngineerProjects, loadMyTickets, requestCitizenOtp, startDemoGuestSession, verifyCitizenOtp } from "./api";
 
 describe("mobile login and collection contracts", () => {
   beforeEach(async () => { await clearInternalSession(); vi.clearAllMocks(); });
@@ -19,6 +19,13 @@ describe("mobile login and collection contracts", () => {
     expect(fetcher.mock.calls[0]?.[0]).toContain("/auth/citizen/demo-guest");
     expect(store.setItemAsync).toHaveBeenCalledTimes(1);
   });
+  it("requests a fixed-code demo OTP using the provided phone", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ demoMode: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    expect(await requestCitizenOtp("+919999000001")).toEqual({ demoMode: true });
+    expect(JSON.parse(fetcher.mock.calls[0]?.[1]?.body)).toEqual({ phone: "+919999000001" });
+  });
+
   it("signs in with one API request and one secure write, without a profile request", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ user: { id: "engineer", role: "ENGINEER", agencyId: "roads" }, accessToken: "access", refreshToken: "refresh", requiresPasswordReset: false })));
     vi.stubGlobal("fetch", fetcher);

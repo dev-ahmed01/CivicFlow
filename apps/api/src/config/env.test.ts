@@ -62,7 +62,7 @@ describe("free-demo environment", () => {
     DEPLOYMENT_PROFILE: "free_demo",
     OTP_PROVIDER: "demo",
     DEMO_AUTH_MODE: "fixed_otp",
-    DEMO_AUTH_CODE: "123456",
+    DEMO_AUTH_CODE: "1234",
     TWILIO_ACCOUNT_SID: undefined,
     TWILIO_AUTH_TOKEN: undefined,
     TWILIO_FROM_NUMBER: undefined,
@@ -78,6 +78,7 @@ describe("free-demo environment", () => {
     const parsed = parseEnv(freeDemoEnv);
     expect(parsed.DEPLOYMENT_PROFILE).toBe("free_demo");
     expect(parsed.DEMO_AUTH_MODE).toBe("fixed_otp");
+    expect(parsed.DEMO_AUTH_CODE).toBe("1234");
     expect(parsed.CLIP_MODE).toBe("local_clip");
     expect(parsed.CLIP_LOCAL_MODEL).toBe("Xenova/clip-vit-base-patch32");
   });
@@ -86,13 +87,12 @@ describe("free-demo environment", () => {
     expect(() => parseEnv({ ...freeDemoEnv, DEMO_AUTH_MODE: "disabled", DEMO_AUTH_CODE: undefined })).toThrow();
   });
 
-  it("rejects local object storage even in the free-demo profile", () => {
-    expect(() => parseEnv({ ...freeDemoEnv, S3_ENDPOINT: "http://localhost:9000" })).toThrow();
+  it("allows self-contained demo storage while production still requires remote HTTPS storage", () => {
+    expect(parseEnv({ ...freeDemoEnv, S3_ENDPOINT: "http://localhost:9000" }).S3_ENDPOINT).toBe("http://localhost:9000");
+    expect(() => parseEnv({ ...productionEnv, S3_ENDPOINT: "http://localhost:9000" })).toThrow();
   });
 
-  it("requires public HTTPS storage and web origins", () => {
-    expect(() => parseEnv({ ...freeDemoEnv, S3_ENDPOINT: "http://storage.example.com" })).toThrow();
-    expect(() => parseEnv({ ...freeDemoEnv, S3_ENDPOINT: "https://192.168.1.10" })).toThrow();
+  it("requires HTTPS browser origins even in the isolated demo", () => {
     expect(() => parseEnv({ ...freeDemoEnv, CORS_ORIGINS: "http://civicos.example.com" })).toThrow();
   });
 
@@ -103,7 +103,7 @@ describe("free-demo environment", () => {
     "S3_ACCESS_KEY_ID",
     "S3_SECRET_ACCESS_KEY",
     "S3_PUBLIC_BASE_URL",
-  ] as const)("requires Railway storage variable %s instead of a local default", (key) => {
-    expect(() => parseEnv({ ...freeDemoEnv, [key]: undefined })).toThrow();
+  ] as const)("supplies a fallback for optional free-demo storage value %s", (key) => {
+    expect(parseEnv({ ...freeDemoEnv, [key]: undefined })[key]).toBeTruthy();
   });
 });

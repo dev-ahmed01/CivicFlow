@@ -4,7 +4,7 @@ import { resolveOtpCode } from "./otp-service";
 describe("resolveOtpCode", () => {
   it("uses the explicitly configured free-demo code without generating one", () => {
     const generate = vi.fn(() => "654321");
-    expect(resolveOtpCode({ DEMO_AUTH_MODE: "fixed_otp", DEMO_AUTH_CODE: "123456" }, generate)).toBe("123456");
+    expect(resolveOtpCode({ DEMO_AUTH_MODE: "fixed_otp", DEMO_AUTH_CODE: "1234" }, generate)).toBe("1234");
     expect(generate).not.toHaveBeenCalled();
   });
 
