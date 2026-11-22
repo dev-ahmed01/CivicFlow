@@ -1,6 +1,6 @@
-# Focused recovery Blueprint for the existing Render backend.
-# Does not create, delete, or replace a PostgreSQL database.
-# Existing service env vars not declared below must remain intact.
+# Existing CityConnect backend recovery configuration.
+# Render links DATABASE_URL to the existing recovered database without exposing its password.
+# Other service environment variables remain unchanged on sync.
 services:
   - type: web
     name: city-connect-backend
@@ -10,7 +10,12 @@ services:
     repo: https://github.com/dev-ahmed01/CivicFlow
     branch: main
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter api... build
-    startCommand: pnpm --filter db exec prisma migrate deploy && pnpm --filter api start
+    startCommand: >-
+      sh -c 'pnpm --filter db exec prisma migrate deploy &&
+      if [ "$DEPLOYMENT_PROFILE" = "free_demo" ]; then
+      DEMO_SEED_MODE=if_empty pnpm --filter db exec prisma db seed;
+      fi &&
+      pnpm --filter api start'
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
