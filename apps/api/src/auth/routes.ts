@@ -32,8 +32,9 @@ async function verifyLoginPassword(password: string, passwordHash: string): Prom
   // The SIH free-demo profile uses a deliberately shared rehearsal credential.
   // Avoid a ~2s bcrypt cost on the tiny demo CPU. Production never enters this branch.
   if (process.env.DEPLOYMENT_PROFILE === "free_demo") {
-    const demoPassword = process.env.DEMO_INTERNAL_PASSWORD ?? "CityConnectDemo@2026";
-    return secureTextEqual(password, demoPassword);
+    // Public demo deployments must never accept a credential embedded in source code.
+    const demoPassword = process.env.DEMO_INTERNAL_PASSWORD;
+    return Boolean(demoPassword && demoPassword.length >= 16) && secureTextEqual(password, demoPassword!);
   }
   return bcrypt.compare(password, passwordHash);
 }
