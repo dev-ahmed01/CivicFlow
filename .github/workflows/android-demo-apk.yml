@@ -21,6 +21,7 @@ jobs:
       NODE_ENV: production
       EXPO_PUBLIC_API_URL: https://city-connect-backend-ln7h.onrender.com
       EXPO_PUBLIC_MAP_STYLE_URL: https://tiles.openfreemap.org/styles/liberty
+      EXPO_PUBLIC_DEMO_OTP: "true"
 
     steps:
       - name: Checkout
@@ -35,7 +36,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20.19.0
+          node-version: 22.23.4
           cache: pnpm
 
       - name: Set up Java
@@ -85,7 +86,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="city-connect-citizen-no-login-final-2026-11-13"
+          TAG="city-connect-mobile-otp-2026-11-22"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" artifacts/City-Connect-SIH.apk \
               --repo "${{ github.repository }}" --clobber
@@ -93,6 +94,6 @@ jobs:
             gh release create "$TAG" artifacts/City-Connect-SIH.apk \
               --repo "${{ github.repository }}" \
               --target "${{ github.sha }}" \
-              --title "City Connect Android APK - Citizen guest access" \
-              --notes "Citizen demo opens directly without phone login or OTP. Project Head sign-in opens the protected web portal. Live reporting still requires a healthy hosted API and database."
+              --title "CityConnect Android APK - guest and phone OTP login" \
+              --notes "Citizen demo supports guest access and verified phone login with demo-only OTP 1234. Stale sessions automatically recover. Project Head sign-in opens the current protected Render portal. Production SMS authentication remains separate."
           fi
