@@ -41,7 +41,7 @@ jobs:
           EXPO_PUBLIC_DEMO_OTP: "true"
         run: |
           pnpm --filter mobile build
-          pnpm --filter mobile test
+          EXPO_PUBLIC_API_URL=http://10.0.2.2:4000 EXPO_PUBLIC_ALLOW_LOCAL_API=true pnpm --filter mobile test
 
       - name: Build laptop web portal with citizen guest entry
         env:
