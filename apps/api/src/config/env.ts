@@ -18,7 +18,7 @@ const baseEnvSchema = z.object({
   OTP_TTL_MINUTES: z.coerce.number().int().positive().default(10),
   OTP_MOCK_CODE: z.string().regex(/^\d{6}$/).optional(),
   DEMO_AUTH_MODE: z.enum(["disabled", "fixed_otp"]).default("disabled"),
-  DEMO_AUTH_CODE: z.string().regex(/^\d{6}$/).optional(),
+  DEMO_AUTH_CODE: z.string().regex(/^(?:\d{4}|\d{6})$/).optional(),
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
   TWILIO_FROM_NUMBER: z.string().regex(/^\+[1-9]\d{7,14}$/).optional(),
@@ -149,7 +149,7 @@ export function parseEnv(values: NodeJS.ProcessEnv): AppEnv {
         JWT_REFRESH_SECRET: values.JWT_REFRESH_SECRET ?? "city-connect-free-demo-refresh-secret-2026",
         OTP_PROVIDER: values.OTP_PROVIDER ?? "demo",
         DEMO_AUTH_MODE: values.DEMO_AUTH_MODE ?? "fixed_otp",
-        DEMO_AUTH_CODE: values.DEMO_AUTH_CODE ?? "123456",
+        DEMO_AUTH_CODE: values.DEMO_AUTH_CODE ?? "1234",
         CLIP_MODE: values.CLIP_MODE ?? "demo_deterministic",
         POTHOLE_SCAN_PROVIDER: values.POTHOLE_SCAN_PROVIDER ?? "demo",
       }
