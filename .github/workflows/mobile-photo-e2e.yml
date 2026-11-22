@@ -2,7 +2,7 @@ name: City Connect Mobile Photo E2E
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/cityconnect-web-guest-20261122]
     paths:
       - ".github/workflows/mobile-photo-e2e.yml"
   workflow_dispatch:
@@ -32,7 +32,10 @@ jobs:
             done
           done
 
-          auth="$(curl --fail --silent --show-error             -H 'Content-Type: application/json'             -d '{"userId":"citizen.jayanagar@cityconnect.local","password":"CityConnectDemo@2026"}'             "$API/auth/citizen/login")"
+          # The citizen demo is guest-only. Never rely on a public hardcoded password.
+          auth="$(curl --fail --silent --show-error --max-time 90 \
+            -H 'Content-Type: application/json' -d '{}' \
+            "$API/auth/citizen/demo-guest")"
           token="$(printf '%s' "$auth" | jq -r '.accessToken')"
           test -n "$token" && test "$token" != "null"
 
