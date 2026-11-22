@@ -63,6 +63,15 @@ describe("RBAC middleware", () => {
   const app = createApp(noopOtpProvider);
   afterEach(() => vi.restoreAllMocks());
 
+  it("allows the canonical Render web portal through CORS preflight", async () => {
+    const response = await request(app)
+      .options("/agencies")
+      .set("Origin", "https://city-connect-web.onrender.com")
+      .set("Access-Control-Request-Method", "GET")
+      .expect(204);
+    expect(response.headers["access-control-allow-origin"]).toBe("https://city-connect-web.onrender.com");
+  });
+
   it("returns 401 without authentication", async () => {
     await request(app).get("/protected/project-head").expect(401);
   });
