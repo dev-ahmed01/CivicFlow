@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/api-auth-perf-ci.yml"
       - "apps/api/src/auth/**"
+      - "apps/api/src/app.ts"
+      - "apps/api/src/app.test.ts"
       - "apps/api/src/config/**"
   workflow_dispatch:
 
@@ -27,4 +29,4 @@ jobs:
       - name: Build API and workspace dependencies
         run: pnpm --filter api... build
       - name: Run auth tests
-        run: pnpm --filter api exec vitest run src/auth/routes.test.ts src/auth/otp-service.test.ts src/auth/otp-provider.test.ts
+        run: pnpm --filter api exec vitest run src/app.test.ts src/auth/routes.test.ts src/auth/otp-service.test.ts src/auth/otp-provider.test.ts
