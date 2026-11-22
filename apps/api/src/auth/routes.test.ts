@@ -51,7 +51,8 @@ describe("internal role login", () => {
     deployment.profile = "free_demo";
     createGuest.mockResolvedValue({ id: "guest-1", role: "CITIZEN", phone: null });
     const response = await request(app).post("/auth/citizen/demo-guest").expect(200);
-    expect(createGuest).toHaveBeenCalledWith({ data: { role: "CITIZEN", displayName: "Demo Guest" } });
+    expect(createGuest).toHaveBeenCalledWith({ data: { role: "CITIZEN", displayName: "Demo Guest", phone: expect.stringMatching(/^\+999\d{12}$/) } });
+    expect(response.body.user.phone).toBeNull();
     expect(response.body).toMatchObject({ user: { id: "guest-1", role: "CITIZEN" }, accessToken: "access" });
   });
 

@@ -53,6 +53,25 @@ export default function CitizenLoginPage() {
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [resetToken, setResetToken] = useState<string>();
+  const guestDemoEnabled = process.env.NEXT_PUBLIC_ENABLE_GUEST_DEMO === "true";
+
+  const enterAsGuest = async () => {
+    setBusy(true);
+    setError(undefined);
+    setMessage(undefined);
+    try {
+      const { response, body } = await postLogin("/auth/citizen/demo-guest", {});
+      if (!response.ok || !body.accessToken || !body.refreshToken) {
+        throw new Error(body.error ?? "Citizen demo access is unavailable.");
+      }
+      saveCitizenSession({ accessToken: body.accessToken, refreshToken: body.refreshToken }, true);
+      router.replace("/");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not open citizen demo");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     void warmApi();
@@ -130,6 +149,13 @@ export default function CitizenLoginPage() {
           <div className="cf-login-options"><label><input checked={remember} onChange={(event) => setRemember(event.target.checked)} type="checkbox" />Remember me</label><a href="mailto:support@cityconnect.local?subject=Citizen%20password%20help">Forgot Password?</a></div>
           {error ? <p className="error" role="alert">{error}</p> : null}
           <button className="cf-login-submit" disabled={busy || userId.trim().length < 3 || password.length < 8} type="submit">{busy ? "Logging in…" : "Log In"}<CitizenIcon name="arrow" /></button>
+          {guestDemoEnabled ? <div className="cf-guest-login">
+            <p>Visiting as a citizen? Open the demo without a password or OTP.</p>
+            <button className="cf-login-guest-button" disabled={busy} onClick={() => void enterAsGuest()} type="button">
+              Continue as Citizen <CitizenIcon name="arrow" />
+            </button>
+            <small>Demonstration environment · information may be reset.</small>
+          </div> : null}
         </form>}
       </div>
       <p className="cf-secure-line"><CitizenIcon name="shield" />Secure <span>•</span> Reliable <span>•</span> Accountable</p>
