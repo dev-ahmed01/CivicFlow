@@ -1,0 +1,36 @@
+name: CityConnect Desktop Proxy Recovery CI
+
+on:
+  push:
+    branches: [main, fix/desktop-same-origin-api-20261123]
+    paths:
+      - ".github/workflows/desktop-proxy-recovery.yml"
+      - "apps/web/next.config.mjs"
+      - "apps/web/app/_lib/api.ts"
+      - "apps/web/app/login/page.tsx"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Production Next.js build
+        env:
+          NODE_ENV: production
+          DEPLOYMENT_PROFILE: production
+          NEXT_PUBLIC_API_URL: https://city-connect-backend-ln7h.onrender.com
+          NEXT_PUBLIC_ENABLE_GUEST_DEMO: "true"
+        run: pnpm --filter web... build
+      - name: Web regression tests
+        run: pnpm --filter web test

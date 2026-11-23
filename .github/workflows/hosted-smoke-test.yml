@@ -2,7 +2,7 @@ name: City Connect Hosted Smoke Test
 
 on:
   push:
-    branches: [main, fix/cityconnect-web-guest-20261122]
+    branches: [main]
     paths:
       - ".github/workflows/hosted-smoke-test.yml"
   workflow_dispatch:
@@ -68,6 +68,25 @@ jobs:
             -H "Authorization: Bearer $token" \
             "$API_BASE/citizens/me/tickets?filter=ongoing" -o "$tickets_response"
           test -s "$tickets_response"
+
+      - name: Verify same-origin web API proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Render Free may cold-start both services; retry gateway errors.
+          curl --fail --show-error --silent --location \
+            --retry 9 --retry-delay 12 --retry-all-errors \
+            --connect-timeout 15 --max-time 90 \
+            "$WEB_BASE/api/health" -o /tmp/city-connect-proxy-health.json
+          node -e "const d=require('/tmp/city-connect-proxy-health.json'); if(d.status !== 'ok') process.exit(1)"
+          response="$(mktemp)"
+          trap 'rm -f "$response"' EXIT
+          curl --fail --show-error --silent --location \
+            --retry 5 --retry-delay 8 --retry-all-errors \
+            --connect-timeout 15 --max-time 90 \
+            -H 'Content-Type: application/json' -d '{}' \
+            "$WEB_BASE/api/auth/citizen/demo-guest" -o "$response"
+          node -e 'const d=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); if(!d.accessToken || !d.refreshToken) process.exit(1)' "$response"
 
       - name: Check laptop web application
         shell: bash
