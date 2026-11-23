@@ -27,11 +27,14 @@ function resolveApiUrl(): string {
   }
 }
 
-export const apiUrl = resolveApiUrl();
+// Browser requests on a deployed site stay on the web domain. Next.js proxies
+// /api/* to the private backend host, avoiding browser cross-origin failures.
+// Local development keeps using the configured API URL directly.
+export const apiUrl = process.env.NODE_ENV === "production" ? "/api" : resolveApiUrl();
 
 export async function warmApi(): Promise<void> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 8_000);
+  const timeout = window.setTimeout(() => controller.abort(), 65_000);
   try {
     await fetch(`${apiUrl}/health`, {
       method: "GET",
@@ -61,7 +64,7 @@ export async function fetchApiJson<T>(path: string, init?: RequestInit): Promise
     response = await fetch(`${apiUrl}${path}`, { ...init, cache: "no-store" });
   } catch (cause) {
     throw new ApiRequestError(
-      `The CivicFlow API is unreachable at ${apiUrl}. Start it with \`pnpm dev\` and check ${apiUrl}/health.`,
+      "The CityConnect server could not be reached. If it has been inactive, it may be starting up. Please try again shortly.",
       undefined,
       { cause },
     );
@@ -144,7 +147,7 @@ export async function authenticatedRawRequest<TSession extends RefreshableSessio
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers },
       });
     } catch (cause) {
-      throw new ApiRequestError(`The CivicFlow API is unreachable at ${apiUrl}.`, undefined, { cause });
+      throw new ApiRequestError("The CityConnect server could not be reached. Please try again shortly.", undefined, { cause });
     }
   };
   let response = await request(session?.accessToken);
