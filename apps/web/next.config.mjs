@@ -24,7 +24,7 @@ const nextConfig = {
     // Proxy browser API traffic through the web origin. Render's sleeping free
     // backend can be reached server-to-server even if the browser blocks the
     // cross-origin request (CORS, privacy extensions, DNS or restrictive Wi-Fi).
-    const backendApi = (configuredApiUrl ?? "http://localhost:4000").replace(/\\/$/, "");
+    const backendApi = (configuredApiUrl ?? "http://localhost:4000").replace(/\/$/, "");
     return [
       { source: "/api/:path*", destination: `${backendApi}/:path*` },
       { source: "/road-scan-assets/:file", destination: `${backendApi}/road-scan-assets/:file` },
