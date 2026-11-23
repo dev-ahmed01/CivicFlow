@@ -32,15 +32,32 @@ type LoginBody = {
 };
 
 async function postLogin(path: string, credentials: Record<string, string>): Promise<{ response: Response; body: LoginBody }> {
-  const result = await fetchApiJson<LoginBody>(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(credentials),
-  });
-  if (result.response.status >= 500) {
-    throw new ApiRequestError("The login service returned a server error. Please try again.", result.response.status);
+  // A sleeping free-tier backend can temporarily return 502/503/504.
+  // Retry only authentication, never ticket creation or other mutations.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const result = await fetchApiJson<LoginBody>(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credentials),
+      });
+      if ([502, 503, 504].includes(result.response.status) && attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 5_000 * (attempt + 1)));
+        continue;
+      }
+      if (result.response.status >= 500) {
+        throw new ApiRequestError("The CityConnect login server is unavailable. Please try again shortly.", result.response.status);
+      }
+      return result;
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === undefined && attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 5_000 * (attempt + 1)));
+        continue;
+      }
+      throw error;
+    }
   }
-  return result;
+  throw new ApiRequestError("CityConnect could not connect. Please try again shortly.");
 }
 
 export default function CitizenLoginPage() {
