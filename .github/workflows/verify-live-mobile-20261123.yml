@@ -1,0 +1,52 @@
+name: CityConnect public mobile health verification
+on:
+  push:
+    branches: [verify/cityconnect-live-mobile-20261123]
+    paths:
+      - ".github/workflows/verify-live-mobile-20261123.yml"
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      API: https://city-connect-backend-ln7h.onrender.com
+      AI: https://city-connect-clip-stable.onrender.com
+    steps:
+      - name: Backend and public dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 12); do
+            if curl --fail --silent --show-error --max-time 50 "$API/health" -o health.json; then break; fi
+            sleep 12
+          done
+          jq -e '.status == "ok"' health.json
+          curl --fail --silent --show-error --max-time 80 "$API/analytics/public-dashboard" -o dashboard.json
+          jq -e '.totals.ticketsCreated >= 1' dashboard.json
+
+      - name: Guest access to report categories, tracking, and nearby work
+        shell: bash
+        run: |
+          set -euo pipefail
+          guest="$(curl --fail --silent --show-error --max-time 80 -H 'Content-Type: application/json' -d '{}' "$API/auth/citizen/demo-guest")"
+          token="$(jq -er '.accessToken' <<< "$guest")"
+          for endpoint in '/categories' '/citizens/me/tickets?filter=ongoing' '/civic-works/nearby?latitude=12.9299&longitude=77.5844&radiusKm=2'; do
+            status="$(curl --silent --show-error --max-time 80 -H "Authorization: Bearer $token" -w '%{http_code}' -o result.json "$API$endpoint")"
+            echo "Route $endpoint: HTTP $status"
+            test "$status" = "200" || { jq '{error,code}' result.json || true; exit 1; }
+          done
+
+      - name: Hosted image detector health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 12); do
+            if curl --fail --silent --show-error --max-time 60 "$AI/health" -o ai-health.json; then
+              echo "AI inference service responding"
+              exit 0
+            fi
+            sleep 12
+          done
+          exit 1
